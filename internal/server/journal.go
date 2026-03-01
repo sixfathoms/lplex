@@ -167,12 +167,6 @@ func (w *JournalWriter) appendFrame(frame RxFrame) error {
 		}
 		w.initBlock(tsUs)
 		deltaUs = 0
-		deltaSize = journal.UvarintSize(deltaUs)
-		if standard {
-			size = deltaSize + 4 + 8
-		} else {
-			size = deltaSize + 4 + journal.UvarintSize(uint64(dataLen)) + dataLen
-		}
 	}
 
 	if w.frameCount == 0 {
@@ -343,16 +337,9 @@ func (w *JournalWriter) flushBlock() error {
 
 // checkRotation checks if rotation is needed and performs it.
 func (w *JournalWriter) checkRotation() error {
-	rotate := false
-	if w.cfg.RotateDuration > 0 && time.Since(w.fileStart) >= w.cfg.RotateDuration {
-		rotate = true
-	}
-	if w.cfg.RotateSize > 0 && w.fileBytes >= w.cfg.RotateSize {
-		rotate = true
-	}
-	if w.cfg.RotateCount > 0 && w.fileFrames >= w.cfg.RotateCount {
-		rotate = true
-	}
+	rotate := (w.cfg.RotateDuration > 0 && time.Since(w.fileStart) >= w.cfg.RotateDuration) ||
+		(w.cfg.RotateSize > 0 && w.fileBytes >= w.cfg.RotateSize) ||
+		(w.cfg.RotateCount > 0 && w.fileFrames >= w.cfg.RotateCount)
 	if !rotate {
 		return nil
 	}
@@ -389,7 +376,7 @@ func (w *JournalWriter) openFile(ts time.Time) error {
 	binary.LittleEndian.PutUint32(hdr[4:8], uint32(w.cfg.BlockSize))
 
 	if _, err := f.Write(hdr[:]); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("journal header write: %w", err)
 	}
 
