@@ -69,6 +69,20 @@ nfpms:
     scripts:
       postinstall: packaging/postinstall.sh
 
+brews:
+  - ids:
+      - default
+    repository:
+      owner: sixfathoms
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/sixfathoms/lplex
+    description: CAN bus HTTP bridge for NMEA 2000
+    license: MIT
+    install: |
+      bin.install "lplex"
+      bin.install "lplexdump"
+
 dockers_v2:
   - images:
       - "ghcr.io/sixfathoms/lplex"
