@@ -208,7 +208,7 @@ func runReplay(ctx context.Context, path string, speed float64, startTimeStr str
 	if err != nil {
 		return fmt.Errorf("open journal: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader, err := journal.NewReader(f)
 	if err != nil {
@@ -293,8 +293,8 @@ func runReplay(ctx context.Context, path string, speed float64, startTimeStr str
 
 		if jsonMode {
 			b, _ := json.Marshal(fr)
-			out.Write(b)
-			out.WriteByte('\n')
+			_, _ = out.Write(b)
+			_ = out.WriteByte('\n')
 		} else {
 			formatFrame(out, &fr, devices)
 		}

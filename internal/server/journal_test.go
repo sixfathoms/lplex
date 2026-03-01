@@ -82,7 +82,7 @@ func writeAndRead(t *testing.T, blockSize int, frames []RxFrame) []journal.Entry
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader, err := journal.NewReader(f)
 	if err != nil {
