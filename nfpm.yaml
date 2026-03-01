@@ -1,0 +1,23 @@
+name: lplex
+arch: amd64
+platform: linux
+version: ${VERSION}
+maintainer: Theo Zourzouvillys
+description: CAN bus HTTP bridge for NMEA 2000
+vendor: Theo Zourzouvillys
+homepage: https://github.com/sixfathoms/lplex
+license: MIT
+
+contents:
+  - src: dist/lplex
+    dst: /usr/bin/lplex
+  - src: dist/lplexdump
+    dst: /usr/bin/lplexdump
+  - src: packaging/lplex.service
+    dst: /lib/systemd/system/lplex.service
+  - src: packaging/lplex.default
+    dst: /etc/default/lplex
+    type: config
+
+scripts:
+  postinstall: packaging/postinstall.sh

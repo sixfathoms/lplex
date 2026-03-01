@@ -1,0 +1,865 @@
+package server
+
+import (
+	"bytes"
+	"encoding/binary"
+	"hash/crc32"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/sixfathoms/lplex/journal"
+)
+
+// makeFrame builds an RxFrame with a given PGN, source, data, and timestamp.
+func makeFrame(t time.Time, pgn uint32, src uint8, data []byte) RxFrame {
+	pf := uint8((pgn >> 8) & 0xFF)
+	dst := uint8(0xFF)
+	if pf < 240 {
+		dst = 0xFF
+	}
+	return RxFrame{
+		Timestamp: t,
+		Header: CANHeader{
+			Priority:    2,
+			PGN:         pgn,
+			Source:      src,
+			Destination: dst,
+		},
+		Data: data,
+	}
+}
+
+// makeAddressClaim builds a PGN 60928 address claim frame for a given NAME.
+func makeAddressClaim(t time.Time, src uint8, name uint64) RxFrame {
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint64(data, name)
+	return RxFrame{
+		Timestamp: t,
+		Header: CANHeader{
+			Priority:    2,
+			PGN:         60928,
+			Source:      src,
+			Destination: 0xFF,
+		},
+		Data: data,
+	}
+}
+
+// writeAndRead is a helper that writes frames to a journal and reads them back.
+func writeAndRead(t *testing.T, blockSize int, frames []RxFrame) []journal.Entry {
+	t.Helper()
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+
+	ch := make(chan RxFrame, len(frames))
+	for _, f := range frames {
+		ch <- f
+	}
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: blockSize}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no journal files written")
+	}
+
+	path := filepath.Join(dir, entries[0].Name())
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result []journal.Entry
+	for reader.Next() {
+		e := reader.Frame()
+		dataCopy := make([]byte, len(e.Data))
+		copy(dataCopy, e.Data)
+		e.Data = dataCopy
+		result = append(result, e)
+	}
+	if err := reader.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func TestJournalRoundTrip(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	frames := []RxFrame{
+		makeFrame(base, 129025, 10, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}),
+		makeFrame(base.Add(100*time.Microsecond), 129026, 11, []byte{0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8}),
+		makeFrame(base.Add(200*time.Microsecond), 129029, 12, []byte{0x10, 0x20, 0x30, 0x40, 0x50}),
+		makeFrame(base.Add(5*time.Second), 60928, 13, []byte{0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE}),
+	}
+
+	result := writeAndRead(t, 4096, frames)
+
+	if len(result) != len(frames) {
+		t.Fatalf("got %d frames, want %d", len(result), len(frames))
+	}
+
+	for i, got := range result {
+		want := frames[i]
+		if got.Header.PGN != want.Header.PGN {
+			t.Errorf("frame %d: PGN %d, want %d", i, got.Header.PGN, want.Header.PGN)
+		}
+		if got.Header.Source != want.Header.Source {
+			t.Errorf("frame %d: Source %d, want %d", i, got.Header.Source, want.Header.Source)
+		}
+		if !bytes.Equal(got.Data, want.Data) {
+			t.Errorf("frame %d: data mismatch: got %x, want %x", i, got.Data, want.Data)
+		}
+		if got.Timestamp.UnixMicro() != want.Timestamp.UnixMicro() {
+			t.Errorf("frame %d: timestamp %v, want %v", i, got.Timestamp, want.Timestamp)
+		}
+	}
+}
+
+func TestJournalStandardVsExtendedFrames(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	std := makeFrame(base, 129025, 10, []byte{1, 2, 3, 4, 5, 6, 7, 8})
+	ext := makeFrame(base.Add(time.Millisecond), 129029, 11, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})
+	short := makeFrame(base.Add(2*time.Millisecond), 59904, 12, []byte{0x00, 0xEE, 0x00})
+
+	result := writeAndRead(t, 4096, []RxFrame{std, ext, short})
+
+	if len(result) != 3 {
+		t.Fatalf("got %d frames, want 3", len(result))
+	}
+	if !bytes.Equal(result[0].Data, std.Data) {
+		t.Errorf("standard frame data: got %x, want %x", result[0].Data, std.Data)
+	}
+	if !bytes.Equal(result[1].Data, ext.Data) {
+		t.Errorf("extended frame data: got %x, want %x", result[1].Data, ext.Data)
+	}
+	if !bytes.Equal(result[2].Data, short.Data) {
+		t.Errorf("short frame data: got %x, want %x", result[2].Data, short.Data)
+	}
+}
+
+func TestJournalDeviceTableWithAddressChanges(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	nameA := uint64(0x1111111111111111)
+	nameB := uint64(0x2222222222222222)
+
+	frames := []RxFrame{
+		makeAddressClaim(base, 5, nameA),
+		makeFrame(base.Add(time.Millisecond), 129025, 5, []byte{1, 2, 3, 4, 5, 6, 7, 8}),
+		makeAddressClaim(base.Add(2*time.Millisecond), 5, nameB),
+		makeFrame(base.Add(3*time.Millisecond), 129025, 5, []byte{9, 8, 7, 6, 5, 4, 3, 2}),
+	}
+
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+
+	ch := make(chan RxFrame, len(frames))
+	for _, f := range frames {
+		ch <- f
+	}
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	path := filepath.Join(dir, entries[0].Name())
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.SeekBlock(0); err != nil {
+		t.Fatal(err)
+	}
+
+	allDevices := reader.BlockDevices()
+	var foundA, foundB bool
+	for _, d := range allDevices {
+		if d.Source == 5 && d.NAME == nameA {
+			foundA = true
+		}
+		if d.Source == 5 && d.NAME == nameB {
+			foundB = true
+		}
+	}
+	if !foundA || !foundB {
+		t.Errorf("expected both device A and B in device table, got %+v", allDevices)
+	}
+}
+
+func TestJournalDeviceTableSeeking(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	nameA := uint64(0xAAAAAAAAAAAAAAAA)
+	nameB := uint64(0xBBBBBBBBBBBBBBBB)
+
+	frames := []RxFrame{
+		makeAddressClaim(base, 5, nameA),
+		makeFrame(base.Add(time.Millisecond), 129025, 5, []byte{1, 2, 3, 4, 5, 6, 7, 8}),
+		makeAddressClaim(base.Add(2*time.Millisecond), 5, nameB),
+		makeFrame(base.Add(3*time.Millisecond), 129025, 5, []byte{9, 8, 7, 6, 5, 4, 3, 2}),
+	}
+
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+
+	ch := make(chan RxFrame, len(frames))
+	for _, f := range frames {
+		ch <- f
+	}
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	f, err := os.Open(filepath.Join(dir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.SeekBlock(0); err != nil {
+		t.Fatal(err)
+	}
+
+	// At frame 1, device A should be active at source 5
+	devs := reader.BlockDevicesAt(1)
+	found := false
+	for _, d := range devs {
+		if d.Source == 5 {
+			if d.NAME != nameA {
+				t.Errorf("at frame 1, source 5 should be device A, got NAME=%x", d.NAME)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("at frame 1, expected device at source 5")
+	}
+
+	// At frame 3, device B should be active at source 5
+	devs = reader.BlockDevicesAt(3)
+	found = false
+	for _, d := range devs {
+		if d.Source == 5 {
+			if d.NAME != nameB {
+				t.Errorf("at frame 3, source 5 should be device B, got NAME=%x", d.NAME)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("at frame 3, expected device at source 5")
+	}
+}
+
+func TestJournalBlockChecksum(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	frames := []RxFrame{
+		makeFrame(base, 129025, 10, []byte{1, 2, 3, 4, 5, 6, 7, 8}),
+	}
+
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+	ch := make(chan RxFrame, 1)
+	ch <- frames[0]
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	path := filepath.Join(dir, entries[0].Name())
+
+	// Corrupt one byte in the block data
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data[journal.FileHeaderSize+20]++
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if reader.Next() {
+		t.Error("expected Next to fail on corrupted block")
+	}
+	if reader.Err() == nil {
+		t.Error("expected checksum error")
+	}
+}
+
+func TestJournalBlockBoundary(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	var frames []RxFrame
+	for i := range 700 {
+		frames = append(frames, makeFrame(
+			base.Add(time.Duration(i)*time.Millisecond),
+			129025, 10,
+			[]byte{byte(i), byte(i >> 8), 3, 4, 5, 6, 7, 8},
+		))
+	}
+
+	result := writeAndRead(t, 4096, frames)
+
+	if len(result) != len(frames) {
+		t.Fatalf("got %d frames, want %d", len(result), len(frames))
+	}
+
+	for i, got := range result {
+		want := frames[i]
+		if !bytes.Equal(got.Data, want.Data) {
+			t.Errorf("frame %d: data mismatch across block boundary", i)
+		}
+	}
+}
+
+func TestJournalTimeSeeking(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	var frames []RxFrame
+	for i := range 700 {
+		frames = append(frames, makeFrame(
+			base.Add(time.Duration(i)*100*time.Millisecond),
+			129025, 10,
+			[]byte{byte(i), byte(i >> 8), 3, 4, 5, 6, 7, 8},
+		))
+	}
+
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+	ch := make(chan RxFrame, len(frames))
+	for _, f := range frames {
+		ch <- f
+	}
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	f, err := os.Open(filepath.Join(dir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if reader.BlockCount() < 2 {
+		t.Fatalf("expected at least 2 blocks, got %d", reader.BlockCount())
+	}
+
+	midTime := base.Add(35 * time.Second)
+	if err := reader.SeekToTime(midTime); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reader.Next() {
+		t.Fatal("expected to read a frame after seeking")
+	}
+	first := reader.Frame()
+	if first.Timestamp.After(midTime) {
+		t.Errorf("first frame after seek is %v, which is after target %v", first.Timestamp, midTime)
+	}
+}
+
+func TestJournalRotation(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	var frames []RxFrame
+	for i := range 700 {
+		frames = append(frames, makeFrame(
+			base.Add(time.Duration(i)*time.Millisecond),
+			129025, 10,
+			[]byte{byte(i), byte(i >> 8), 3, 4, 5, 6, 7, 8},
+		))
+	}
+
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+	ch := make(chan RxFrame, len(frames))
+	for _, f := range frames {
+		ch <- f
+	}
+	close(ch)
+
+	cfg := JournalConfig{
+		Dir:        dir,
+		BlockSize:  4096,
+		RotateSize: 4100,
+	}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	if len(entries) < 2 {
+		t.Fatalf("expected multiple journal files from rotation, got %d", len(entries))
+	}
+
+	totalFrames := 0
+	for _, e := range entries {
+		f, err := os.Open(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader, err := journal.NewReader(f)
+		if err != nil {
+			_ = f.Close()
+			t.Fatal(err)
+		}
+		for reader.Next() {
+			totalFrames++
+		}
+		if err := reader.Err(); err != nil {
+			_ = f.Close()
+			t.Fatal(err)
+		}
+		_ = f.Close()
+	}
+
+	if totalFrames != len(frames) {
+		t.Errorf("total frames across rotated files: %d, want %d", totalFrames, len(frames))
+	}
+}
+
+func TestJournalCrashResilience(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	var frames []RxFrame
+	for i := range 700 {
+		frames = append(frames, makeFrame(
+			base.Add(time.Duration(i)*time.Millisecond),
+			129025, 10,
+			[]byte{byte(i), byte(i >> 8), 3, 4, 5, 6, 7, 8},
+		))
+	}
+
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+	ch := make(chan RxFrame, len(frames))
+	for _, f := range frames {
+		ch <- f
+	}
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	path := filepath.Join(dir, entries[0].Name())
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origReader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origBlocks := origReader.BlockCount()
+	_ = f.Close()
+
+	if origBlocks < 2 {
+		t.Fatalf("need at least 2 blocks, got %d", origBlocks)
+	}
+
+	// Truncate to simulate crash: keep header + first block + half of second
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	truncLen := journal.FileHeaderSize + cfg.BlockSize + cfg.BlockSize/2
+	if err := os.WriteFile(path, data[:truncLen], 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err = os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if reader.BlockCount() != 1 {
+		t.Errorf("after truncation, block count should be 1, got %d", reader.BlockCount())
+	}
+
+	count := 0
+	for reader.Next() {
+		count++
+	}
+	if reader.Err() != nil {
+		t.Errorf("unexpected error reading surviving block: %v", reader.Err())
+	}
+	if count == 0 {
+		t.Error("expected frames from surviving block")
+	}
+}
+
+func TestJournalCANIDRoundTrip(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	pdu2 := makeFrame(base, 129025, 10, []byte{1, 2, 3, 4, 5, 6, 7, 8})
+	pdu1 := RxFrame{
+		Timestamp: base.Add(time.Millisecond),
+		Header: CANHeader{
+			Priority:    6,
+			PGN:         59904,
+			Source:      254,
+			Destination: 10,
+		},
+		Data: []byte{0x00, 0xEE, 0x00},
+	}
+
+	result := writeAndRead(t, 4096, []RxFrame{pdu2, pdu1})
+
+	if len(result) != 2 {
+		t.Fatalf("got %d frames, want 2", len(result))
+	}
+
+	if result[0].Header.PGN != 129025 {
+		t.Errorf("PDU2 PGN: got %d, want 129025", result[0].Header.PGN)
+	}
+	if result[0].Header.Source != 10 {
+		t.Errorf("PDU2 source: got %d, want 10", result[0].Header.Source)
+	}
+	if result[0].Header.Destination != 0xFF {
+		t.Errorf("PDU2 dest: got %d, want 0xFF", result[0].Header.Destination)
+	}
+	if result[0].Header.Priority != 2 {
+		t.Errorf("PDU2 priority: got %d, want 2", result[0].Header.Priority)
+	}
+
+	if result[1].Header.PGN != 59904 {
+		t.Errorf("PDU1 PGN: got %d, want 59904", result[1].Header.PGN)
+	}
+	if result[1].Header.Source != 254 {
+		t.Errorf("PDU1 source: got %d, want 254", result[1].Header.Source)
+	}
+	if result[1].Header.Destination != 10 {
+		t.Errorf("PDU1 dest: got %d, want 10", result[1].Header.Destination)
+	}
+	if result[1].Header.Priority != 6 {
+		t.Errorf("PDU1 priority: got %d, want 6", result[1].Header.Priority)
+	}
+}
+
+func TestJournalBlockChecksumValid(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	frames := []RxFrame{
+		makeFrame(base, 129025, 10, []byte{1, 2, 3, 4, 5, 6, 7, 8}),
+		makeFrame(base.Add(time.Millisecond), 129025, 11, []byte{8, 7, 6, 5, 4, 3, 2, 1}),
+	}
+
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+	ch := make(chan RxFrame, 2)
+	ch <- frames[0]
+	ch <- frames[1]
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	path := filepath.Join(dir, entries[0].Name())
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	block := data[journal.FileHeaderSize : journal.FileHeaderSize+4096]
+	storedCRC := binary.LittleEndian.Uint32(block[4092:])
+	computedCRC := crc32.Checksum(block[:4092], journal.CRC32cTable)
+	if storedCRC != computedCRC {
+		t.Errorf("CRC mismatch: stored=%08x computed=%08x", storedCRC, computedCRC)
+	}
+}
+
+func TestJournalEmptyChannel(t *testing.T) {
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+	ch := make(chan RxFrame)
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Errorf("expected no files for empty channel, got %d", len(entries))
+	}
+}
+
+// makeProductInfo builds a 134-byte PGN 126996 payload with the given fields.
+func makeProductInfo(productCode uint16, modelID, swVersion, modelVersion, serial string) []byte {
+	data := make([]byte, 134)
+	// bytes 0-1: NMEA 2000 version (unused here)
+	binary.LittleEndian.PutUint16(data[2:4], productCode)
+	copy(data[4:36], padTo(modelID, 32))
+	copy(data[36:76], padTo(swVersion, 40))
+	copy(data[76:100], padTo(modelVersion, 24))
+	copy(data[100:132], padTo(serial, 32))
+	// bytes 132-133: certification level (unused)
+	return data
+}
+
+func padTo(s string, n int) []byte {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = 0xFF
+	}
+	copy(b, s)
+	return b
+}
+
+func TestJournalProductInfoRoundTrip(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	nameA := uint64(0x1111111111111111)
+
+	// Pre-populate the device registry with an address claim and product info.
+	devices := NewDeviceRegistry()
+	claimData := make([]byte, 8)
+	binary.LittleEndian.PutUint64(claimData, nameA)
+	devices.HandleAddressClaim(10, claimData)
+	devices.HandleProductInfo(10, makeProductInfo(4242, "GNX 120", "5.20", "1.0.3", "SN12345"))
+
+	frames := []RxFrame{
+		makeFrame(base, 129025, 10, []byte{1, 2, 3, 4, 5, 6, 7, 8}),
+		makeFrame(base.Add(time.Millisecond), 129025, 10, []byte{8, 7, 6, 5, 4, 3, 2, 1}),
+	}
+
+	dir := t.TempDir()
+	ch := make(chan RxFrame, len(frames))
+	for _, f := range frames {
+		ch <- f
+	}
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	if len(entries) == 0 {
+		t.Fatal("no journal files written")
+	}
+
+	f, err := os.Open(filepath.Join(dir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.SeekBlock(0); err != nil {
+		t.Fatal(err)
+	}
+
+	devs := reader.BlockDevices()
+	if len(devs) != 1 {
+		t.Fatalf("expected 1 device, got %d: %+v", len(devs), devs)
+	}
+
+	d := devs[0]
+	if d.Source != 10 {
+		t.Errorf("Source: got %d, want 10", d.Source)
+	}
+	if d.NAME != nameA {
+		t.Errorf("NAME: got %x, want %x", d.NAME, nameA)
+	}
+	if d.ProductCode != 4242 {
+		t.Errorf("ProductCode: got %d, want 4242", d.ProductCode)
+	}
+	if d.ModelID != "GNX 120" {
+		t.Errorf("ModelID: got %q, want %q", d.ModelID, "GNX 120")
+	}
+	if d.SoftwareVersion != "5.20" {
+		t.Errorf("SoftwareVersion: got %q, want %q", d.SoftwareVersion, "5.20")
+	}
+	if d.ModelVersion != "1.0.3" {
+		t.Errorf("ModelVersion: got %q, want %q", d.ModelVersion, "1.0.3")
+	}
+	if d.ModelSerial != "SN12345" {
+		t.Errorf("ModelSerial: got %q, want %q", d.ModelSerial, "SN12345")
+	}
+}
+
+func TestJournalProductInfoInBlockChange(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	nameA := uint64(0xAAAAAAAAAAAAAAAA)
+
+	// Device registry starts empty. The address claim frame within the block
+	// should capture product info if it's been added to the registry by then.
+	devices := NewDeviceRegistry()
+
+	// Pre-register the device so HandleProductInfo works.
+	claimData := make([]byte, 8)
+	binary.LittleEndian.PutUint64(claimData, nameA)
+	devices.HandleAddressClaim(5, claimData)
+	devices.HandleProductInfo(5, makeProductInfo(9999, "Pilot", "2.0", "3.1", "XYZ"))
+
+	frames := []RxFrame{
+		makeFrame(base, 129025, 10, []byte{1, 2, 3, 4, 5, 6, 7, 8}),
+		makeAddressClaim(base.Add(time.Millisecond), 5, nameA),
+		makeFrame(base.Add(2*time.Millisecond), 129025, 5, []byte{9, 8, 7, 6, 5, 4, 3, 2}),
+	}
+
+	dir := t.TempDir()
+	ch := make(chan RxFrame, len(frames))
+	for _, f := range frames {
+		ch <- f
+	}
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	f, err := os.Open(filepath.Join(dir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.SeekBlock(0); err != nil {
+		t.Fatal(err)
+	}
+
+	// The in-block address claim for source 5 should have product info.
+	devs := reader.BlockDevicesAt(2)
+	found := false
+	for _, d := range devs {
+		if d.Source == 5 {
+			found = true
+			if d.ProductCode != 9999 {
+				t.Errorf("ProductCode: got %d, want 9999", d.ProductCode)
+			}
+			if d.ModelID != "Pilot" {
+				t.Errorf("ModelID: got %q, want %q", d.ModelID, "Pilot")
+			}
+			if d.ModelSerial != "XYZ" {
+				t.Errorf("ModelSerial: got %q, want %q", d.ModelSerial, "XYZ")
+			}
+		}
+	}
+	if !found {
+		t.Error("device at source 5 not found in device table")
+	}
+}
