@@ -479,17 +479,17 @@ func TestJournalRotation(t *testing.T) {
 		}
 		reader, err := journal.NewReader(f)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			t.Fatal(err)
 		}
 		for reader.Next() {
 			totalFrames++
 		}
 		if err := reader.Err(); err != nil {
-			f.Close()
+			_ = f.Close()
 			t.Fatal(err)
 		}
-		f.Close()
+		_ = f.Close()
 	}
 
 	if totalFrames != len(frames) {
@@ -538,7 +538,7 @@ func TestJournalCrashResilience(t *testing.T) {
 		t.Fatal(err)
 	}
 	origBlocks := origReader.BlockCount()
-	f.Close()
+	_ = f.Close()
 
 	if origBlocks < 2 {
 		t.Fatalf("need at least 2 blocks, got %d", origBlocks)
