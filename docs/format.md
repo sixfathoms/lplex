@@ -1,0 +1,145 @@
+ N2K Journal: Block-Based Binary CAN Frame Recording
+
+ Context
+
+ lplex receives NMEA 2000 CAN frames, reassembles fast-packets, discovers devices, and streams to SSE clients. We want to record this data to disk as a journal for future replay. Each journal file should be self-contained: a consumer reads it like a
+ live stream and naturally builds up device state from the frames themselves.
+
+ Key Design Decisions
+
+ Block-based format. Fixed-size blocks (default 64KB). Each block has an absolute timestamp header, packed frame data, a device table, and a CRC32C-checked trailer. No record type tags.
+
+ Standard-length flag in CANID. The 29-bit CAN ID occupies bits 0-28 of a uint32, leaving bits 29-31 spare. Bit 31 = 1 means "data is exactly 8 bytes, no DataLen field." This eliminates the 1-byte DataLen varint on ~90-95% of frames (all standard
+ single-frame PGNs). Only reassembled fast-packets and rare short frames need the extended format.
+
+ Per-block device table with sequence tracking. Each block's trailer contains device registry entries with an ActiveFrom field: the frame index (within the block) where that NAME→Source binding became active. This correctly handles mid-block source
+ address changes (address claim conflicts) and lets consumers reconstruct the device state at any point within a block.
+
+ Record reassembled frames, not raw CAN fragments. Zero changes to CANReader. Tap at broker level.
+
+ Separate goroutine with batched block writes. Frames buffered in memory, written as complete blocks. 16384-entry channel between broker and writer. On crash, up to one block (~20s at 200fps with 64KB blocks) lost; all completed blocks intact with
+ checksums.
+
+ Binary Format
+
+ File Header (16 bytes)
+
+ Offset  Size  Field
+ 0       3     Magic: "LPJ" (0x4C 0x50 0x4A)
+ 3       1     Version: 0x01
+ 4       4     BlockSize: uint32 LE (bytes, power of 2, default 65536, min 4096)
+ 8       4     Flags: uint32 LE (reserved, 0)
+ 12      4     Reserved: uint32 LE (0)
+
+ Block Layout (BlockSize bytes)
+
+ ┌──────────────────────────────────────────────────────────┐
+ │ +0       BaseTime (8 bytes, int64 LE)                    │  Unix microseconds, first frame
+ ├──────────────────────────────────────────────────────────┤
+ │ +8       Frame data                                      │
+ │          [delta] [CANID] [8B data]          (standard)   │  bit 31 of CANID = 1
+ │          [delta] [CANID] [len] [data]       (extended)   │  bit 31 of CANID = 0
+ │          ...                                             │
+ ├──────────────────────────────────────────────────────────┤
+ │          Zero padding                                    │
+ ├──────────────────────────────────────────────────────────┤
+ │ +DeviceTableOffset                                       │
+ │          Device table (variable-length entries)           │
+ │          EntryCount: uint16 LE                           │
+ │          [Src:u8, NAME:u64, ActiveFrom:u32,              │
+ │           ProductCode:u16, 4x len-prefixed strings] * N  │
+ ├──────────────────────────────────────────────────────────┤
+ │ +BlockSize-10   Fixed trailer (10 bytes)                 │
+ │          DeviceTableOffset: uint16 LE                    │
+ │          FrameCount: uint32 LE                           │
+ │          Checksum: uint32 LE (CRC32C of [0..BlockSize-4))│
+ └──────────────────────────────────────────────────────────┘
+
+ Frame Encoding
+
+ Two variants, selected by bit 31 of the stored CANID uint32:
+
+ Standard-length (bit 31 = 1): data is exactly 8 bytes, no DataLen field.
+ DeltaUs    varint     Microseconds since previous frame (0 for first in block)
+ CANID      uint32 LE  29-bit CAN ID | 0x80000000 (bit 31 set)
+ Data       8 bytes    Fixed 8-byte payload
+ Size: 1-3 (delta) + 4 (CANID) + 8 (data) = 13-15 bytes
+
+ Extended-length (bit 31 = 0): variable-length data with explicit length.
+ DeltaUs    varint     Microseconds since previous frame
+ CANID      uint32 LE  29-bit CAN ID (bit 31 clear)
+ DataLen    varint     Payload length (0-1785)
+ Data       DataLen    Payload bytes
+ Size: 1-3 (delta) + 4 (CANID) + 1-2 (len) + N (data)
+
+ Reader logic: read CANID uint32, check canid & 0x80000000. If set, mask it off (canid &= 0x7FFFFFFF) and read 8 bytes. If clear, read DataLen varint then that many bytes.
+
+ Writer logic: if len(data) == 8, set bit 31 and skip DataLen. Otherwise, clear bit 31 and write DataLen varint.
+
+ Device Table
+
+ Located at DeviceTableOffset within the block. Contains a log of NAME→Source bindings with product info, each with the frame index where the binding became active.
+
+ EntryCount:  uint16 LE
+ For each entry (variable length, min 19 bytes):
+     Source:       uint8      Source address (0-253)
+     NAME:         uint64 LE  64-bit ISO NAME from PGN 60928
+     ActiveFrom:   uint32 LE  Frame index within block (0 = active from block start)
+     ProductCode:  uint16 LE  PGN 126996 product code (0 = unknown)
+     ModelIDLen:   uint8      Length of ModelID string
+     ModelID:      N bytes    PGN 126996 model identifier
+     SWVersionLen: uint8      Length of SoftwareVersion string
+     SWVersion:    N bytes    PGN 126996 software version
+     ModelVerLen:  uint8      Length of ModelVersion string
+     ModelVersion: N bytes    PGN 126996 model version
+     SerialLen:    uint8      Length of ModelSerial string
+     ModelSerial:  N bytes    PGN 126996 serial number
+
+ Semantics:
+ - Entries with ActiveFrom = 0: device was known before this block started (carried over)
+ - Entries with ActiveFrom > 0: device was discovered (or source changed) at that frame
+ - Multiple entries for the same source: the one with the largest ActiveFrom <= targetFrame is active at targetFrame
+ - To find who's at source S at frame N: scan entries for Source == S, pick the one with max ActiveFrom <= N
+ - Product info fields come from PGN 126996 and may be empty (zero-length strings, ProductCode=0) if not yet discovered
+
+ Example: Device A at source 5 from frame 0, device B takes over source 5 at frame 1500:
+ {Source: 5, NAME: A_name, ActiveFrom: 0, ProductCode: 1234, ModelID: "GNX 120", ...}
+ {Source: 5, NAME: B_name, ActiveFrom: 1500, ProductCode: 0, ModelID: "", ...}
+
+ Writer: when flushing a block, the writer tracks which PGN 60928 frames it saw during the block. It builds the device table from:
+ 1. A snapshot of the registry at block start (all entries with ActiveFrom=0), including product info
+ 2. Any address claims that appeared as frames within the block (ActiveFrom = frame index), with product info looked up from the device registry
+
+ Varints
+
+ Standard unsigned LEB128. encoding/binary.PutUvarint / binary.ReadUvarint.
+
+ Seeking
+
+ 1. Block count = (fileSize - 16) / BlockSize
+ 2. Binary search: read int64 LE at offset 16 + mid * BlockSize
+ 3. Find block where BaseTime <= target < nextBlock.BaseTime
+ 4. Read device table via DeviceTableOffset for instant device context
+ 5. Parse frames within block to find exact position
+
+ O(log N) reads. 1-hour file: ~190 blocks, ~8 search steps.
+
+ Size Estimates
+
+ At 200 fps, ~95% standard-length frames:
+ - Standard: 13 bytes * 190 frames/sec = 2470 B/s
+ - Extended: 18 bytes avg * 10 frames/sec = 180 B/s
+ - Total: ~2.7 KB/s = ~9.5 MB/hour
+
+ Device table: ~1000-1600 bytes per block (20 devices with product info, ~50-80 bytes/entry). Block overhead still negligible relative to frame data.
+
+ Rotation
+
+ Configurable triggers (checked per block flush):
+ - Duration: wall-clock time since file creation (default: 1 hour)
+ - Size: total bytes written (default: 0, disabled)
+ - Count: total frame records (default: 0, disabled)
+
+ Rotation: finalize block → sync → close file → open new file → write header.
+
+ File naming: {dir}/{prefix}-{YYYYMMDD}T{HHMMSS.sss}Z.lpj

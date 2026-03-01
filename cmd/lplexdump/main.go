@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -17,6 +19,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sixfathoms/lplex/canbus"
+	"github.com/sixfathoms/lplex/journal"
 	"github.com/sixfathoms/lplex/lplexc"
 )
 
@@ -65,6 +69,11 @@ func main() {
 	jsonMode := flag.Bool("json", false, "raw JSON lines (default when stdout is piped)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 
+	// Journal replay flags.
+	filePath := flag.String("file", "", "replay from .lpj journal file (mutually exclusive with -server)")
+	speed := flag.Float64("speed", 0, "playback speed multiplier (0 = as fast as possible, 1.0 = real-time)")
+	startTime := flag.String("start", "", "seek to RFC3339 timestamp before replaying")
+
 	var filterPGNs uintSlice
 	var filterManufacturers stringSlice
 	var filterInstances uintSlice
@@ -81,6 +90,35 @@ func main() {
 		os.Exit(0)
 	}
 
+	if !*jsonMode && !isTerminal(os.Stdout) {
+		*jsonMode = true
+	}
+
+	if *quiet {
+		log.SetOutput(io.Discard)
+	} else {
+		log.SetOutput(os.Stderr)
+	}
+	log.SetFlags(log.Ltime)
+
+	// Journal replay mode.
+	if *filePath != "" {
+		if *serverURL != "" || *bufferTimeout != "" {
+			fmt.Fprintf(os.Stderr, "-file cannot be used with -server or -buffer-timeout\n")
+			os.Exit(1)
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer cancel()
+
+		devices := newDeviceMap()
+		if err := runReplay(ctx, *filePath, *speed, *startTime, *jsonMode, filterPGNs, filterManufacturers, filterInstances, filterNames, devices); err != nil {
+			fmt.Fprintf(os.Stderr, "replay error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Live streaming mode.
 	if *serverURL == "" {
 		discovered, err := lplexc.Discover(context.Background())
 		if err != nil {
@@ -99,17 +137,6 @@ func main() {
 		}
 		*clientID = h
 	}
-
-	if !*jsonMode && !isTerminal(os.Stdout) {
-		*jsonMode = true
-	}
-
-	if *quiet {
-		log.SetOutput(io.Discard)
-	} else {
-		log.SetOutput(os.Stderr)
-	}
-	log.SetFlags(log.Ltime)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -170,6 +197,230 @@ func buildFilter(pgns uintSlice, manufacturers stringSlice, instances uintSlice,
 		f.Instances = append(f.Instances, uint8(i))
 	}
 	return f
+}
+
+// ---------------------------------------------------------------------------
+// Journal replay
+// ---------------------------------------------------------------------------
+
+func runReplay(ctx context.Context, path string, speed float64, startTimeStr string, jsonMode bool, pgns uintSlice, manufacturers stringSlice, instances uintSlice, names stringSlice, devices *deviceMap) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open journal: %w", err)
+	}
+	defer f.Close()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("journal: %s (%d blocks)", path, reader.BlockCount())
+
+	if startTimeStr != "" {
+		t, err := time.Parse(time.RFC3339, startTimeStr)
+		if err != nil {
+			return fmt.Errorf("invalid -start time: %w", err)
+		}
+		if err := reader.SeekToTime(t); err != nil {
+			return fmt.Errorf("seek: %w", err)
+		}
+		log.Printf("seeked to %s (block %d)", t.Format(time.RFC3339), reader.CurrentBlock())
+	}
+
+	// Load initial device table if we seeked into a block.
+	lastBlock := reader.CurrentBlock()
+	if lastBlock >= 0 {
+		loadDeviceTable(reader, devices)
+		printDeviceTable(os.Stderr, devices)
+	}
+
+	out := bufio.NewWriter(os.Stdout)
+	defer out.Flush()
+
+	var (
+		frameCount    uint64
+		matchCount    uint64
+		firstTs       time.Time
+		lastTs        time.Time
+		prevTs        time.Time
+		blocksRead    int
+		printedDevices bool
+	)
+
+	for reader.Next() {
+		if ctx.Err() != nil {
+			break
+		}
+
+		entry := reader.Frame()
+
+		// Refresh device table on block transitions.
+		if reader.CurrentBlock() != lastBlock {
+			lastBlock = reader.CurrentBlock()
+			blocksRead++
+			loadDeviceTable(reader, devices)
+			// Print device table once after the first block loads.
+			if !printedDevices {
+				printedDevices = true
+				printDeviceTable(os.Stderr, devices)
+			}
+		}
+
+		frameCount++
+		if firstTs.IsZero() {
+			firstTs = entry.Timestamp
+		}
+		lastTs = entry.Timestamp
+
+		// Client-side filtering.
+		if !matchesReplayFilter(entry, devices, pgns, manufacturers, instances, names) {
+			prevTs = entry.Timestamp
+			continue
+		}
+		matchCount++
+
+		// Speed throttle: sleep for (delta / speed) between frames.
+		if speed > 0 && !prevTs.IsZero() {
+			delta := entry.Timestamp.Sub(prevTs)
+			if delta > 0 {
+				time.Sleep(time.Duration(float64(delta) / speed))
+			}
+		}
+		prevTs = entry.Timestamp
+
+		fr := entryToFrame(entry, matchCount)
+
+		if jsonMode {
+			b, _ := json.Marshal(fr)
+			out.Write(b)
+			out.WriteByte('\n')
+		} else {
+			formatFrame(out, &fr, devices)
+		}
+		out.Flush()
+	}
+
+	if err := reader.Err(); err != nil {
+		return fmt.Errorf("journal read: %w", err)
+	}
+
+	duration := lastTs.Sub(firstTs)
+	if blocksRead == 0 && lastBlock >= 0 {
+		blocksRead = 1
+	}
+	log.Printf("replay done: %d frames read, %d matched, %d blocks, %s span (%s to %s)",
+		frameCount, matchCount, blocksRead,
+		duration.Truncate(time.Second),
+		firstTs.UTC().Format("15:04:05"),
+		lastTs.UTC().Format("15:04:05"),
+	)
+
+	return nil
+}
+
+// loadDeviceTable reads the current block's device table and populates the device map.
+func loadDeviceTable(reader *journal.Reader, devices *deviceMap) {
+	for _, jd := range reader.BlockDevices() {
+		fields := canbus.DecodeNAME(jd.NAME)
+		devices.update(lplexc.Device{
+			Src:              jd.Source,
+			Name:             fields.NAMEHex,
+			Manufacturer:     fields.Manufacturer,
+			ManufacturerCode: fields.ManufacturerCode,
+			DeviceClass:      fields.DeviceClass,
+			DeviceFunction:   fields.DeviceFunction,
+			DeviceInstance:   fields.DeviceInstance,
+			UniqueNumber:     fields.UniqueNumber,
+			ProductCode:      jd.ProductCode,
+			ModelID:          jd.ModelID,
+			SoftwareVersion:  jd.SoftwareVersion,
+			ModelVersion:     jd.ModelVersion,
+			ModelSerial:      jd.ModelSerial,
+		})
+	}
+}
+
+// entryToFrame converts a journal entry to the lplexc frame struct.
+func entryToFrame(entry journal.Entry, seq uint64) lplexc.Frame {
+	return lplexc.Frame{
+		Seq:  seq,
+		Ts:   entry.Timestamp.UTC().Format(time.RFC3339Nano),
+		Prio: entry.Header.Priority,
+		PGN:  entry.Header.PGN,
+		Src:  entry.Header.Source,
+		Dst:  entry.Header.Destination,
+		Data: hex.EncodeToString(entry.Data),
+	}
+}
+
+// matchesReplayFilter applies client-side filters to a journal entry.
+// Categories are AND'd, values within a category are OR'd.
+func matchesReplayFilter(entry journal.Entry, devices *deviceMap, pgns uintSlice, manufacturers stringSlice, instances uintSlice, names stringSlice) bool {
+	if len(pgns) == 0 && len(manufacturers) == 0 && len(instances) == 0 && len(names) == 0 {
+		return true
+	}
+
+	if len(pgns) > 0 {
+		matched := false
+		for _, pgn := range pgns {
+			if uint32(pgn) == entry.Header.PGN {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	if len(manufacturers) > 0 || len(instances) > 0 || len(names) > 0 {
+		dev, ok := devices.get(entry.Header.Source)
+		if !ok {
+			return false
+		}
+
+		if len(manufacturers) > 0 {
+			matched := false
+			for _, m := range manufacturers {
+				if strings.EqualFold(dev.Manufacturer, m) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return false
+			}
+		}
+
+		if len(instances) > 0 {
+			matched := false
+			for _, inst := range instances {
+				if uint8(inst) == dev.DeviceInstance {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return false
+			}
+		}
+
+		if len(names) > 0 {
+			matched := false
+			for _, n := range names {
+				if strings.EqualFold(dev.Name, n) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func ackFinal(client *lplexc.Client, clientID string, seq uint64) {

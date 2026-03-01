@@ -44,6 +44,9 @@ go get github.com/sixfathoms/lplex/lplexc@latest
 # Start the server (requires SocketCAN interface)
 lplex -interface can0 -port 8089
 
+# With journal recording enabled
+lplex -interface can0 -port 8089 -journal-dir /var/log/lplex
+
 # Or with systemd
 sudo systemctl enable --now lplex
 ```
@@ -107,21 +110,23 @@ Broker goroutine (single writer, owns all state)
     |  updates device registry (PGN 60928, PGN 126996)
     |  fans out to sessions and ephemeral subscribers
     |  sends ISO requests to discover new devices
+    |  feeds journal writer (if enabled)
     |
     +---> ring buffer (pre-serialized JSON, power-of-2)
     +---> DeviceRegistry (keyed by source address)
     +---> sessions map (buffered clients with cursors)
     +---> subscribers map (ephemeral clients, no state)
+    +---> journal chan (optional, 16k buffer)
     |
     v
-HTTP Server (:8089)
-    |
-    +-- GET  /events               ephemeral SSE stream
-    +-- PUT  /clients/{id}         create/reconnect buffered session
-    +-- GET  /clients/{id}/events  buffered SSE stream with replay
-    +-- PUT  /clients/{id}/ack     advance cursor
-    +-- POST /send                 transmit a CAN frame
-    +-- GET  /devices              discovered device snapshot
+HTTP Server (:8089)                JournalWriter goroutine
+    |                                   |  block-based .lpj files
+    +-- GET  /events                    |  CRC32C checksums
+    +-- PUT  /clients/{id}              |  device table per block
+    +-- GET  /clients/{id}/events       |  O(log N) time seeking
+    +-- PUT  /clients/{id}/ack          |  ~9.5 MB/hour at 200 fps
+    +-- POST /send                      v
+    +-- GET  /devices              .lpj journal files
 
 CANWriter goroutine
     |  fragments fast-packets for TX
@@ -152,12 +157,35 @@ Disconnected sessions keep their cursor for the buffer duration.
 
 `GET /devices` returns JSON array of all discovered NMEA 2000 devices.
 
+## Journal Recording
+
+lplex can record all CAN frames to disk as block-based binary journal files (`.lpj`) for future replay and analysis.
+
+```bash
+# Enable recording
+lplex -interface can0 -journal-dir /var/log/lplex
+
+# With rotation (new file every hour)
+lplex -interface can0 -journal-dir /var/log/lplex -journal-rotate-duration PT1H
+```
+
+**Flags:**
+| Flag | Default | Description |
+|---|---|---|
+| `-journal-dir` | (disabled) | Directory for journal files |
+| `-journal-prefix` | `nmea2k` | Journal file name prefix |
+| `-journal-block-size` | `65536` | Block size (power of 2, min 4096) |
+| `-journal-rotate-duration` | `PT1H` | Rotate after duration (ISO 8601) |
+| `-journal-rotate-size` | `0` | Rotate after bytes (0 = disabled) |
+
+Files are named `{prefix}-{timestamp}.lpj` and are self-contained: each block includes a device table so consumers can resolve source addresses without external state. See [docs/format.md](docs/format.md) for the binary format specification.
+
 ## Deployment
 
 The `.deb` package installs a systemd service that binds to `can0`. Configure via `/etc/default/lplex`:
 
 ```bash
-LPLEX_ARGS="-interface can0 -port 8089"
+LPLEX_ARGS="-interface can0 -port 8089 -journal-dir /var/log/lplex"
 ```
 
 ## License
