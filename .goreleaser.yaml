@@ -67,9 +67,7 @@ nfpms:
         dst: /etc/default/lplex
         type: config
     scripts:
-      postinstall: |
-        systemctl daemon-reload
-        systemctl enable lplex || true
+      postinstall: packaging/postinstall.sh
 
 brews:
   - ids:
