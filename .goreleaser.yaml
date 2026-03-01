@@ -1,0 +1,139 @@
+version: 2
+
+builds:
+  - id: lplex
+    main: ./cmd/lplex
+    binary: lplex
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: lplexdump
+    main: ./cmd/lplexdump
+    binary: lplexdump
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    builds:
+      - lplex
+      - lplexdump
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+nfpms:
+  - id: lplex-deb
+    package_name: lplex
+    builds:
+      - lplex
+      - lplexdump
+    vendor: Theo Zourzouvillys
+    homepage: https://github.com/zourzouvillys/lplex
+    maintainer: Theo Zourzouvillys
+    description: CAN bus HTTP bridge for NMEA 2000
+    license: MIT
+    formats:
+      - deb
+    contents:
+      - src: packaging/lplex.service
+        dst: /lib/systemd/system/lplex.service
+      - src: packaging/lplex.default
+        dst: /etc/default/lplex
+        type: config
+    scripts:
+      postinstall: |
+        systemctl daemon-reload
+        systemctl enable lplex || true
+
+brews:
+  - ids:
+      - default
+    repository:
+      owner: zourzouvillys
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/zourzouvillys/lplex
+    description: CAN bus HTTP bridge for NMEA 2000
+    license: MIT
+    install: |
+      bin.install "lplex"
+      bin.install "lplexdump"
+
+dockers:
+  - ids:
+      - lplex
+    image_templates:
+      - "ghcr.io/zourzouvillys/lplex:{{ .Version }}-amd64"
+      - "ghcr.io/zourzouvillys/lplex:latest-amd64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+    dockerfile: Dockerfile
+    extra_files:
+      - go.mod
+      - go.sum
+      - cmd/
+      - internal/
+      - lplexc/
+
+  - ids:
+      - lplex
+    image_templates:
+      - "ghcr.io/zourzouvillys/lplex:{{ .Version }}-arm64"
+      - "ghcr.io/zourzouvillys/lplex:latest-arm64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+    goarch: arm64
+    dockerfile: Dockerfile
+    extra_files:
+      - go.mod
+      - go.sum
+      - cmd/
+      - internal/
+      - lplexc/
+
+docker_manifests:
+  - name_template: "ghcr.io/zourzouvillys/lplex:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/zourzouvillys/lplex:{{ .Version }}-amd64"
+      - "ghcr.io/zourzouvillys/lplex:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/zourzouvillys/lplex:latest"
+    image_templates:
+      - "ghcr.io/zourzouvillys/lplex:latest-amd64"
+      - "ghcr.io/zourzouvillys/lplex:latest-arm64"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"

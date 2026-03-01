@@ -1,0 +1,24 @@
+# Binaries
+/lplex
+/lplexdump
+lplex-linux-*
+*.exe
+
+# Build output
+dist/
+bin/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Test databases
+*.db
+*.db-shm
+*.db-wal

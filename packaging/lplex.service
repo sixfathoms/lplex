@@ -1,0 +1,15 @@
+[Unit]
+Description=lplex - CAN bus HTTP bridge for NMEA 2000
+After=network.target sys-subsystem-net-devices-can0.device
+BindsTo=sys-subsystem-net-devices-can0.device
+
+[Service]
+Type=simple
+User=theo
+ExecStart=/usr/bin/lplex $LPLEX_ARGS
+EnvironmentFile=-/etc/default/lplex
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
