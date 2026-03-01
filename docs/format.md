@@ -49,14 +49,14 @@
  ├──────────────────────────────────────────────────────────┤
  │          Zero padding                                    │
  ├──────────────────────────────────────────────────────────┤
- │ +DeviceTableOffset                                       │
+ │ +(BlockSize-10-DeviceTableSize)                           │
  │          Device table (variable-length entries)           │
  │          EntryCount: uint16 LE                           │
  │          [Src:u8, NAME:u64, ActiveFrom:u32,              │
  │           ProductCode:u16, 4x len-prefixed strings] * N  │
  ├──────────────────────────────────────────────────────────┤
  │ +BlockSize-10   Fixed trailer (10 bytes)                 │
- │          DeviceTableOffset: uint16 LE                    │
+ │          DeviceTableSize: uint16 LE                      │
  │          FrameCount: uint32 LE                           │
  │          Checksum: uint32 LE (CRC32C of [0..BlockSize-4))│
  └──────────────────────────────────────────────────────────┘
@@ -139,7 +139,7 @@
 
  Device Table
 
- Located at DeviceTableOffset within the block. Contains a log of NAME→Source bindings with product info, each with the frame index where the binding became active.
+ Located at (BlockSize - 10 - DeviceTableSize) within the block. The trailer stores DeviceTableSize (bytes of device table including the 2-byte entry count), and the reader computes the offset. Contains a log of NAME→Source bindings with product info, each with the frame index where the binding became active.
 
  EntryCount:  uint16 LE
  For each entry (variable length, min 19 bytes):
@@ -181,7 +181,7 @@
  1. Block count = (fileSize - 16) / BlockSize
  2. Binary search: read int64 LE at offset 16 + mid * BlockSize
  3. Find block where BaseTime <= target < nextBlock.BaseTime
- 4. Read device table via DeviceTableOffset for instant device context
+ 4. Read device table via DeviceTableSize in trailer for instant device context
  5. Parse frames within block to find exact position
  O(log N) reads. 1-hour file: ~190 blocks, ~8 search steps.
 
