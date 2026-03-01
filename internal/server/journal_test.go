@@ -194,7 +194,7 @@ func TestJournalDeviceTableWithAddressChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader, err := journal.NewReader(f)
 	if err != nil {
@@ -254,7 +254,7 @@ func TestJournalDeviceTableSeeking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader, err := journal.NewReader(f)
 	if err != nil {
@@ -333,7 +333,7 @@ func TestJournalBlockChecksum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader, err := journal.NewReader(f)
 	if err != nil {
@@ -408,7 +408,7 @@ func TestJournalTimeSeeking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader, err := journal.NewReader(f)
 	if err != nil {
@@ -558,7 +558,7 @@ func TestJournalCrashResilience(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader, err := journal.NewReader(f)
 	if err != nil {
@@ -752,7 +752,7 @@ func TestJournalProductInfoRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader, err := journal.NewReader(f)
 	if err != nil {
@@ -832,7 +832,7 @@ func TestJournalProductInfoInBlockChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader, err := journal.NewReader(f)
 	if err != nil {
