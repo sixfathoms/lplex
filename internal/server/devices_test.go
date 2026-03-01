@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"testing"
 	"time"
+
+	"github.com/sixfathoms/lplex/canbus"
 )
 
 func TestDecodeNAME(t *testing.T) {
@@ -153,7 +155,7 @@ func TestDeviceRegistryShortData(t *testing.T) {
 }
 
 func TestLookupUnknownManufacturer(t *testing.T) {
-	name := lookupManufacturer(9999)
+	name := canbus.LookupManufacturer(9999)
 	if name != "Unknown (9999)" {
 		t.Errorf("got %q, want 'Unknown (9999)'", name)
 	}

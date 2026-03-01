@@ -188,6 +188,9 @@ type Broker struct {
 	subscribers  map[*subscriber]struct{}
 
 	maxBufferDuration time.Duration
+
+	// journal channel (nil = journaling disabled)
+	journal chan<- RxFrame
 }
 
 // TxRequest is a frame to write to the CAN bus.
@@ -338,6 +341,15 @@ func (b *Broker) handleFrame(frame RxFrame) {
 
 	// Fan out to connected clients (filters checked per-session)
 	b.fanOut(frame.Header, jsonBytes)
+
+	// Send to journal writer (non-blocking)
+	if b.journal != nil {
+		select {
+		case b.journal <- frame:
+		default:
+			b.logger.Warn("journal buffer full, dropping frame")
+		}
+	}
 }
 
 type frameJSON struct {
@@ -610,4 +622,14 @@ func (b *Broker) TxFrames() <-chan TxRequest {
 // CloseRx closes the rxFrames channel, signaling the broker to stop processing.
 func (b *Broker) CloseRx() {
 	close(b.rxFrames)
+}
+
+// SetJournal sets the journal channel. Must be called before Run.
+func (b *Broker) SetJournal(ch chan<- RxFrame) {
+	b.journal = ch
+}
+
+// Devices returns the broker's device registry.
+func (b *Broker) Devices() *DeviceRegistry {
+	return b.devices
 }

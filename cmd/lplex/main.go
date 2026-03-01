@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,6 +27,11 @@ func main() {
 	port := flag.Int("port", 8089, "HTTP listen port")
 	maxBufDur := flag.String("max-buffer-duration", "PT5M", "Max client buffer duration (ISO 8601, e.g. PT5M)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
+	journalDir := flag.String("journal-dir", "", "Directory for journal files (empty = disabled)")
+	journalPrefix := flag.String("journal-prefix", "nmea2k", "Journal file name prefix")
+	journalBlockSize := flag.Int("journal-block-size", 65536, "Journal block size (power of 2, min 4096)")
+	journalRotateDur := flag.String("journal-rotate-duration", "PT1H", "Rotate journal after duration (ISO 8601, e.g. PT1H)")
+	journalRotateSize := flag.Int64("journal-rotate-size", 0, "Rotate journal after bytes (0 = disabled)")
 	flag.Parse()
 
 	if *showVersion {
@@ -54,6 +60,48 @@ func main() {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	var wg sync.WaitGroup
+
+	// Set up journal writer if configured
+	var journalCh chan server.RxFrame
+	if *journalDir != "" {
+		var rotateDur time.Duration
+		if *journalRotateDur != "" {
+			rotateDur, err = server.ParseISO8601Duration(*journalRotateDur)
+			if err != nil {
+				logger.Error("invalid journal-rotate-duration", "value", *journalRotateDur, "error", err)
+				os.Exit(1)
+			}
+		}
+
+		journalCh = make(chan server.RxFrame, 16384)
+		broker.SetJournal(journalCh)
+
+		jw, err := server.NewJournalWriter(server.JournalConfig{
+			Dir:            *journalDir,
+			Prefix:         *journalPrefix,
+			BlockSize:      *journalBlockSize,
+			RotateDuration: rotateDur,
+			RotateSize:     *journalRotateSize,
+			Logger:         logger,
+		}, broker.Devices(), journalCh)
+		if err != nil {
+			logger.Error("journal writer init failed", "error", err)
+			os.Exit(1)
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := jw.Run(ctx); err != nil {
+				if ctx.Err() == nil {
+					logger.Error("journal writer failed", "error", err)
+				}
+			}
+		}()
+		logger.Info("journal enabled", "dir", *journalDir, "block_size", *journalBlockSize)
+	}
 
 	go broker.Run()
 
@@ -114,5 +162,10 @@ func main() {
 	}
 
 	broker.CloseRx()
+	if journalCh != nil {
+		close(journalCh)
+	}
+	wg.Wait()
+
 	logger.Info("lplex stopped")
 }
