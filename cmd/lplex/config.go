@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -27,9 +28,18 @@ var configToFlag = map[string]string{
 // Returns "" with no error if no config file is found.
 func findConfigFile(configFlag string) (string, error) {
 	if configFlag != "" {
-		if _, err := os.Stat(configFlag); err != nil {
-			return "", fmt.Errorf("config file not found: %s", configFlag)
+		info, err := os.Stat(configFlag)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return "", fmt.Errorf("config file not found: %s", configFlag)
+			}
+
+			return "", fmt.Errorf("checking config file %s: %w", configFlag, err)
 		}
+		if info.IsDir() {
+			return "", fmt.Errorf("config path is a directory: %s", configFlag)
+		}
+
 		return configFlag, nil
 	}
 
