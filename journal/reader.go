@@ -348,6 +348,8 @@ func (jr *Reader) CurrentBlock() int {
 }
 
 // Next advances to the next frame. Returns false when done or on error.
+// If a frame within a block is corrupt, the remaining frames in that block
+// are skipped and iteration continues with the next block.
 func (jr *Reader) Next() bool {
 	for {
 		if jr.blockData != nil && jr.frameIdx < jr.frameCount {
@@ -355,7 +357,10 @@ func (jr *Reader) Next() bool {
 				return true
 			}
 			if jr.err != nil {
-				return false
+				// Frame-level error: skip the rest of this block and try the next one.
+				jr.err = nil
+				jr.blockData = nil
+				continue
 			}
 		}
 
@@ -678,7 +683,8 @@ func (jr *Reader) parseLoadedBlock(n int) error {
 	}
 
 	trailerOff := bs - BlockTrailerLen
-	devTableOff := int(binary.LittleEndian.Uint16(jr.blockBuf[trailerOff:]))
+	devTableSize := int(binary.LittleEndian.Uint16(jr.blockBuf[trailerOff:]))
+	devTableOff := bs - BlockTrailerLen - devTableSize
 	frameCount := int(binary.LittleEndian.Uint32(jr.blockBuf[trailerOff+2:]))
 	baseTimeUs := int64(binary.LittleEndian.Uint64(jr.blockBuf[0:8]))
 

@@ -347,7 +347,7 @@ func (w *JournalWriter) flushBlock() error {
 	}
 
 	trailerOff := bs - journal.BlockTrailerLen
-	binary.LittleEndian.PutUint16(w.block[trailerOff:], uint16(devTableOffset))
+	binary.LittleEndian.PutUint16(w.block[trailerOff:], uint16(devTableBytes))
 	binary.LittleEndian.PutUint32(w.block[trailerOff+2:], w.frameCount)
 	checksum := crc32.Checksum(w.block[:bs-4], journal.CRC32cTable)
 	binary.LittleEndian.PutUint32(w.block[bs-4:], checksum)

@@ -1603,3 +1603,155 @@ func TestJournalZstdDictInspect(t *testing.T) {
 		}
 	}
 }
+
+// TestJournalDefaultBlockSizeRoundTrip uses the real default block size (262144)
+// which previously caused a uint16 overflow when storing DeviceTableOffset.
+func TestJournalDefaultBlockSizeRoundTrip(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	// Generate enough frames to fill at least one 256KB block.
+	// Each standard frame is ~13 bytes, so ~20k frames should do it.
+	var frames []RxFrame
+	for i := range 20000 {
+		frames = append(frames, makeFrame(
+			base.Add(time.Duration(i)*5*time.Millisecond),
+			129025, uint8(10+i%5),
+			[]byte{byte(i), byte(i >> 8), 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+		))
+	}
+
+	for _, compression := range []journal.CompressionType{
+		journal.CompressionNone,
+		journal.CompressionZstd,
+	} {
+		t.Run(compressionName(compression), func(t *testing.T) {
+			cfg := JournalConfig{
+				Dir:         t.TempDir(),
+				BlockSize:   262144, // default block size, > uint16 max
+				Compression: compression,
+			}
+			result := writeAndReadWith(t, cfg, frames)
+
+			if len(result) != len(frames) {
+				t.Fatalf("got %d frames, want %d", len(result), len(frames))
+			}
+
+			for i, got := range result {
+				want := frames[i]
+				if got.Header.PGN != want.Header.PGN {
+					t.Errorf("frame %d: PGN %d, want %d", i, got.Header.PGN, want.Header.PGN)
+				}
+				if !bytes.Equal(got.Data, want.Data) {
+					t.Errorf("frame %d: data mismatch", i)
+				}
+				if got.Timestamp.UnixMicro() != want.Timestamp.UnixMicro() {
+					t.Errorf("frame %d: timestamp mismatch", i)
+				}
+			}
+		})
+	}
+}
+
+// TestJournalReaderSkipsCorruptedBlock verifies that when a block has corrupted
+// frame data (but valid CRC, simulating a logic bug), the reader skips remaining
+// frames in that block and continues reading subsequent blocks.
+func TestJournalReaderSkipsCorruptedBlock(t *testing.T) {
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	// Generate enough frames to span multiple blocks at 4096 block size.
+	var frames []RxFrame
+	for i := range 700 {
+		frames = append(frames, makeFrame(
+			base.Add(time.Duration(i)*time.Millisecond),
+			129025, 10,
+			[]byte{byte(i), byte(i >> 8), 3, 4, 5, 6, 7, 8},
+		))
+	}
+
+	dir := t.TempDir()
+	devices := NewDeviceRegistry()
+	ch := make(chan RxFrame, len(frames))
+	for _, f := range frames {
+		ch <- f
+	}
+	close(ch)
+
+	cfg := JournalConfig{Dir: dir, BlockSize: 4096}
+	w, err := NewJournalWriter(cfg, devices, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	path := filepath.Join(dir, entries[0].Name())
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Corrupt a structural region in block 1's frame data area by
+	// filling it with 0xFF continuation bytes, which breaks varint decoding.
+	// Then recompute the CRC so loadBlock succeeds but parseNextFrame fails.
+	block1Start := journal.FileHeaderSize + 4096
+	for i := 8; i < 64; i++ {
+		data[block1Start+i] = 0xFF
+	}
+
+	// Recompute CRC for the corrupted block.
+	block1 := data[block1Start : block1Start+4096]
+	crc := crc32.Checksum(block1[:4092], journal.CRC32cTable)
+	binary.LittleEndian.PutUint32(block1[4092:], crc)
+
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	reader, err := journal.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	blockCount := reader.BlockCount()
+	if blockCount < 3 {
+		t.Fatalf("need at least 3 blocks for this test, got %d", blockCount)
+	}
+
+	// Read all frames. Block 1 may be partially or fully skipped,
+	// but blocks 0 and 2+ should still read fine.
+	count := 0
+	for reader.Next() {
+		count++
+	}
+	if reader.Err() != nil {
+		t.Fatalf("reader should not have a fatal error, got: %v", reader.Err())
+	}
+
+	if count == 0 {
+		t.Fatal("expected at least some frames from non-corrupted blocks")
+	}
+	if count >= len(frames) {
+		t.Errorf("expected fewer frames due to corruption, got %d (original %d)", count, len(frames))
+	}
+}
+
+func compressionName(c journal.CompressionType) string {
+	switch c {
+	case journal.CompressionNone:
+		return "uncompressed"
+	case journal.CompressionZstd:
+		return "zstd"
+	case journal.CompressionZstdDict:
+		return "zstd+dict"
+	default:
+		return "unknown"
+	}
+}
