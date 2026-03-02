@@ -30,7 +30,7 @@ func TestBrokerSequenceNumbering(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	c := b.NewConsumer(ConsumerConfig{Cursor: b.head})
+	c := b.NewConsumer(ConsumerConfig{Cursor: b.CurrentSeq() + 1})
 	defer func() { _ = c.Close() }()
 
 	for i := range 3 {
@@ -292,7 +292,7 @@ func TestBrokerFilterByManufacturer(t *testing.T) {
 	registerDevice(b, 5, 229, 0)
 
 	filter := &EventFilter{Manufacturers: []string{"Garmin"}}
-	c := b.NewConsumer(ConsumerConfig{Cursor: b.head, Filter: filter})
+	c := b.NewConsumer(ConsumerConfig{Cursor: b.CurrentSeq() + 1, Filter: filter})
 	defer func() { _ = c.Close() }()
 
 	// Frame from Garmin (src 5) should pass.
@@ -326,7 +326,7 @@ func TestBrokerFilterByManufacturerCode(t *testing.T) {
 
 	// Filter by numeric code "229" instead of name "Garmin".
 	filter := &EventFilter{Manufacturers: []string{"229"}}
-	c := b.NewConsumer(ConsumerConfig{Cursor: b.head, Filter: filter})
+	c := b.NewConsumer(ConsumerConfig{Cursor: b.CurrentSeq() + 1, Filter: filter})
 	defer func() { _ = c.Close() }()
 
 	injectFrame(b, 129025, 5, []byte{0xAA, 0, 0, 0, 0, 0, 0, 0})
@@ -355,7 +355,7 @@ func TestBrokerFilterByInstance(t *testing.T) {
 	registerDevice(b, 3, 229, 2)
 
 	filter := &EventFilter{Instances: []uint8{2}}
-	c := b.NewConsumer(ConsumerConfig{Cursor: b.head, Filter: filter})
+	c := b.NewConsumer(ConsumerConfig{Cursor: b.CurrentSeq() + 1, Filter: filter})
 	defer func() { _ = c.Close() }()
 
 	// Frame from instance 2 device should pass.
@@ -389,7 +389,7 @@ func TestBrokerFilterCombined(t *testing.T) {
 		PGNs:          []uint32{129025},
 		Manufacturers: []string{"Garmin"},
 	}
-	c := b.NewConsumer(ConsumerConfig{Cursor: b.head, Filter: filter})
+	c := b.NewConsumer(ConsumerConfig{Cursor: b.CurrentSeq() + 1, Filter: filter})
 	defer func() { _ = c.Close() }()
 
 	// PGN 129025 from Garmin -> pass.
