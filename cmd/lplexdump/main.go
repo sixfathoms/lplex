@@ -254,7 +254,7 @@ func runInspect(path string) error {
 	fmt.Printf("File: %s (%s)\n\n", path, formatBytes(uint64(fi.Size())))
 	fmt.Printf("Header:\n")
 	fmt.Printf("  Magic:       LPJ\n")
-	fmt.Printf("  Version:     1\n")
+	fmt.Printf("  Version:     %d\n", reader.Version())
 	fmt.Printf("  BlockSize:   %d\n", reader.BlockSize())
 	fmt.Printf("  Compression: %s (%d)\n", compressionName(reader.Compression()), reader.Compression())
 	fmt.Println()
@@ -268,21 +268,43 @@ func runInspect(path string) error {
 	fmt.Printf("Blocks: %d\n\n", nBlocks)
 
 	// Table header
+	isV2 := reader.Version() == journal.Version2
 	if compressed && hasDict {
-		fmt.Printf("  %-4s  %10s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
-			"#", "OFFSET", "DICT", "COMPRESSED", "BLOCK SIZE", "RATIO", "FRAMES", "DEVS", "BASE TIME (UTC)")
-		fmt.Printf("  %-4s  %10s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
-			"----", "----------", "----------", "----------", "----------", "------", "------", "-----", "----------------------------")
+		if isV2 {
+			fmt.Printf("  %-4s  %10s  %12s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
+				"#", "OFFSET", "BASE SEQ", "DICT", "COMPRESSED", "BLOCK SIZE", "RATIO", "FRAMES", "DEVS", "BASE TIME (UTC)")
+			fmt.Printf("  %-4s  %10s  %12s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
+				"----", "----------", "------------", "----------", "----------", "----------", "------", "------", "-----", "----------------------------")
+		} else {
+			fmt.Printf("  %-4s  %10s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
+				"#", "OFFSET", "DICT", "COMPRESSED", "BLOCK SIZE", "RATIO", "FRAMES", "DEVS", "BASE TIME (UTC)")
+			fmt.Printf("  %-4s  %10s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
+				"----", "----------", "----------", "----------", "----------", "------", "------", "-----", "----------------------------")
+		}
 	} else if compressed {
-		fmt.Printf("  %-4s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
-			"#", "OFFSET", "COMPRESSED", "BLOCK SIZE", "RATIO", "FRAMES", "DEVS", "BASE TIME (UTC)")
-		fmt.Printf("  %-4s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
-			"----", "----------", "----------", "----------", "------", "------", "-----", "----------------------------")
+		if isV2 {
+			fmt.Printf("  %-4s  %10s  %12s  %10s  %10s  %6s  %6s  %5s  %s\n",
+				"#", "OFFSET", "BASE SEQ", "COMPRESSED", "BLOCK SIZE", "RATIO", "FRAMES", "DEVS", "BASE TIME (UTC)")
+			fmt.Printf("  %-4s  %10s  %12s  %10s  %10s  %6s  %6s  %5s  %s\n",
+				"----", "----------", "------------", "----------", "----------", "------", "------", "-----", "----------------------------")
+		} else {
+			fmt.Printf("  %-4s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
+				"#", "OFFSET", "COMPRESSED", "BLOCK SIZE", "RATIO", "FRAMES", "DEVS", "BASE TIME (UTC)")
+			fmt.Printf("  %-4s  %10s  %10s  %10s  %6s  %6s  %5s  %s\n",
+				"----", "----------", "----------", "----------", "------", "------", "-----", "----------------------------")
+		}
 	} else {
-		fmt.Printf("  %-4s  %10s  %10s  %6s  %5s  %s\n",
-			"#", "OFFSET", "BLOCK SIZE", "FRAMES", "DEVS", "BASE TIME (UTC)")
-		fmt.Printf("  %-4s  %10s  %10s  %6s  %5s  %s\n",
-			"----", "----------", "----------", "------", "-----", "----------------------------")
+		if isV2 {
+			fmt.Printf("  %-4s  %10s  %12s  %10s  %6s  %5s  %s\n",
+				"#", "OFFSET", "BASE SEQ", "BLOCK SIZE", "FRAMES", "DEVS", "BASE TIME (UTC)")
+			fmt.Printf("  %-4s  %10s  %12s  %10s  %6s  %5s  %s\n",
+				"----", "----------", "------------", "----------", "------", "-----", "----------------------------")
+		} else {
+			fmt.Printf("  %-4s  %10s  %10s  %6s  %5s  %s\n",
+				"#", "OFFSET", "BLOCK SIZE", "FRAMES", "DEVS", "BASE TIME (UTC)")
+			fmt.Printf("  %-4s  %10s  %10s  %6s  %5s  %s\n",
+				"----", "----------", "----------", "------", "-----", "----------------------------")
+		}
 	}
 
 	var totalCompressed int64
@@ -300,20 +322,35 @@ func runInspect(path string) error {
 
 		if compressed && hasDict {
 			ratio := float64(reader.BlockSize()) / float64(bi.CompressedLen+bi.DictLen)
-			fmt.Printf("  %-4d  %10d  %10d  %10d  %10d  %5.1fx  %6d  %5d  %s\n",
-				i, bi.Offset, bi.DictLen, bi.CompressedLen, reader.BlockSize(), ratio, bi.FrameCount, bi.DeviceCount, tsStr)
+			if isV2 {
+				fmt.Printf("  %-4d  %10d  %12d  %10d  %10d  %10d  %5.1fx  %6d  %5d  %s\n",
+					i, bi.Offset, bi.BaseSeq, bi.DictLen, bi.CompressedLen, reader.BlockSize(), ratio, bi.FrameCount, bi.DeviceCount, tsStr)
+			} else {
+				fmt.Printf("  %-4d  %10d  %10d  %10d  %10d  %5.1fx  %6d  %5d  %s\n",
+					i, bi.Offset, bi.DictLen, bi.CompressedLen, reader.BlockSize(), ratio, bi.FrameCount, bi.DeviceCount, tsStr)
+			}
 			totalCompressed += int64(bi.CompressedLen) + int64(bi.DictLen) + int64(journal.BlockHeaderLenDict)
 			totalDictOverhead += int64(bi.DictLen)
 			totalUncompressed += int64(reader.BlockSize())
 		} else if compressed {
 			ratio := float64(reader.BlockSize()) / float64(bi.CompressedLen)
-			fmt.Printf("  %-4d  %10d  %10d  %10d  %5.1fx  %6d  %5d  %s\n",
-				i, bi.Offset, bi.CompressedLen, reader.BlockSize(), ratio, bi.FrameCount, bi.DeviceCount, tsStr)
+			if isV2 {
+				fmt.Printf("  %-4d  %10d  %12d  %10d  %10d  %5.1fx  %6d  %5d  %s\n",
+					i, bi.Offset, bi.BaseSeq, bi.CompressedLen, reader.BlockSize(), ratio, bi.FrameCount, bi.DeviceCount, tsStr)
+			} else {
+				fmt.Printf("  %-4d  %10d  %10d  %10d  %5.1fx  %6d  %5d  %s\n",
+					i, bi.Offset, bi.CompressedLen, reader.BlockSize(), ratio, bi.FrameCount, bi.DeviceCount, tsStr)
+			}
 			totalCompressed += int64(bi.CompressedLen) + int64(journal.BlockHeaderLen)
 			totalUncompressed += int64(reader.BlockSize())
 		} else {
-			fmt.Printf("  %-4d  %10d  %10d  %6d  %5d  %s\n",
-				i, bi.Offset, reader.BlockSize(), bi.FrameCount, bi.DeviceCount, tsStr)
+			if isV2 {
+				fmt.Printf("  %-4d  %10d  %12d  %10d  %6d  %5d  %s\n",
+					i, bi.Offset, bi.BaseSeq, reader.BlockSize(), bi.FrameCount, bi.DeviceCount, tsStr)
+			} else {
+				fmt.Printf("  %-4d  %10d  %10d  %6d  %5d  %s\n",
+					i, bi.Offset, reader.BlockSize(), bi.FrameCount, bi.DeviceCount, tsStr)
+			}
 			totalUncompressed += int64(reader.BlockSize())
 		}
 	}
@@ -347,7 +384,7 @@ func runInspect(path string) error {
 		}
 	}
 
-	// Time span
+	// Time span + seq range
 	first, err := reader.InspectBlock(0)
 	if err == nil {
 		last, err := reader.InspectBlock(nBlocks - 1)
@@ -358,6 +395,15 @@ func runInspect(path string) error {
 			fmt.Printf("  First: %s\n", first.BaseTime.UTC().Format(time.RFC3339))
 			fmt.Printf("  Last:  %s\n", last.BaseTime.UTC().Format(time.RFC3339))
 			fmt.Printf("  Span:  %s\n", duration.Truncate(time.Second))
+
+			if isV2 && first.BaseSeq > 0 {
+				lastSeq := last.BaseSeq + uint64(last.FrameCount) - 1
+				fmt.Println()
+				fmt.Printf("Sequence Range:\n")
+				fmt.Printf("  First: %d\n", first.BaseSeq)
+				fmt.Printf("  Last:  %d\n", lastSeq)
+				fmt.Printf("  Total: %d frames\n", lastSeq-first.BaseSeq+1)
+			}
 		}
 	}
 
@@ -419,6 +465,7 @@ func runReplay(ctx context.Context, path string, speed float64, startTimeStr str
 		}
 
 		entry := reader.Frame()
+		frameSeq := reader.FrameSeq() // v2: actual seq; v1: 0
 
 		// Refresh device table on block transitions.
 		if reader.CurrentBlock() != lastBlock {
@@ -454,7 +501,12 @@ func runReplay(ctx context.Context, path string, speed float64, startTimeStr str
 		}
 		prevTs = entry.Timestamp
 
-		fr := entryToFrame(entry, matchCount)
+		// Use actual journal seq for v2, fall back to match count for v1.
+		seq := frameSeq
+		if seq == 0 {
+			seq = matchCount
+		}
+		fr := entryToFrame(entry, seq)
 
 		if jsonMode {
 			b, _ := json.Marshal(fr)
