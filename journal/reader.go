@@ -271,8 +271,9 @@ func scanBlocks(r io.ReadSeeker, fileSize int64, compression CompressionType, ve
 // BlockInfo holds metadata about a single block for inspection.
 type BlockInfo struct {
 	Index         int
-	Offset        int64 // file offset
+	Offset        int64  // file offset
 	BaseTime      time.Time
+	BaseSeq       uint64 // v2 only; 0 for v1
 	FrameCount    int
 	DeviceCount   int
 	CompressedLen int // 0 for uncompressed blocks
@@ -404,6 +405,7 @@ func (jr *Reader) InspectBlock(n int) (BlockInfo, error) {
 		return bi, err
 	}
 	bi.BaseTime = time.UnixMicro(jr.baseTimeUs)
+	bi.BaseSeq = jr.baseSeqBlock
 	bi.FrameCount = jr.frameCount
 
 	// Count device table entries.
