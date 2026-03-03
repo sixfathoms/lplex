@@ -207,6 +207,16 @@ journal {
     duration = PT1H
     size = 0
   }
+
+  retention {
+    max-age = P30D
+    min-keep = PT24H
+  }
+
+  archive {
+    command = "/usr/local/bin/archive-to-s3"
+    trigger = "on-rotate"
+  }
 }
 
 replication {
@@ -235,9 +245,20 @@ http {
   listen = ":8080"
 }
 data-dir = "/data/lplex"
+
+journal {
+  retention {
+    max-age = P90D
+    max-size = 53687091200
+  }
+  archive {
+    command = "/usr/local/bin/archive-to-gcs"
+    trigger = "before-expire"
+  }
+}
 ```
 
-See [`lplex.conf.example`](lplex.conf.example) for the full annotated version.
+See [`lplex.conf.example`](lplex.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example) for the full annotated versions.
 
 ## Architecture
 
@@ -355,8 +376,53 @@ lplex -interface can0 -journal-dir /var/log/lplex -journal-compression none
 | `-journal-compression` | `zstd` | Block compression: `none`, `zstd`, `zstd-dict` |
 | `-journal-rotate-duration` | `PT1H` | Rotate after duration (ISO 8601) |
 | `-journal-rotate-size` | `0` | Rotate after bytes (0 = disabled) |
+| `-journal-retention-max-age` | (disabled) | Delete files older than this (ISO 8601, e.g. `P30D`) |
+| `-journal-retention-min-keep` | (disabled) | Never delete files younger than this, unless max-size exceeded |
+| `-journal-retention-max-size` | `0` | Hard size cap in bytes; delete oldest files when exceeded |
+| `-journal-retention-soft-pct` | `80` | Proactive archive threshold as % of max-size (1-99) |
+| `-journal-retention-overflow-policy` | `delete-unarchived` | What to do when hard cap hit with failed archives |
+| `-journal-archive-command` | (disabled) | Path to archive script |
+| `-journal-archive-trigger` | (disabled) | When to archive: `on-rotate` or `before-expire` |
 
 Blocks are compressed individually with zstd (~4x ratio at 256KB blocks on typical CAN data, ~158 MB/day at 200 fps). Each block carries a device table so consumers can resolve source addresses without external state. A block index at end-of-file enables fast seeking; crash-truncated files are recovered via forward-scan. See [docs/format.md](docs/format.md) for the binary format specification.
+
+### Retention and Archival
+
+Journal files accumulate indefinitely unless you configure a retention policy. Retention and archival are available on both boat and cloud binaries.
+
+```bash
+# Keep at most 30 days of journals, but never delete files less than 24 hours old
+lplex -interface can0 -journal-dir /var/log/lplex \
+  -journal-retention-max-age P30D -journal-retention-min-keep PT24H
+
+# Hard size cap: keep at most 10 GB, oldest files deleted first
+lplex -interface can0 -journal-dir /var/log/lplex \
+  -journal-retention-max-size 10737418240
+
+# Archive to S3 on rotation, then delete after 30 days
+lplex -interface can0 -journal-dir /var/log/lplex \
+  -journal-retention-max-age P30D \
+  -journal-archive-command /usr/local/bin/archive-to-s3 \
+  -journal-archive-trigger on-rotate
+```
+
+**Retention algorithm**: files are sorted oldest-first. Three zones govern behavior when `max-size` is set with archival:
+
+1. **Normal** (total <= soft threshold): standard age-based expiration, archive-then-delete
+2. **Soft zone** (soft < total <= hard): proactively queue oldest non-archived files for archive
+3. **Hard zone** (total > hard): expire files; if archives have failed, apply the overflow policy
+
+`max-size` overrides `min-keep` overrides `max-age`. The soft threshold defaults to 80% of `max-size` and only applies when both `max-size` and an archive command are configured.
+
+**Overflow policies** (when hard cap is hit and archives have failed):
+- `delete-unarchived` (default): delete files even if not archived, prioritizing continued recording
+- `pause-recording`: stop journal writes until archives free space, prioritizing archive completeness
+
+**Archive script protocol**: the script receives file paths as arguments and JSONL metadata on stdin (one line per file with `path`, `instance_id`, `size`, `created`). It must write JSONL to stdout with per-file status (`"ok"` or `"error"`). Failed files are retried with exponential backoff.
+
+**Archive triggers**:
+- `on-rotate`: archive immediately after a journal file is closed (eager, minimizes data loss window)
+- `before-expire`: archive only when a file is about to be deleted by retention (lazy, minimizes archive traffic)
 
 ## Deployment
 

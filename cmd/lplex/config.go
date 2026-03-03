@@ -20,11 +20,18 @@ var configToFlag = map[string]string{
 	"journal.compression":     "journal-compression",
 	"journal.rotate.duration": "journal-rotate-duration",
 	"journal.rotate.size":     "journal-rotate-size",
-	"replication.target":      "replication-target",
-	"replication.instance-id": "replication-instance-id",
-	"replication.tls.cert":    "replication-tls-cert",
-	"replication.tls.key":     "replication-tls-key",
-	"replication.tls.ca":      "replication-tls-ca",
+	"journal.retention.max-age":         "journal-retention-max-age",
+	"journal.retention.min-keep":        "journal-retention-min-keep",
+	"journal.retention.max-size":        "journal-retention-max-size",
+	"journal.retention.soft-pct":        "journal-retention-soft-pct",
+	"journal.retention.overflow-policy": "journal-retention-overflow-policy",
+	"journal.archive.command":           "journal-archive-command",
+	"journal.archive.trigger":           "journal-archive-trigger",
+	"replication.target":         "replication-target",
+	"replication.instance-id":    "replication-instance-id",
+	"replication.tls.cert":       "replication-tls-cert",
+	"replication.tls.key":        "replication-tls-key",
+	"replication.tls.ca":         "replication-tls-ca",
 }
 
 // findConfigFile resolves which config file to use.

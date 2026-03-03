@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -34,6 +36,13 @@ func main() {
 	tlsCert := flag.String("tls-cert", "", "TLS certificate for gRPC server")
 	tlsKey := flag.String("tls-key", "", "TLS private key for gRPC server")
 	tlsClientCA := flag.String("tls-client-ca", "", "CA certificate for client verification (mTLS)")
+	retentionMaxAge := flag.String("journal-retention-max-age", "", "Delete journal files older than this (ISO 8601, e.g. P30D)")
+	retentionMinKeep := flag.String("journal-retention-min-keep", "", "Never delete files younger than this (ISO 8601, e.g. PT24H), unless max-size exceeded")
+	retentionMaxSize := flag.Int64("journal-retention-max-size", 0, "Hard size cap in bytes; delete oldest files when exceeded")
+	retentionSoftPct := flag.Int("journal-retention-soft-pct", 80, "Proactive archive threshold as % of max-size (1-99)")
+	retentionOverflowPolicy := flag.String("journal-retention-overflow-policy", "delete-unarchived", "Overflow policy: delete-unarchived or pause-recording")
+	archiveCommand := flag.String("journal-archive-command", "", "Path to archive script")
+	archiveTriggerStr := flag.String("journal-archive-trigger", "", "Archive trigger: on-rotate or before-expire")
 	configFile := flag.String("config", "", "Path to HOCON config file")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
@@ -66,6 +75,30 @@ func main() {
 	if err != nil {
 		logger.Error("failed to initialize instance manager", "error", err)
 		os.Exit(1)
+	}
+
+	// Set up journal keeper (retention + archive) if configured.
+	keeperCfg, err := buildKeeperConfig(
+		*dataDir,
+		*retentionMaxAge, *retentionMinKeep, *retentionMaxSize,
+		*retentionSoftPct, *retentionOverflowPolicy,
+		*archiveCommand, *archiveTriggerStr, logger,
+	)
+	if err != nil {
+		logger.Error("invalid retention/archive config", "error", err)
+		os.Exit(1)
+	}
+
+	var keeper *lplex.JournalKeeper
+	if keeperCfg != nil {
+		keeper = lplex.NewJournalKeeper(*keeperCfg)
+		keeper.SetOnPauseChange(func(dir lplex.KeeperDir, paused bool) {
+			im.SetInstancePaused(dir.InstanceID, paused)
+		})
+		im.SetOnRotate(func(instanceID string, rf lplex.RotatedFile) {
+			rf.InstanceID = instanceID
+			keeper.Send(rf)
+		})
 	}
 
 	replServer := lplex.NewReplicationServer(im, logger)
@@ -102,6 +135,25 @@ func main() {
 	// Signal handling
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	var wg sync.WaitGroup
+
+	if keeper != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			keeper.Run(ctx)
+		}()
+		logger.Info("journal keeper enabled",
+			"max_age", *retentionMaxAge,
+			"min_keep", *retentionMinKeep,
+			"max_size", *retentionMaxSize,
+			"soft_pct", *retentionSoftPct,
+			"overflow_policy", *retentionOverflowPolicy,
+			"archive_command", *archiveCommand,
+			"archive_trigger", *archiveTriggerStr,
+		)
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -140,6 +192,7 @@ func main() {
 	}
 
 	im.Shutdown()
+	wg.Wait()
 	logger.Info("lplex-cloud stopped")
 }
 
@@ -225,6 +278,76 @@ func registerCloudHTTP(mux *http.ServeMux, im *lplex.InstanceManager, replServer
 			logger.Error("failed to write devices", "error", err)
 		}
 	})
+}
+
+// buildKeeperConfig parses retention/archive flags and returns a KeeperConfig
+// with a DirFunc that dynamically discovers instance journal dirs, or nil if
+// no retention or archive is configured.
+func buildKeeperConfig(
+	dataDir string,
+	maxAgeStr, minKeepStr string,
+	maxSize int64,
+	softPct int, overflowPolicyStr string,
+	archiveCmd, archiveTriggerStr string,
+	logger *slog.Logger,
+) (*lplex.KeeperConfig, error) {
+	var maxAge, minKeep time.Duration
+	var err error
+
+	if maxAgeStr != "" {
+		maxAge, err = lplex.ParseISO8601Duration(maxAgeStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid journal-retention-max-age %q: %w", maxAgeStr, err)
+		}
+	}
+	if minKeepStr != "" {
+		minKeep, err = lplex.ParseISO8601Duration(minKeepStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid journal-retention-min-keep %q: %w", minKeepStr, err)
+		}
+	}
+
+	archiveTrigger, err := lplex.ParseArchiveTrigger(archiveTriggerStr)
+	if err != nil {
+		return nil, err
+	}
+
+	overflowPolicy, err := lplex.ParseOverflowPolicy(overflowPolicyStr)
+	if err != nil {
+		return nil, err
+	}
+
+	if maxAge == 0 && maxSize == 0 && archiveCmd == "" {
+		return nil, nil
+	}
+
+	return &lplex.KeeperConfig{
+		DirFunc: func() []lplex.KeeperDir {
+			instancesDir := filepath.Join(dataDir, "instances")
+			entries, err := os.ReadDir(instancesDir)
+			if err != nil {
+				return nil
+			}
+			var dirs []lplex.KeeperDir
+			for _, e := range entries {
+				if e.IsDir() {
+					dirs = append(dirs, lplex.KeeperDir{
+						Dir:        filepath.Join(instancesDir, e.Name(), "journal"),
+						InstanceID: e.Name(),
+					})
+				}
+			}
+			return dirs
+		},
+		MaxAge:         maxAge,
+		MinKeep:        minKeep,
+		MaxSize:        maxSize,
+		SoftPct:        softPct,
+		OverflowPolicy: overflowPolicy,
+		ArchiveCommand: archiveCmd,
+		ArchiveTrigger: archiveTrigger,
+		Logger:         logger,
+	}, nil
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

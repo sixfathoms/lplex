@@ -287,6 +287,12 @@ func TestParseISO8601Duration(t *testing.T) {
 		{"PT0H", 0, false},
 		{"PT0H0M0S", 0, false},
 		{"PTXM", 0, true},
+		{"P30D", 30 * 24 * time.Hour, false},
+		{"P1D", 24 * time.Hour, false},
+		{"P7D", 7 * 24 * time.Hour, false},
+		{"P1W", 7 * 24 * time.Hour, false},
+		{"P1DT12H", 36 * time.Hour, false},
+		{"P", 0, true},
 	}
 
 	for _, tt := range tests {

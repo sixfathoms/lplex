@@ -92,6 +92,18 @@ ReplicationClient (optional)
     +-- Live goroutine: Consumer at head -> LiveFrame stream
     +-- Backfill goroutine: raw journal blocks -> Block stream
     +-- Reconnect loop: exponential backoff, re-handshake
+
+JournalKeeper (optional)
+    |  single goroutine per binary
+    +-- OnRotate notifications from JournalWriter/BlockWriter
+    +-- Periodic directory scans (5min)
+    +-- Retention: max-age / min-keep / max-size with soft/hard thresholds
+    +-- Soft zone: proactive archiving at soft-pct% of max-size
+    +-- Overflow policy: delete-unarchived or pause-recording at hard cap
+    +-- Archive: exec script with JSONL stdin/stdout protocol
+    +-- Marker files (.archived) for archive state
+    +-- Retry with exponential backoff (1min -> 1h cap)
+    +-- Per-directory pause state with callback (OnPauseChange)
 ```
 
 ### Cloud Architecture
@@ -108,16 +120,20 @@ lplex-cloud process
   |     +-- GET /instances/{id}/events (SSE)
   |     +-- GET /instances/{id}/devices
   +-- InstanceManager
-        +-- Per-instance state (InstanceState with HoleTracker)
-        +-- Lazy Broker lifecycle (~3MB RAM + 2 goroutines per active instance)
-        +-- Persistent state (state.json per instance)
+  |     +-- Per-instance state (InstanceState with HoleTracker)
+  |     +-- Lazy Broker lifecycle (~3MB RAM + 2 goroutines per active instance)
+  |     +-- Persistent state (state.json per instance)
+  |     +-- SetOnRotate: threads OnRotate callback to JournalWriter/BlockWriter
+  +-- JournalKeeper (optional, shared across all instances)
+        +-- DirFunc dynamically discovers instance journal dirs
+        +-- Retention + archive applied per-instance directory
 ```
 
 ## Package Structure
 
 | Package | Owns |
 |---|---|
-| `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANReader`, `CANWriter`, `JournalWriter`, `DeviceRegistry`, `FastPacketAssembler`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, filters, ring buffer. Embeddable by external Go services. |
+| `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANReader`, `CANWriter`, `JournalWriter`, `JournalKeeper`, `DeviceRegistry`, `FastPacketAssembler`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, filters, ring buffer. Embeddable by external Go services. |
 | `cmd/lplex/` | Boat server: flag parsing, HOCON config, signal handling, mDNS registration, wires broker + CAN I/O + HTTP + optional replication |
 | `cmd/lplex-cloud/` | Cloud server: gRPC + HTTP servers, InstanceManager, mTLS, HOCON config |
 | `cmd/lplexdump/` | CLI client: SSE consumer with pretty-print, device table, auto-reconnect |
@@ -137,11 +153,12 @@ lplex-cloud process
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
 | `fastpacket.go` | `FastPacketAssembler`, `FragmentFastPacket`, fast-packet PGN registry |
 | `devices.go` | `DeviceRegistry`, PGN 60928/126996 decoding, manufacturer lookup table |
-| `journal_writer.go` | `JournalWriter`, `JournalConfig`, block encoding, zstd compression, block index, file rotation, device table tracking (with product info) |
+| `journal_writer.go` | `JournalWriter`, `JournalConfig` (including `OnRotate` callback), block encoding, zstd compression, block index, file rotation, device table tracking (with product info) |
 | `replication.go` | `SeqRange`, `HoleTracker`, `SyncState`, hole tracking algorithm |
 | `replication_client.go` | `ReplicationClient`, `ReplicationClientConfig`, `ReplicationStatus`, live stream + backfill + reconnect loop |
-| `replication_server.go` | `ReplicationServer`, `InstanceManager`, `InstanceState`, `InstanceStatus`, `InstanceSummary`, gRPC handlers (Handshake, Live, Backfill), mTLS verification, state persistence |
-| `block_writer.go` | `BlockWriter`, `BlockWriterConfig`, raw block append to journal files with file rotation |
+| `replication_server.go` | `ReplicationServer`, `InstanceManager` (including `SetOnRotate`), `InstanceState`, `InstanceStatus`, `InstanceSummary`, gRPC handlers (Handshake, Live, Backfill), mTLS verification, state persistence |
+| `block_writer.go` | `BlockWriter`, `BlockWriterConfig` (including `OnRotate` callback), raw block append to journal files with file rotation |
+| `journal_keeper.go` | `JournalKeeper`, `KeeperConfig`, `KeeperDir`, `RotatedFile`, `ArchiveTrigger`, `OverflowPolicy`, retention algorithm (max-age/min-keep/max-size with soft/hard thresholds and overflow policy), archive script execution (JSONL protocol), marker file tracking, retry with exponential backoff, per-directory pause state |
 | `doc.go` | Package documentation with embedding example |
 
 ## Client Modes
@@ -175,6 +192,24 @@ Key design decisions:
 - **Separate streams**: Live and backfill have independent flow control and lifecycle.
 - **Hole tracking**: Sorted interval list tracks gaps. Handshake creates holes on reconnect, backfill fills them.
 
+## Journal Retention and Archival
+
+Both `lplex` and `lplex-cloud` support automatic journal cleanup and archival via `JournalKeeper`. Configured with `-journal-retention-*` and `-journal-archive-*` flags (or HOCON under `journal.retention.*` / `journal.archive.*`).
+
+**Retention**: three knobs (max-age, min-keep, max-size) evaluated per directory. Priority: max-size overrides min-keep overrides max-age. Files sorted oldest-first; once a file is kept, all younger files are kept too. When `max-size` and archival are both configured, a soft/hard threshold system applies:
+
+- **Normal** (total <= soft): standard age-based expiration, archive-then-delete
+- **Soft zone** (soft < total <= hard): proactively queue oldest non-archived files for archive
+- **Hard zone** (total > hard): expire files; if archives have failed, apply overflow policy
+
+`soft-pct` (default 80) sets the soft threshold as a percentage of `max-size`. `overflow-policy` controls behavior when the hard cap is hit and archives have failed: `delete-unarchived` (default, prioritizes continued recording) or `pause-recording` (stops journal writes via `JournalWriter.SetPaused`, prioritizes archive completeness). Pause state is tracked per-directory and propagated via `OnPauseChange` callback.
+
+**Archival**: user-provided script invoked with file paths as args and JSONL metadata on stdin. Per-file status ("ok"/"error") read from stdout. Failed files retry with exponential backoff (1min to 1h). Successful archives create a zero-byte `.archived` sidecar marker.
+
+**Triggers**: `on-rotate` (archive immediately after rotation) or `before-expire` (archive only when about to be deleted by retention).
+
+**Cloud**: single keeper goroutine manages all instance directories via `DirFunc`. `InstanceManager.SetOnRotate` threads the callback to each instance's JournalWriter and BlockWriter. `InstanceManager.SetInstancePaused` propagates pause state to the correct instance's JournalWriter.
+
 ## Key Design Decisions
 
 - **Pull-based Consumer model**: buffered clients use a Kafka/Kinesis-style Consumer that reads from a tiered log (journal -> ring buffer -> live notification). Each consumer iterates at its own pace via `Next(ctx)`. Sessions store only metadata (cursor, filter, timeout); the HTTP handler creates a Consumer on each connection.
@@ -202,6 +237,8 @@ Key design decisions:
 lplex supports HOCON config files (`-config path` or auto-discovered from `./lplex.conf`, `/etc/lplex/lplex.conf`). CLI flags always override config file values (detected via `flag.Visit()`). Config values are applied through `flag.Set()` so they share the same parsing path as CLI flags. The mapping from HOCON paths to flag names lives in `configToFlag` in `cmd/lplex/config.go`.
 
 lplex-cloud uses the same pattern with `lplex-cloud.conf` (auto-discovered from `./lplex-cloud.conf`, `/etc/lplex-cloud/lplex-cloud.conf`). Mapping in `cmd/lplex-cloud/config.go`.
+
+Both binaries share the same retention/archive flags: `-journal-retention-max-age`, `-journal-retention-min-keep`, `-journal-retention-max-size`, `-journal-retention-soft-pct`, `-journal-retention-overflow-policy`, `-journal-archive-command`, `-journal-archive-trigger`. HOCON paths: `journal.retention.max-age`, `journal.retention.min-keep`, `journal.retention.max-size`, `journal.retention.soft-pct`, `journal.retention.overflow-policy`, `journal.archive.command`, `journal.archive.trigger`. See [`lplex.conf.example`](lplex.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example).
 
 ## Dependencies
 

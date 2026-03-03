@@ -35,6 +35,13 @@ func main() {
 	journalRotateDur := flag.String("journal-rotate-duration", "PT1H", "Rotate journal after duration (ISO 8601, e.g. PT1H)")
 	journalRotateSize := flag.Int64("journal-rotate-size", 0, "Rotate journal after bytes (0 = disabled)")
 	journalCompression := flag.String("journal-compression", "zstd", "Journal compression: none, zstd, zstd-dict")
+	retentionMaxAge := flag.String("journal-retention-max-age", "", "Delete journal files older than this (ISO 8601, e.g. P30D)")
+	retentionMinKeep := flag.String("journal-retention-min-keep", "", "Never delete files younger than this (ISO 8601, e.g. PT24H), unless max-size exceeded")
+	retentionMaxSize := flag.Int64("journal-retention-max-size", 0, "Hard size cap in bytes; delete oldest files when exceeded")
+	retentionSoftPct := flag.Int("journal-retention-soft-pct", 80, "Proactive archive threshold as % of max-size (1-99)")
+	retentionOverflowPolicy := flag.String("journal-retention-overflow-policy", "delete-unarchived", "Overflow policy: delete-unarchived or pause-recording")
+	archiveCommand := flag.String("journal-archive-command", "", "Path to archive script")
+	archiveTriggerStr := flag.String("journal-archive-trigger", "", "Archive trigger: on-rotate or before-expire")
 	replTarget := flag.String("replication-target", "", "Cloud replication gRPC address (host:port)")
 	replInstanceID := flag.String("replication-instance-id", "", "Instance ID for cloud replication")
 	replTLSCert := flag.String("replication-tls-cert", "", "Client certificate for replication mTLS")
@@ -114,10 +121,26 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Set up journal keeper (retention + archive) if configured.
+		var keeper *lplex.JournalKeeper
+		keeperCfg, err := buildKeeperConfig(
+			*journalDir, *replInstanceID,
+			*retentionMaxAge, *retentionMinKeep, *retentionMaxSize,
+			*retentionSoftPct, *retentionOverflowPolicy,
+			*archiveCommand, *archiveTriggerStr, logger,
+		)
+		if err != nil {
+			logger.Error("invalid retention/archive config", "error", err)
+			os.Exit(1)
+		}
+		if keeperCfg != nil {
+			keeper = lplex.NewJournalKeeper(*keeperCfg)
+		}
+
 		journalCh = make(chan lplex.RxFrame, 16384)
 		broker.SetJournal(journalCh)
 
-		jw, err := lplex.NewJournalWriter(lplex.JournalConfig{
+		jwCfg := lplex.JournalConfig{
 			Dir:            *journalDir,
 			Prefix:         *journalPrefix,
 			BlockSize:      *journalBlockSize,
@@ -125,10 +148,24 @@ func main() {
 			RotateDuration: rotateDur,
 			RotateSize:     *journalRotateSize,
 			Logger:         logger,
-		}, broker.Devices(), journalCh)
+		}
+		if keeper != nil {
+			jwCfg.OnRotate = func(rf lplex.RotatedFile) {
+				rf.InstanceID = *replInstanceID
+				keeper.Send(rf)
+			}
+		}
+
+		jw, err := lplex.NewJournalWriter(jwCfg, broker.Devices(), journalCh)
 		if err != nil {
 			logger.Error("journal writer init failed", "error", err)
 			os.Exit(1)
+		}
+
+		if keeper != nil {
+			keeper.SetOnPauseChange(func(_ lplex.KeeperDir, paused bool) {
+				jw.SetPaused(paused)
+			})
 		}
 
 		wg.Add(1)
@@ -140,6 +177,24 @@ func main() {
 				}
 			}
 		}()
+
+		if keeper != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				keeper.Run(ctx)
+			}()
+			logger.Info("journal keeper enabled",
+				"max_age", *retentionMaxAge,
+				"min_keep", *retentionMinKeep,
+				"max_size", *retentionMaxSize,
+				"soft_pct", *retentionSoftPct,
+				"overflow_policy", *retentionOverflowPolicy,
+				"archive_command", *archiveCommand,
+				"archive_trigger", *archiveTriggerStr,
+			)
+		}
+
 		logger.Info("journal enabled", "dir", *journalDir, "block_size", *journalBlockSize, "compression", *journalCompression)
 	}
 
@@ -241,4 +296,58 @@ func main() {
 	wg.Wait()
 
 	logger.Info("lplex stopped")
+}
+
+// buildKeeperConfig parses retention/archive flags and returns a KeeperConfig,
+// or nil if no retention or archive is configured.
+func buildKeeperConfig(
+	journalDir, instanceID string,
+	maxAgeStr, minKeepStr string,
+	maxSize int64,
+	softPct int, overflowPolicyStr string,
+	archiveCmd, archiveTriggerStr string,
+	logger *slog.Logger,
+) (*lplex.KeeperConfig, error) {
+	var maxAge, minKeep time.Duration
+	var err error
+
+	if maxAgeStr != "" {
+		maxAge, err = lplex.ParseISO8601Duration(maxAgeStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid journal-retention-max-age %q: %w", maxAgeStr, err)
+		}
+	}
+	if minKeepStr != "" {
+		minKeep, err = lplex.ParseISO8601Duration(minKeepStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid journal-retention-min-keep %q: %w", minKeepStr, err)
+		}
+	}
+
+	archiveTrigger, err := lplex.ParseArchiveTrigger(archiveTriggerStr)
+	if err != nil {
+		return nil, err
+	}
+
+	overflowPolicy, err := lplex.ParseOverflowPolicy(overflowPolicyStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Nothing to do if no retention and no archive.
+	if maxAge == 0 && maxSize == 0 && archiveCmd == "" {
+		return nil, nil
+	}
+
+	return &lplex.KeeperConfig{
+		Dirs:           []lplex.KeeperDir{{Dir: journalDir, InstanceID: instanceID}},
+		MaxAge:         maxAge,
+		MinKeep:        minKeep,
+		MaxSize:        maxSize,
+		SoftPct:        softPct,
+		OverflowPolicy: overflowPolicy,
+		ArchiveCommand: archiveCmd,
+		ArchiveTrigger: archiveTrigger,
+		Logger:         logger,
+	}, nil
 }

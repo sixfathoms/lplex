@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/klauspost/compress/dict"
@@ -24,6 +25,7 @@ type JournalConfig struct {
 	RotateDuration time.Duration           // 0 = no limit
 	RotateSize     int64                   // 0 = no limit
 	RotateCount    int64                   // 0 = no limit
+	OnRotate       func(RotatedFile)       // called after a journal file is closed by rotation
 	Logger         *slog.Logger
 }
 
@@ -61,9 +63,11 @@ type JournalWriter struct {
 	cfg     JournalConfig
 	devices *DeviceRegistry
 	ch      <-chan RxFrame
+	paused  atomic.Bool // when true, frames are drained but not written
 
 	// current file
 	file       *os.File
+	filePath   string
 	fileStart  time.Time
 	fileBytes  int64
 	fileFrames int64
@@ -117,6 +121,10 @@ func NewJournalWriter(cfg JournalConfig, devices *DeviceRegistry, ch <-chan RxFr
 	return w, nil
 }
 
+// SetPaused sets whether the writer should discard incoming frames.
+// Used by the overflow policy to stop writes when disk is full.
+func (w *JournalWriter) SetPaused(p bool) { w.paused.Store(p) }
+
 // Run is the main loop. Blocks until ctx is cancelled or the channel is closed.
 func (w *JournalWriter) Run(ctx context.Context) error {
 	for {
@@ -126,6 +134,9 @@ func (w *JournalWriter) Run(ctx context.Context) error {
 		case frame, ok := <-w.ch:
 			if !ok {
 				return w.finalize()
+			}
+			if w.paused.Load() {
+				continue // drain channel, discard frame
 			}
 			if err := w.appendFrame(frame); err != nil {
 				w.cfg.Logger.Error("journal write error", "error", err)
@@ -151,7 +162,14 @@ func (w *JournalWriter) finalize() error {
 		if err := w.file.Sync(); err != nil {
 			return err
 		}
-		return w.file.Close()
+		if err := w.file.Close(); err != nil {
+			return err
+		}
+		if w.cfg.OnRotate != nil {
+			w.cfg.OnRotate(RotatedFile{Path: w.filePath})
+		}
+		w.file = nil
+		w.filePath = ""
 	}
 	return nil
 }
@@ -551,10 +569,16 @@ func (w *JournalWriter) checkRotation() error {
 	if err := w.file.Close(); err != nil {
 		return err
 	}
+	rotatedPath := w.filePath
 	w.file = nil
+	w.filePath = ""
 	w.fileBytes = 0
 	w.fileFrames = 0
 	w.blockOffsets = w.blockOffsets[:0]
+
+	if w.cfg.OnRotate != nil {
+		w.cfg.OnRotate(RotatedFile{Path: rotatedPath})
+	}
 	return nil
 }
 
@@ -584,6 +608,7 @@ func (w *JournalWriter) openFile(ts time.Time) error {
 	}
 
 	w.file = f
+	w.filePath = path
 	w.fileStart = ts
 	w.fileBytes = int64(journal.FileHeaderSize)
 	w.fileFrames = 0

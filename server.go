@@ -331,15 +331,22 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 // Supports hours (H), minutes (M), and seconds (S).
 // Examples: "PT5M", "PT1H30M", "PT30S", "PT1H"
 func ParseISO8601Duration(s string) (time.Duration, error) {
-	if len(s) < 3 || s[0] != 'P' || s[1] != 'T' {
-		return 0, fmt.Errorf("must start with PT")
+	if len(s) < 2 || s[0] != 'P' {
+		return 0, fmt.Errorf("must start with P")
 	}
 
 	var total time.Duration
-	rest := s[2:]
+	rest := s[1:]
 	parsed := false
+	inTime := false
+
 	for len(rest) > 0 {
-		// Parse number
+		if rest[0] == 'T' {
+			inTime = true
+			rest = rest[1:]
+			continue
+		}
+
 		i := 0
 		for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
 			i++
@@ -354,15 +361,26 @@ func ParseISO8601Duration(s string) (time.Duration, error) {
 		}
 
 		unit := rest[i]
-		switch unit {
-		case 'H':
-			total += time.Duration(val) * time.Hour
-		case 'M':
-			total += time.Duration(val) * time.Minute
-		case 'S':
-			total += time.Duration(val) * time.Second
-		default:
-			return 0, fmt.Errorf("unknown duration unit: %c", unit)
+		if inTime {
+			switch unit {
+			case 'H':
+				total += time.Duration(val) * time.Hour
+			case 'M':
+				total += time.Duration(val) * time.Minute
+			case 'S':
+				total += time.Duration(val) * time.Second
+			default:
+				return 0, fmt.Errorf("unknown time unit: %c", unit)
+			}
+		} else {
+			switch unit {
+			case 'D':
+				total += time.Duration(val) * 24 * time.Hour
+			case 'W':
+				total += time.Duration(val) * 7 * 24 * time.Hour
+			default:
+				return 0, fmt.Errorf("unknown date unit: %c (months/years not supported)", unit)
+			}
 		}
 		parsed = true
 		rest = rest[i+1:]
