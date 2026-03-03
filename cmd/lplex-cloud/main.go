@@ -208,10 +208,15 @@ func startACMEServer(
 		TLSConfig: tlsCfg,
 	}
 
-	// HTTP-01 challenge + HTTPS redirect on :80
+	// HTTP-01 challenge + HTTPS redirect on :80, plus /healthz for ECS
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	healthMux.Handle("/", m.HTTPHandler(nil))
 	challengeSrv := &http.Server{
 		Addr:    ":80",
-		Handler: m.HTTPHandler(nil),
+		Handler: healthMux,
 	}
 	go func() {
 		if err := challengeSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
