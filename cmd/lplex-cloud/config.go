@@ -11,12 +11,19 @@ import (
 
 // configToFlag maps HOCON config paths to CLI flag names.
 var configToFlag = map[string]string{
-	"grpc.listen":       "grpc-listen",
-	"grpc.tls.cert":     "tls-cert",
-	"grpc.tls.key":      "tls-key",
-	"grpc.tls.client-ca": "tls-client-ca",
-	"http.listen":       "http-listen",
-	"data-dir":          "data-dir",
+	"grpc.listen":                "grpc-listen",
+	"grpc.tls.cert":              "tls-cert",
+	"grpc.tls.key":               "tls-key",
+	"grpc.tls.client-ca":         "tls-client-ca",
+	"http.listen":                "http-listen",
+	"data-dir":                   "data-dir",
+	"journal.retention.max-age":         "journal-retention-max-age",
+	"journal.retention.min-keep":        "journal-retention-min-keep",
+	"journal.retention.max-size":        "journal-retention-max-size",
+	"journal.retention.soft-pct":        "journal-retention-soft-pct",
+	"journal.retention.overflow-policy": "journal-retention-overflow-policy",
+	"journal.archive.command":           "journal-archive-command",
+	"journal.archive.trigger":           "journal-archive-trigger",
 }
 
 // findConfigFile resolves which config file to use.

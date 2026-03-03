@@ -37,11 +37,13 @@ type InstanceState struct {
 	PersistedHoles []SeqRange `json:"holes,omitempty"`
 
 	// Runtime (not persisted)
-	broker     *Broker
-	journalDir string
-	journalCh  chan RxFrame // connects broker to its JournalWriter
-	cancelFunc context.CancelFunc // stops the broker's journal writer
-	logger     *slog.Logger
+	broker        *Broker
+	journalDir    string
+	journalCh     chan RxFrame        // connects broker to its JournalWriter
+	journalWriter *JournalWriter      // live journal writer (nil when broker not running)
+	cancelFunc    context.CancelFunc  // stops the broker's journal writer
+	onRotate      func(RotatedFile)   // optional callback for keeper
+	logger        *slog.Logger
 }
 
 // instanceStatePersist is the JSON shape written to state.json.
@@ -130,6 +132,7 @@ func (s *InstanceState) ensureBroker() {
 		Prefix:      "nmea2k",
 		BlockSize:   262144,
 		Compression: journal.CompressionZstd,
+		OnRotate:    s.onRotate,
 		Logger:      s.logger.With("instance", s.ID, "component", "journal"),
 	}, b.Devices(), s.journalCh)
 	if err != nil {
@@ -137,6 +140,8 @@ func (s *InstanceState) ensureBroker() {
 		cancel()
 		return
 	}
+
+	s.journalWriter = jw
 
 	go b.Run()
 	go func() {
@@ -169,6 +174,7 @@ func (s *InstanceState) stopBroker() {
 		s.cancelFunc()
 	}
 	s.journalCh = nil
+	s.journalWriter = nil
 	s.cancelFunc = nil
 	s.logger.Info("broker stopped", "instance", s.ID)
 }
@@ -179,6 +185,7 @@ type InstanceManager struct {
 	instances map[string]*InstanceState
 	dataDir   string
 	logger    *slog.Logger
+	onRotate  func(instanceID string, rf RotatedFile) // optional callback for keeper
 }
 
 // NewInstanceManager creates a new instance manager, loading any persisted state.
@@ -235,6 +242,49 @@ func NewInstanceManager(dataDir string, logger *slog.Logger) (*InstanceManager, 
 	return im, nil
 }
 
+// SetOnRotate sets a callback invoked when any instance's journal or backfill
+// file is rotated. Used by the cloud binary to feed the JournalKeeper.
+// Must be called before any connections are accepted. Retroactively updates
+// all existing instances loaded at startup.
+func (im *InstanceManager) SetOnRotate(fn func(instanceID string, rf RotatedFile)) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	im.onRotate = fn
+	for id, s := range im.instances {
+		s.mu.Lock()
+		s.onRotate = im.makeOnRotate(id)
+		s.mu.Unlock()
+	}
+}
+
+// makeOnRotate returns an instance-scoped OnRotate callback, or nil if no
+// manager-level callback is set. Caller must hold im.mu.
+func (im *InstanceManager) makeOnRotate(id string) func(RotatedFile) {
+	if im.onRotate == nil {
+		return nil
+	}
+	fn := im.onRotate
+	return func(rf RotatedFile) {
+		fn(id, rf)
+	}
+}
+
+// SetInstancePaused pauses or unpauses journal writing for a specific instance.
+// Used by the JournalKeeper overflow policy to stop/resume writes.
+func (im *InstanceManager) SetInstancePaused(instanceID string, paused bool) {
+	im.mu.Lock()
+	s, ok := im.instances[instanceID]
+	im.mu.Unlock()
+	if !ok {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.journalWriter != nil {
+		s.journalWriter.SetPaused(paused)
+	}
+}
+
 // GetOrCreate returns the instance state, creating it if necessary.
 func (im *InstanceManager) GetOrCreate(id string) *InstanceState {
 	im.mu.Lock()
@@ -252,6 +302,7 @@ func (im *InstanceManager) GetOrCreate(id string) *InstanceState {
 		ID:          id,
 		HoleTracker: NewHoleTracker(),
 		journalDir:  dir,
+		onRotate:    im.makeOnRotate(id),
 		logger:      im.logger,
 	}
 	im.instances[id] = s
@@ -514,6 +565,7 @@ func (s *ReplicationServer) Backfill(stream pb.Replication_BackfillServer) error
 
 	inst.mu.Lock()
 	journalDir := filepath.Join(inst.journalDir, "journal")
+	onRotate := inst.onRotate
 	inst.mu.Unlock()
 
 	// Create a block writer for this backfill session
@@ -522,6 +574,7 @@ func (s *ReplicationServer) Backfill(stream pb.Replication_BackfillServer) error
 		Prefix:      "backfill",
 		BlockSize:   262144, // will be overridden by first block
 		Compression: journal.CompressionNone,
+		OnRotate:    onRotate,
 	})
 	if err != nil {
 		return status.Errorf(codes.Internal, "create block writer: %v", err)

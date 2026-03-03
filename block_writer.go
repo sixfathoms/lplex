@@ -18,8 +18,9 @@ type BlockWriterConfig struct {
 	Prefix         string // default: "nmea2k"
 	BlockSize      int    // uncompressed block size (from source journal)
 	Compression    journal.CompressionType
-	RotateDuration time.Duration // 0 = no limit
-	RotateSize     int64         // 0 = no limit
+	RotateDuration time.Duration     // 0 = no limit
+	RotateSize     int64             // 0 = no limit
+	OnRotate       func(RotatedFile) // called after a journal file is closed by rotation
 	Logger         *slog.Logger
 }
 
@@ -43,6 +44,7 @@ type BlockWriter struct {
 	cfg BlockWriterConfig
 
 	file       *os.File
+	filePath   string
 	fileStart  time.Time
 	fileBytes  int64
 	fileBlocks int
@@ -149,12 +151,18 @@ func (w *BlockWriter) Close() error {
 	if err := w.file.Sync(); err != nil {
 		return err
 	}
-	err := w.file.Close()
+	if err := w.file.Close(); err != nil {
+		return err
+	}
+	if w.cfg.OnRotate != nil {
+		w.cfg.OnRotate(RotatedFile{Path: w.filePath})
+	}
 	w.file = nil
+	w.filePath = ""
 	w.fileBytes = 0
 	w.fileBlocks = 0
 	w.blockOffsets = w.blockOffsets[:0]
-	return err
+	return nil
 }
 
 func (w *BlockWriter) openFile(ts time.Time) error {
@@ -178,6 +186,7 @@ func (w *BlockWriter) openFile(ts time.Time) error {
 	}
 
 	w.file = f
+	w.filePath = path
 	w.fileStart = ts
 	w.fileBytes = int64(journal.FileHeaderSize)
 	w.fileBlocks = 0
@@ -210,10 +219,16 @@ func (w *BlockWriter) rotateFile() error {
 	if err := w.file.Close(); err != nil {
 		return err
 	}
+	rotatedPath := w.filePath
 	w.file = nil
+	w.filePath = ""
 	w.fileBytes = 0
 	w.fileBlocks = 0
 	w.blockOffsets = w.blockOffsets[:0]
+
+	if w.cfg.OnRotate != nil {
+		w.cfg.OnRotate(RotatedFile{Path: rotatedPath})
+	}
 	return nil
 }
 

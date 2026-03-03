@@ -1,41 +1,34 @@
-# lplex configuration
+# lplex-cloud configuration
 #
-# Copy to ./lplex.conf or /etc/lplex/lplex.conf
+# Copy to ./lplex-cloud.conf or /etc/lplex-cloud/lplex-cloud.conf
 # CLI flags override values set here.
 
-# SocketCAN interface name
-interface = can0
+# gRPC server (replication endpoint)
+grpc {
+  listen = ":9443"
 
-# HTTP listen port
-port = 8089
+  tls {
+    # Server certificate and key
+    cert = "/etc/lplex-cloud/server.crt"
+    key = "/etc/lplex-cloud/server.key"
 
-# Max client buffer duration (ISO 8601)
-max-buffer-duration = PT5M
+    # CA certificate for client verification (mTLS)
+    client-ca = "/etc/lplex-cloud/ca.crt"
+  }
+}
 
-# Journal recording (comment out to disable)
+# HTTP server (cloud API)
+http {
+  listen = ":8080"
+}
+
+# Data directory for instance state and journals
+data-dir = "/data/lplex"
+
+# Journal retention and archival (all optional, comment out to disable)
 journal {
 
-  # Directory for journal files (required to enable journaling)
-  dir = /var/log/lplex
-
-  # File name prefix
-  prefix = nmea2k
-
-  # Block size in bytes (power of 2, min 4096)
-  block-size = 262144
-
-  # Block compression: none, zstd, zstd-dict
-  compression = zstd
-
-  rotate {
-    # Rotate after duration (ISO 8601, e.g. PT1H)
-    duration = PT1H
-
-    # Rotate after bytes (0 = disabled)
-    size = 0
-  }
-
-  # Retention policy (all optional, comment out to disable)
+  # Retention policy (applied per-instance journal directory)
   retention {
     # Delete files older than this (ISO 8601, e.g. P30D = 30 days)
     # max-age = P30D
@@ -43,7 +36,7 @@ journal {
     # Never delete files younger than this, unless max-size is exceeded
     # min-keep = PT24H
 
-    # Hard size cap in bytes; delete oldest files when total exceeds this
+    # Hard size cap in bytes per instance; delete oldest files when total exceeds this
     # max-size = 10737418240
 
     # Proactive archive threshold as % of max-size (1-99, default 80).
