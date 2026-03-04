@@ -227,6 +227,28 @@ func (c *ReplicationClient) runLiveStream(ctx context.Context, client pb.Replica
 		return fmt.Errorf("open live stream: %w", err)
 	}
 
+	// Seed the cloud device table with current ISO claims and product info.
+	// The cloud broker runs in replica mode (no CAN bus, no ISO requests),
+	// so it only discovers devices from frames that flow through. Most devices
+	// only announce on startup, meaning the cloud stays blind until a reconnect
+	// happens to coincide with a device announcement. Sending seq=0 frames
+	// won't affect cursor tracking (cursor is always > 0 after handshake).
+	now := time.Now()
+	for _, frame := range c.broker.Devices().SynthesizeFrames(now) {
+		if err := stream.Send(&pb.LiveUpstream{
+			Msg: &pb.LiveUpstream_Frame{
+				Frame: &pb.LiveFrame{
+					Seq:         0,
+					TimestampUs: now.UnixMicro(),
+					CanId:       BuildCANID(frame.Header),
+					Data:        frame.Data,
+				},
+			},
+		}); err != nil {
+			return fmt.Errorf("send device snapshot: %w", err)
+		}
+	}
+
 	// Start the consumer from the position the cloud requested, so we replay
 	// any frames the cloud hasn't seen yet. On a fresh instance this is seq 1;
 	// on reconnect it's the cloud's current head.

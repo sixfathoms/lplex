@@ -374,6 +374,110 @@ func TestHandleProductInfoShortData(t *testing.T) {
 	}
 }
 
+func TestSynthesizeFramesRoundtrip(t *testing.T) {
+	src := NewDeviceRegistry()
+
+	// Device 1: address claim + product info (Garmin GPS)
+	claim1 := make([]byte, 8)
+	var name1 uint64
+	name1 |= uint64(12345)      // unique number
+	name1 |= uint64(229) << 21  // Garmin
+	name1 |= uint64(150) << 40  // device function
+	name1 |= uint64(40) << 49   // device class
+	name1 |= uint64(4) << 60    // marine
+	name1 |= uint64(1) << 63    // arbitrary address
+	binary.LittleEndian.PutUint64(claim1, name1)
+	src.HandleAddressClaim(1, claim1)
+	src.HandleProductInfo(1, buildProductInfoPayload(4242, "GPS 19x", "4.80", "1.0", "SN-001"))
+
+	// Device 2: address claim only, no product info (Airmar)
+	claim2 := make([]byte, 8)
+	var name2 uint64
+	name2 |= uint64(99999)      // unique number
+	name2 |= uint64(135) << 21  // Airmar
+	name2 |= uint64(130) << 40  // device function
+	name2 |= uint64(75) << 49   // device class
+	binary.LittleEndian.PutUint64(claim2, name2)
+	src.HandleAddressClaim(5, claim2)
+
+	// Device 3: stats-only entry (no NAME), should be skipped.
+	src.RecordPacket(99, time.Now(), 8)
+
+	ts := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	frames := src.SynthesizeFrames(ts)
+
+	// Device 1 => 2 frames (claim + product), Device 2 => 1 frame (claim only).
+	if len(frames) != 3 {
+		t.Fatalf("expected 3 frames, got %d", len(frames))
+	}
+
+	// Feed all synthesized frames into a fresh registry.
+	dst := NewDeviceRegistry()
+	for _, f := range frames {
+		switch f.Header.PGN {
+		case 60928:
+			dst.HandleAddressClaim(f.Header.Source, f.Data)
+		case 126996:
+			dst.HandleProductInfo(f.Header.Source, f.Data)
+		}
+	}
+
+	// Verify device 1 roundtripped correctly.
+	d1 := dst.Get(1)
+	if d1 == nil {
+		t.Fatal("device 1 missing")
+	}
+	if d1.NAME != name1 {
+		t.Errorf("device 1 NAME: got %x, want %x", d1.NAME, name1)
+	}
+	if d1.Manufacturer != "Garmin" {
+		t.Errorf("device 1 manufacturer: got %q, want Garmin", d1.Manufacturer)
+	}
+	if d1.ProductCode != 4242 {
+		t.Errorf("device 1 product code: got %d, want 4242", d1.ProductCode)
+	}
+	if d1.ModelID != "GPS 19x" {
+		t.Errorf("device 1 model_id: got %q, want %q", d1.ModelID, "GPS 19x")
+	}
+	if d1.SoftwareVersion != "4.80" {
+		t.Errorf("device 1 software_version: got %q, want %q", d1.SoftwareVersion, "4.80")
+	}
+	if d1.ModelVersion != "1.0" {
+		t.Errorf("device 1 model_version: got %q, want %q", d1.ModelVersion, "1.0")
+	}
+	if d1.ModelSerial != "SN-001" {
+		t.Errorf("device 1 model_serial: got %q, want %q", d1.ModelSerial, "SN-001")
+	}
+
+	// Verify device 2 roundtripped correctly (claim only, no product info).
+	d2 := dst.Get(5)
+	if d2 == nil {
+		t.Fatal("device 5 missing")
+	}
+	if d2.NAME != name2 {
+		t.Errorf("device 5 NAME: got %x, want %x", d2.NAME, name2)
+	}
+	if d2.Manufacturer != "Airmar" {
+		t.Errorf("device 5 manufacturer: got %q, want Airmar", d2.Manufacturer)
+	}
+	if d2.ProductCode != 0 {
+		t.Errorf("device 5 should have no product code, got %d", d2.ProductCode)
+	}
+
+	// Stats-only device (src 99) should not appear.
+	if dst.Get(99) != nil {
+		t.Error("stats-only device (src 99) should not be synthesized")
+	}
+}
+
+func TestSynthesizeFramesEmpty(t *testing.T) {
+	reg := NewDeviceRegistry()
+	frames := reg.SynthesizeFrames(time.Now())
+	if len(frames) != 0 {
+		t.Errorf("expected 0 frames from empty registry, got %d", len(frames))
+	}
+}
+
 func TestDecodeFixedString(t *testing.T) {
 	tests := []struct {
 		name  string

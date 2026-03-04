@@ -9,6 +9,14 @@ import (
 	"github.com/sixfathoms/lplex/canbus"
 )
 
+// encodeFixedString writes s into a fixed-width field, padding with 0xFF.
+func encodeFixedString(dst []byte, s string) {
+	n := copy(dst, s)
+	for i := n; i < len(dst); i++ {
+		dst[i] = 0xFF
+	}
+}
+
 // Device represents an NMEA 2000 device discovered via ISO Address Claim (PGN 60928)
 // and optionally enriched with Product Information (PGN 126996).
 type Device struct {
@@ -200,4 +208,57 @@ func decodeNAME(name uint64, source uint8) *Device {
 		DeviceInstance:   fields.DeviceInstance,
 		UniqueNumber:     fields.UniqueNumber,
 	}
+}
+
+// SynthesizeFrames generates RxFrame slices for PGN 60928 (Address Claim) and
+// PGN 126996 (Product Info) from all known devices. Used to seed a remote
+// broker's device registry on live stream connect.
+func (r *DeviceRegistry) SynthesizeFrames(ts time.Time) []RxFrame {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var frames []RxFrame
+	for _, dev := range r.devices {
+		if dev.NAME == 0 {
+			continue
+		}
+
+		// PGN 60928: Address Claim (8 bytes, NAME as uint64 LE)
+		claimData := make([]byte, 8)
+		binary.LittleEndian.PutUint64(claimData, dev.NAME)
+		frames = append(frames, RxFrame{
+			Timestamp: ts,
+			Header: CANHeader{
+				Priority:    6,
+				PGN:         60928,
+				Source:      dev.Source,
+				Destination: 255,
+			},
+			Data: claimData,
+		})
+
+		// PGN 126996: Product Info (134 bytes), only if we have product data.
+		if dev.ProductCode == 0 && dev.ModelID == "" {
+			continue
+		}
+		prodData := make([]byte, 134)
+		// bytes 0-1: NMEA version (zero, we don't track it)
+		binary.LittleEndian.PutUint16(prodData[2:4], dev.ProductCode)
+		encodeFixedString(prodData[4:36], dev.ModelID)
+		encodeFixedString(prodData[36:76], dev.SoftwareVersion)
+		encodeFixedString(prodData[76:100], dev.ModelVersion)
+		encodeFixedString(prodData[100:132], dev.ModelSerial)
+		// bytes 132-133: cert level + load equiv (zero)
+		frames = append(frames, RxFrame{
+			Timestamp: ts,
+			Header: CANHeader{
+				Priority:    6,
+				PGN:         126996,
+				Source:      dev.Source,
+				Destination: 255,
+			},
+			Data: prodData,
+		})
+	}
+	return frames
 }
