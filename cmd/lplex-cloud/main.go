@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -377,6 +378,30 @@ func registerCloudHTTP(mux *http.ServeMux, im *lplex.InstanceManager, replServer
 
 		srv := lplex.NewServer(broker, logger)
 		srv.HandleEphemeralSSE(w, r)
+	})
+
+	mux.HandleFunc("GET /instances/{id}/replication/events", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		inst := replServer.GetInstanceState(id)
+		if inst == nil {
+			http.Error(w, "instance not found", http.StatusNotFound)
+			return
+		}
+
+		limit := 100
+		if q := r.URL.Query().Get("limit"); q != "" {
+			if n, err := strconv.Atoi(q); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		if limit > 1024 {
+			limit = 1024
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(inst.RecentEvents(limit)); err != nil {
+			logger.Error("failed to encode replication events", "error", err)
+		}
 	})
 
 	mux.HandleFunc("GET /instances/{id}/devices", func(w http.ResponseWriter, r *http.Request) {
