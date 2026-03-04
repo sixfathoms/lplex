@@ -3,7 +3,6 @@ package lplex
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"os"
@@ -513,18 +512,11 @@ func (c *ReplicationClient) buildDialOptions() ([]grpc.DialOption, error) {
 		return nil, fmt.Errorf("load client cert: %w", err)
 	}
 
-	caCert, err := os.ReadFile(c.cfg.CAFile)
-	if err != nil {
-		return nil, fmt.Errorf("read CA cert: %w", err)
-	}
-	caPool := x509.NewCertPool()
-	if !caPool.AppendCertsFromPEM(caCert) {
-		return nil, fmt.Errorf("failed to parse CA cert")
-	}
-
+	// Use system roots for verifying the server's certificate (e.g. Let's
+	// Encrypt via ACME). The custom CA is only used for mTLS client auth on
+	// the server side, not for server cert verification.
 	tlsCfg := &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		RootCAs:      caPool,
 	}
 
 	return []grpc.DialOption{
