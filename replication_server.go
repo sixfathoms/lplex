@@ -37,6 +37,7 @@ type InstanceState struct {
 	PersistedHoles []SeqRange `json:"holes,omitempty"`
 
 	// Runtime (not persisted)
+	events        *EventLog
 	broker        *Broker
 	journalDir    string
 	journalCh     chan RxFrame        // connects broker to its JournalWriter
@@ -225,6 +226,7 @@ func NewInstanceManager(dataDir string, logger *slog.Logger) (*InstanceManager, 
 		state := &InstanceState{
 			ID:               id,
 			HoleTracker:      ht,
+			events:           NewEventLog(),
 			journalDir:       dir,
 			logger:           logger,
 		}
@@ -301,6 +303,7 @@ func (im *InstanceManager) GetOrCreate(id string) *InstanceState {
 	s := &InstanceState{
 		ID:          id,
 		HoleTracker: NewHoleTracker(),
+		events:      NewEventLog(),
 		journalDir:  dir,
 		onRotate:    im.makeOnRotate(id),
 		logger:      im.logger,
@@ -391,6 +394,16 @@ func (s *InstanceState) Status() InstanceStatus {
 	}
 }
 
+// RecordEvent appends a diagnostic event to this instance's event log.
+func (s *InstanceState) RecordEvent(typ ReplicationEventType, detail map[string]any) {
+	s.events.Record(typ, detail)
+}
+
+// RecentEvents returns up to n recent replication events, newest first.
+func (s *InstanceState) RecentEvents(n int) []ReplicationEvent {
+	return s.events.Recent(n)
+}
+
 // ReplicationServer implements the gRPC Replication service.
 type ReplicationServer struct {
 	pb.UnimplementedReplicationServer
@@ -467,9 +480,17 @@ func (s *ReplicationServer) Handshake(ctx context.Context, req *pb.HandshakeRequ
 func (s *ReplicationServer) Live(stream pb.Replication_LiveServer) error {
 	var inst *InstanceState
 	var ackedThrough uint64
+	var framesReceived uint64
 
 	ackTicker := time.NewTicker(5 * time.Second)
 	defer ackTicker.Stop()
+
+	defer func() {
+		if inst != nil {
+			detail := map[string]any{"frames_received": framesReceived}
+			inst.RecordEvent(EventLiveStop, detail)
+		}
+	}()
 
 	for {
 		msg, err := stream.Recv()
@@ -499,7 +520,12 @@ func (s *ReplicationServer) Live(stream pb.Replication_LiveServer) error {
 				if inst == nil {
 					return status.Errorf(codes.FailedPrecondition, "handshake required before live stream")
 				}
+				inst.RecordEvent(EventLiveStart, map[string]any{
+					"boat_head_seq": inst.BoatHeadSeq,
+				})
 			}
+
+			framesReceived++
 
 			inst.mu.Lock()
 			inst.ensureBroker()
@@ -526,6 +552,15 @@ func (s *ReplicationServer) Live(stream pb.Replication_LiveServer) error {
 			ackedThrough = inst.Cursor
 
 			inst.mu.Unlock()
+
+			// Checkpoint every 50k frames
+			if framesReceived%50000 == 0 {
+				inst.RecordEvent(EventCheckpoint, map[string]any{
+					"frames_received": framesReceived,
+					"cursor":          ackedThrough,
+					"boat_head_seq":   inst.BoatHeadSeq,
+				})
+			}
 
 			// Periodic ACK
 			select {
@@ -566,7 +601,10 @@ func (s *ReplicationServer) Backfill(stream pb.Replication_BackfillServer) error
 	inst.mu.Lock()
 	journalDir := filepath.Join(inst.journalDir, "journal")
 	onRotate := inst.onRotate
+	holes := inst.HoleTracker.Len()
 	inst.mu.Unlock()
+
+	inst.RecordEvent(EventBackfillStart, map[string]any{"holes": holes})
 
 	// Create a block writer for this backfill session
 	bw, err := NewBlockWriter(BlockWriterConfig{
@@ -615,6 +653,13 @@ func (s *ReplicationServer) Backfill(stream pb.Replication_BackfillServer) error
 
 		blocksReceived++
 
+		inst.RecordEvent(EventBlockReceived, map[string]any{
+			"base_seq":    block.BaseSeq,
+			"frame_count": block.FrameCount,
+			"bytes":       len(block.Data),
+			"compressed":  block.Compressed,
+		})
+
 		// Mark the filled range in the hole tracker
 		endSeq := block.BaseSeq + uint64(block.FrameCount)
 		inst.mu.Lock()
@@ -658,6 +703,10 @@ func (s *ReplicationServer) Backfill(stream pb.Replication_BackfillServer) error
 	inst.mu.Lock()
 	_ = inst.persist(inst.journalDir)
 	inst.mu.Unlock()
+
+	inst.RecordEvent(EventBackfillStop, map[string]any{
+		"blocks_received": blocksReceived,
+	})
 
 	s.logger.Info("backfill complete",
 		"instance", instanceID,
