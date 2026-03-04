@@ -392,6 +392,8 @@ Disconnected sessions keep their cursor for the buffer duration.
 
 `GET /values` returns the most recently received frame for each (device, PGN) pair. Grouped by device, sorted by source address. Useful for getting a snapshot of bus state without subscribing to SSE.
 
+Supports the same filter query params as `/events`: `pgn`, `manufacturer`, `instance`, `name` (hex). Example: `GET /values?pgn=129025&manufacturer=Garmin`.
+
 ### Replication status (boat)
 
 `GET /replication/status` returns current replication state (available when replication is configured).
@@ -415,7 +417,7 @@ See [docs/cloud-replication.md](docs/cloud-replication.md) for the full protocol
 | `GET /instances/{id}/status` | Instance status (cursor, holes, lag) |
 | `GET /instances/{id}/events` | SSE stream from instance's broker |
 | `GET /instances/{id}/devices` | Device table |
-| `GET /instances/{id}/values` | Last-seen values per (device, PGN) |
+| `GET /instances/{id}/values` | Last-seen values per (device, PGN). Query params: `pgn`, `manufacturer`, `instance`, `name`. |
 | `GET /instances/{id}/replication/events?limit=N` | Replication event log (newest first, default 100, max 1024) |
 
 ## Journal Recording

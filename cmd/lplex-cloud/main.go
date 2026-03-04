@@ -426,8 +426,14 @@ func registerCloudHTTP(mux *http.ServeMux, im *lplex.InstanceManager, replServer
 			return
 		}
 
+		filter, err := lplex.ParseFilterParams(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write(broker.Values().SnapshotJSON(broker.Devices())); err != nil {
+		if _, err := w.Write(broker.Values().SnapshotJSON(broker.Devices(), filter)); err != nil {
 			logger.Error("failed to write values", "error", err)
 		}
 	})

@@ -9,6 +9,43 @@ import (
 	"time"
 )
 
+// valueFilter holds precomputed filter sets for fast lookup during snapshot iteration.
+type valueFilter struct {
+	pgns    map[uint32]struct{}
+	hasDev  bool // true if any device-based criteria are set
+	devFunc func(src uint8) bool
+}
+
+// newValueFilter builds a valueFilter from an EventFilter and device registry.
+// Returns nil if no filtering is needed.
+func newValueFilter(f *EventFilter, devices *DeviceRegistry) *valueFilter {
+	if f.IsEmpty() {
+		return nil
+	}
+
+	vf := &valueFilter{}
+
+	if len(f.PGNs) > 0 {
+		vf.pgns = make(map[uint32]struct{}, len(f.PGNs))
+		for _, p := range f.PGNs {
+			vf.pgns[p] = struct{}{}
+		}
+	}
+
+	if len(f.Manufacturers) > 0 || len(f.Names) > 0 || len(f.Instances) > 0 {
+		vf.hasDev = true
+		vf.devFunc = func(src uint8) bool {
+			dev := devices.Get(src)
+			if dev == nil || dev.NAME == 0 {
+				return false
+			}
+			return f.matchesDevice(dev)
+		}
+	}
+
+	return vf
+}
+
 // valueKey identifies a unique value slot: one per (source address, PGN) pair.
 type valueKey struct {
 	Source uint8
@@ -71,8 +108,11 @@ type DeviceValues struct {
 }
 
 // Snapshot returns the current values grouped by device, resolved against
-// the device registry for NAME and manufacturer info.
-func (vs *ValueStore) Snapshot(devices *DeviceRegistry) []DeviceValues {
+// the device registry for NAME and manufacturer info. An optional filter
+// restricts results by PGN and/or device criteria (manufacturer, name, instance).
+func (vs *ValueStore) Snapshot(devices *DeviceRegistry, filter *EventFilter) []DeviceValues {
+	vf := newValueFilter(filter, devices)
+
 	// Snapshot the values under RLock, then release before touching the device registry.
 	vs.mu.RLock()
 	type entry struct {
@@ -81,6 +121,11 @@ func (vs *ValueStore) Snapshot(devices *DeviceRegistry) []DeviceValues {
 	}
 	entries := make([]entry, 0, len(vs.values))
 	for k, v := range vs.values {
+		if vf != nil && vf.pgns != nil {
+			if _, ok := vf.pgns[k.PGN]; !ok {
+				continue
+			}
+		}
 		entries = append(entries, entry{key: k, val: *v})
 	}
 	vs.mu.RUnlock()
@@ -107,6 +152,10 @@ func (vs *ValueStore) Snapshot(devices *DeviceRegistry) []DeviceValues {
 
 	result := make([]DeviceValues, 0, len(sortedSources))
 	for _, src := range sortedSources {
+		if vf != nil && vf.hasDev && !vf.devFunc(src) {
+			continue
+		}
+
 		vals := bySource[src]
 		slices.SortFunc(vals, func(a, b PGNValue) int {
 			if a.PGN < b.PGN {
@@ -137,8 +186,8 @@ func (vs *ValueStore) Snapshot(devices *DeviceRegistry) []DeviceValues {
 }
 
 // SnapshotJSON returns the snapshot as pre-serialized JSON.
-func (vs *ValueStore) SnapshotJSON(devices *DeviceRegistry) json.RawMessage {
-	snap := vs.Snapshot(devices)
+func (vs *ValueStore) SnapshotJSON(devices *DeviceRegistry, filter *EventFilter) json.RawMessage {
+	snap := vs.Snapshot(devices, filter)
 	b, _ := json.Marshal(snap)
 	return b
 }

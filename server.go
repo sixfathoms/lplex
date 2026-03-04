@@ -188,7 +188,7 @@ func (s *Server) HandleEphemeralSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filter, err := parseFilterParams(r)
+	filter, err := ParseFilterParams(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -218,9 +218,10 @@ func (s *Server) HandleEphemeralSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// parseFilterParams reads optional filter query params from a request.
-// Returns nil filter if no params are set.
-func parseFilterParams(r *http.Request) (*EventFilter, error) {
+// ParseFilterParams reads optional filter query params from a request.
+// Supported params: pgn (decimal), manufacturer (name or code), instance (decimal),
+// name (hex CAN NAME). Returns nil filter if no params are set.
+func ParseFilterParams(r *http.Request) (*EventFilter, error) {
 	q := r.URL.Query()
 	pgns := q["pgn"]
 	manufacturers := q["manufacturer"]
@@ -330,8 +331,14 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 
 // GET /values
 func (s *Server) handleValues(w http.ResponseWriter, r *http.Request) {
+	filter, err := ParseFilterParams(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(s.broker.values.SnapshotJSON(s.broker.devices)); err != nil {
+	if _, err := w.Write(s.broker.values.SnapshotJSON(s.broker.devices, filter)); err != nil {
 		s.logger.Error("failed to write values response", "error", err)
 	}
 }
