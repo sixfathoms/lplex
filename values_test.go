@@ -14,7 +14,7 @@ func TestValueStoreRecordAndSnapshot(t *testing.T) {
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	vs.Record(3, 129025, ts, []byte{0xaa, 0xbb}, 100)
 
-	snap := vs.Snapshot(reg)
+	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
 		t.Fatalf("expected 1 device group, got %d", len(snap))
 	}
@@ -46,7 +46,7 @@ func TestValueStoreOverwrite(t *testing.T) {
 	vs.Record(1, 129025, t0, []byte{0x01}, 1)
 	vs.Record(1, 129025, t1, []byte{0x02}, 2)
 
-	snap := vs.Snapshot(reg)
+	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
 		t.Fatalf("expected 1 device group, got %d", len(snap))
 	}
@@ -70,7 +70,7 @@ func TestValueStoreMultipleSourcesSamePGN(t *testing.T) {
 	vs.Record(1, 129025, ts, []byte{0x01}, 1)
 	vs.Record(5, 129025, ts, []byte{0x05}, 2)
 
-	snap := vs.Snapshot(reg)
+	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 2 {
 		t.Fatalf("expected 2 device groups, got %d", len(snap))
 	}
@@ -101,7 +101,7 @@ func TestValueStoreDeviceResolution(t *testing.T) {
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	vs.Record(3, 129025, ts, []byte{0xaa}, 1)
 
-	snap := vs.Snapshot(reg)
+	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
 		t.Fatalf("expected 1 device group, got %d", len(snap))
 	}
@@ -124,7 +124,7 @@ func TestValueStoreUnknownDevice(t *testing.T) {
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	vs.Record(99, 129025, ts, []byte{0xff}, 1)
 
-	snap := vs.Snapshot(reg)
+	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
 		t.Fatalf("expected 1 device group, got %d", len(snap))
 	}
@@ -145,13 +145,13 @@ func TestValueStoreEmptyReturnsEmptyArray(t *testing.T) {
 	vs := NewValueStore()
 	reg := NewDeviceRegistry()
 
-	jsonBytes := vs.SnapshotJSON(reg)
+	jsonBytes := vs.SnapshotJSON(reg, nil)
 	if string(jsonBytes) != "[]" {
 		t.Errorf("empty store should return [], got %s", string(jsonBytes))
 	}
 
 	// Also verify Snapshot returns non-nil empty slice.
-	snap := vs.Snapshot(reg)
+	snap := vs.Snapshot(reg, nil)
 	if snap == nil {
 		t.Error("Snapshot should return non-nil slice")
 	}
@@ -168,7 +168,7 @@ func TestValueStoreMultiplePGNsSameSource(t *testing.T) {
 	vs.Record(1, 129026, ts, []byte{0x01}, 1) // COG/SOG
 	vs.Record(1, 129025, ts, []byte{0x02}, 2) // Position
 
-	snap := vs.Snapshot(reg)
+	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
 		t.Fatalf("expected 1 device group, got %d", len(snap))
 	}
@@ -191,7 +191,7 @@ func TestValueStoreSnapshotJSONShape(t *testing.T) {
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	vs.Record(3, 129025, ts, []byte{0xaa, 0xbb, 0xcc, 0xdd}, 12345)
 
-	jsonBytes := vs.SnapshotJSON(reg)
+	jsonBytes := vs.SnapshotJSON(reg, nil)
 
 	var result []DeviceValues
 	if err := json.Unmarshal(jsonBytes, &result); err != nil {
@@ -215,12 +215,116 @@ func TestValueStoreStatsOnlyDeviceShowsEmpty(t *testing.T) {
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	vs.Record(42, 129025, ts, []byte{0x01}, 1)
 
-	snap := vs.Snapshot(reg)
+	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
 		t.Fatalf("expected 1 device group, got %d", len(snap))
 	}
 	// Stats-only entry has NAME=0, so no name/manufacturer resolved.
 	if snap[0].Name != "" {
 		t.Errorf("name should be empty for stats-only device, got %q", snap[0].Name)
+	}
+}
+
+func TestValueStoreSnapshotFilterByPGN(t *testing.T) {
+	vs := NewValueStore()
+	reg := NewDeviceRegistry()
+
+	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	vs.Record(1, 129025, ts, []byte{0x01}, 1) // Position
+	vs.Record(1, 129026, ts, []byte{0x02}, 2) // COG/SOG
+	vs.Record(2, 129025, ts, []byte{0x03}, 3) // Position from another device
+
+	snap := vs.Snapshot(reg, &EventFilter{PGNs: []uint32{129025}})
+	if len(snap) != 2 {
+		t.Fatalf("expected 2 device groups, got %d", len(snap))
+	}
+	for _, dv := range snap {
+		if len(dv.Values) != 1 {
+			t.Fatalf("src %d: expected 1 value, got %d", dv.Source, len(dv.Values))
+		}
+		if dv.Values[0].PGN != 129025 {
+			t.Errorf("src %d: expected PGN 129025, got %d", dv.Source, dv.Values[0].PGN)
+		}
+	}
+}
+
+func TestValueStoreSnapshotFilterByManufacturer(t *testing.T) {
+	vs := NewValueStore()
+	reg := NewDeviceRegistry()
+
+	// Register Garmin at source 1.
+	claim := make([]byte, 8)
+	var name uint64
+	name |= uint64(229) << 21 // Garmin manufacturer code
+	name |= uint64(1)
+	binary.LittleEndian.PutUint64(claim, name)
+	reg.HandleAddressClaim(1, claim)
+
+	// Register Simrad (code 1857) at source 2.
+	claim2 := make([]byte, 8)
+	var name2 uint64
+	name2 |= uint64(1857) << 21
+	name2 |= uint64(2)
+	binary.LittleEndian.PutUint64(claim2, name2)
+	reg.HandleAddressClaim(2, claim2)
+
+	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	vs.Record(1, 129025, ts, []byte{0x01}, 1)
+	vs.Record(2, 129025, ts, []byte{0x02}, 2)
+
+	snap := vs.Snapshot(reg, &EventFilter{Manufacturers: []string{"Garmin"}})
+	if len(snap) != 1 {
+		t.Fatalf("expected 1 device group, got %d", len(snap))
+	}
+	if snap[0].Source != 1 {
+		t.Errorf("expected source 1 (Garmin), got %d", snap[0].Source)
+	}
+}
+
+func TestValueStoreSnapshotFilterByPGNAndManufacturer(t *testing.T) {
+	vs := NewValueStore()
+	reg := NewDeviceRegistry()
+
+	// Garmin at source 1.
+	claim := make([]byte, 8)
+	var name uint64
+	name |= uint64(229) << 21
+	name |= uint64(1)
+	binary.LittleEndian.PutUint64(claim, name)
+	reg.HandleAddressClaim(1, claim)
+
+	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	vs.Record(1, 129025, ts, []byte{0x01}, 1)
+	vs.Record(1, 129026, ts, []byte{0x02}, 2)
+	vs.Record(2, 129025, ts, []byte{0x03}, 3) // unknown device
+
+	snap := vs.Snapshot(reg, &EventFilter{
+		PGNs:          []uint32{129025},
+		Manufacturers: []string{"Garmin"},
+	})
+	if len(snap) != 1 {
+		t.Fatalf("expected 1 device group, got %d", len(snap))
+	}
+	if snap[0].Source != 1 {
+		t.Errorf("expected source 1, got %d", snap[0].Source)
+	}
+	if len(snap[0].Values) != 1 {
+		t.Fatalf("expected 1 PGN value, got %d", len(snap[0].Values))
+	}
+	if snap[0].Values[0].PGN != 129025 {
+		t.Errorf("expected PGN 129025, got %d", snap[0].Values[0].PGN)
+	}
+}
+
+func TestValueStoreSnapshotFilterMatchesNothing(t *testing.T) {
+	vs := NewValueStore()
+	reg := NewDeviceRegistry()
+
+	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	vs.Record(1, 129025, ts, []byte{0x01}, 1)
+
+	snap := vs.Snapshot(reg, &EventFilter{PGNs: []uint32{60928}})
+	if len(snap) != 0 {
+		t.Errorf("expected 0 device groups, got %d", len(snap))
 	}
 }
