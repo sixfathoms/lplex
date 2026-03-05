@@ -104,7 +104,9 @@ brews:
       bin.install "lplexdump"
 
 dockers_v2:
-  - images:
+  - ids:
+      - lplex
+    images:
       - "ghcr.io/sixfathoms/lplex"
     tags:
       - "{{ .Version }}"
@@ -113,14 +115,6 @@ dockers_v2:
       - linux/amd64
       - linux/arm64
     dockerfile: Dockerfile
-    extra_files:
-      - go.mod
-      - go.sum
-      - "*.go"
-      - cmd/
-      - canbus/
-      - journal/
-      - lplexc/
 
 changelog:
   sort: asc
