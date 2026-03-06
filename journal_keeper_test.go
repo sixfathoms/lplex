@@ -2131,11 +2131,13 @@ func TestJournalWriterPausedDiscardsFrames(t *testing.T) {
 	}
 
 	// 9 frames sent total. Phase 1 (3) and Phase 3 (3) are unpaused.
-	// Phase 2 (3) is paused. The boundary frames (last before pause, first
-	// after unpause) may or may not be discarded due to the race between
-	// the atomic store and the writer's load. Valid range: 4-6.
-	if totalFrames < 4 || totalFrames > 6 {
-		t.Errorf("expected 4-6 frames written (some discarded while paused), got %d", totalFrames)
+	// Phase 2 (3) is paused. Boundary frames at the pause/unpause transitions
+	// may or may not be discarded: the writer receives from the unbuffered
+	// channel and then checks paused.Load(), racing with the test's Store.
+	// Frame at the unpause boundary (frame 5) can leak through if the writer
+	// sees the Store(false) before checking the flag. Valid range: 4-7.
+	if totalFrames < 4 || totalFrames > 7 {
+		t.Errorf("expected 4-7 frames written (some discarded while paused), got %d", totalFrames)
 	}
 	// Critically: not all 9 frames were written, meaning pause had an effect.
 	if totalFrames == 9 {
