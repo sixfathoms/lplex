@@ -12,6 +12,10 @@ port = 8089
 # Max client buffer duration (ISO 8601)
 max-buffer-duration = PT5M
 
+# Alert when no CAN frames received for this duration (ISO 8601).
+# Detects CAN bus disconnection or power issues.
+# bus-silence-timeout = PT30S
+
 # Journal recording (comment out to disable)
 journal {
 

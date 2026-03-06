@@ -48,6 +48,7 @@ func main() {
 	replTLSCert := flag.String("replication-tls-cert", "", "Client certificate for replication mTLS")
 	replTLSKey := flag.String("replication-tls-key", "", "Client private key for replication mTLS")
 	replTLSCA := flag.String("replication-tls-ca", "", "CA certificate for replication server verification")
+	busSilenceTimeout := flag.String("bus-silence-timeout", "", "Alert when no CAN frames received for this duration (ISO 8601, e.g. PT30S)")
 	configFile := flag.String("config", "", "Path to HOCON config file (default: ./lplex.conf, /etc/lplex/lplex.conf)")
 	flag.Parse()
 
@@ -218,6 +219,22 @@ func main() {
 			}
 		}
 	}()
+
+	// Start bus silence monitor if configured
+	if *busSilenceTimeout != "" {
+		silenceTimeout, err := lplex.ParseISO8601Duration(*busSilenceTimeout)
+		if err != nil {
+			logger.Error("invalid bus-silence-timeout", "value", *busSilenceTimeout, "error", err)
+			os.Exit(1)
+		}
+		monitor := lplex.NewBusSilenceMonitor(silenceTimeout, broker, logger)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			monitor.Run(ctx)
+		}()
+		logger.Info("bus silence monitor enabled", "timeout", silenceTimeout)
+	}
 
 	// Start replication client if configured
 	var replClient *lplex.ReplicationClient
