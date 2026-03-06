@@ -4,6 +4,7 @@ CAN bus HTTP bridge for NMEA 2000. Reads raw CAN frames from a SocketCAN interfa
 
 - **Real-time SSE streaming** with [ephemeral and buffered session modes](#api), per-client filtering by PGN, manufacturer, instance, or device name
 - **Fast-packet reassembly** for multi-frame NMEA 2000 PGNs, with automatic device discovery via ISO requests
+- **[PGN decoding](#pgn-decoding)** of known NMEA 2000 message types into human-readable field values, with a DSL-based code generator (`pgngen`)
 - **[Journal recording](#journal-recording)** to block-based `.lpj` files with zstd compression, CRC32C checksums, and O(log N) time seeking
 - **[Retention and archival](#retention-and-archival)** with max-age/min-keep/max-size knobs, soft/hard thresholds, configurable overflow policy, and pluggable archive scripts
 - **[Cloud replication](#cloud-replication)** over gRPC with mTLS, live + backfill streams, hole tracking, and lazy per-instance Broker on the cloud side
@@ -163,6 +164,9 @@ lplexdump
 
 # Connect to a specific server with filtering
 lplexdump -server http://inuc1.local:8089 -pgn 129025 -manufacturer Garmin
+
+# Decode known PGNs into human-readable fields
+lplexdump -decode
 
 # Buffered mode with automatic reconnect replay
 lplexdump -server http://inuc1.local:8089 -buffer-timeout PT5M
@@ -491,6 +495,40 @@ lplex -interface can0 -journal-dir /var/log/lplex \
 **Archive triggers**:
 - `on-rotate`: archive immediately after a journal file is closed (eager, minimizes data loss window)
 - `before-expire`: archive only when a file is about to be deleted by retention (lazy, minimizes archive traffic)
+
+## PGN Decoding
+
+lplexdump can decode known NMEA 2000 PGNs into human-readable field values using the `-decode` flag:
+
+```bash
+# Terminal: decoded fields appear below each frame
+lplexdump -decode
+
+# JSON output: adds a "decoded" object to each frame
+lplexdump -decode -json
+
+# Journal replay with decoding
+lplexdump -file recording.lpj -decode
+```
+
+Decoding covers ~30 common PGNs (position, heading, wind, depth, engine, battery, environment, etc.). Unknown PGNs pass through with raw hex data as usual.
+
+### PGN Code Generator (`pgngen`)
+
+PGN definitions live in `pgn/defs/*.pgn` using a compact DSL:
+
+```
+pgn 129025 "Position Rapid Update" {
+    latitude  int32 scale=1e-7 unit="deg"
+    longitude int32 scale=1e-7 unit="deg"
+}
+```
+
+The generator produces Go structs with `Decode*`/`Encode` methods, a `Registry` map, Protobuf definitions, and JSON Schema:
+
+```bash
+go generate ./pgn/...
+```
 
 ## Deployment
 

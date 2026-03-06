@@ -12,6 +12,7 @@ go build -o lplexdump ./cmd/lplexdump
 go test ./... -v -count=1       # run tests
 golangci-lint run               # lint (must pass before pushing)
 make proto                      # regenerate protobuf (requires protoc + plugins)
+go generate ./pgn/...           # regenerate PGN decoders from pgn/defs/*.pgn
 ```
 
 ## Release
@@ -140,10 +141,13 @@ lplex-cloud process
 | `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANReader`, `CANWriter`, `JournalWriter`, `JournalKeeper`, `DeviceRegistry`, `ValueStore`, `FastPacketAssembler`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, `EventLog`, filters, ring buffer. Embeddable by external Go services. |
 | `cmd/lplex/` | Boat server: flag parsing, HOCON config, signal handling, mDNS registration, wires broker + CAN I/O + HTTP + optional replication |
 | `cmd/lplex-cloud/` | Cloud server: gRPC + HTTP servers, InstanceManager, mTLS, HOCON config |
-| `cmd/lplexdump/` | CLI client: SSE consumer with pretty-print, device table, auto-reconnect |
+| `cmd/lplexdump/` | CLI client: SSE consumer with pretty-print, device table, PGN decoding (`-decode`), auto-reconnect |
+| `cmd/pgngen/` | Code generator: reads `.pgn` DSL files, outputs Go structs/decoders/encoders, Protobuf, JSON Schema |
 | `lplexc/` | Public Go client library: Subscribe, Devices, Send, Session, mDNS discovery |
 | `canbus/` | Public CAN ID parsing (`CANHeader`, `ParseCANID`, `BuildCANID`) and ISO NAME decoding |
 | `journal/` | Public journal format: `Device`, `Reader`, `CompressionType`, block constants, length-prefixed string helpers |
+| `pgn/` | Generated Go types for NMEA 2000 PGNs: structs, `Decode*`/`Encode` methods, `Registry` map. Generated from `pgn/defs/*.pgn` via `go generate`. |
+| `pgngen/` | PGN DSL parser and code generators (Go, Protobuf, JSON Schema). AST, bit-level field layout, scaling, enums. |
 | `proto/replication/v1/` | Protobuf + gRPC definitions for replication protocol |
 
 ### Root Package File Map
@@ -185,6 +189,15 @@ lplexdump -server http://inuc1.local:8089
 
 ```
 lplexdump -server http://inuc1.local:8089 -buffer-timeout PT5M
+```
+
+### PGN Decoding
+
+`-decode` uses the `pgn.Registry` to decode known PGNs into human-readable field values. In terminal mode, decoded JSON appears on a continuation line below each frame. In JSON mode (`-json` or piped stdout), a `"decoded"` object is added to each frame. Works in all modes (ephemeral, buffered, journal replay).
+
+```
+lplexdump -decode
+lplexdump -file recording.lpj -decode
 ```
 
 ## Cloud Replication
