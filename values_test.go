@@ -402,10 +402,10 @@ func TestValueStoreDecodedSnapshotWithFilter(t *testing.T) {
 	vs.Record(1, 129025, ts, posData, 1)
 
 	windData := make([]byte, 8)
-	windData[0] = 0                                              // sid
-	binary.LittleEndian.PutUint16(windData[1:3], 550)            // speed 5.5 m/s
-	binary.LittleEndian.PutUint16(windData[3:5], 12345)          // angle
-	windData[5] = 2                                              // apparent
+	windData[0] = 0                                     // sid
+	binary.LittleEndian.PutUint16(windData[1:3], 550)   // speed 5.5 m/s
+	binary.LittleEndian.PutUint16(windData[3:5], 12345) // angle
+	windData[5] = 2                                     // apparent
 	vs.Record(1, 130306, ts, windData, 2)
 
 	snap := vs.DecodedSnapshot(reg, &EventFilter{PGNs: []uint32{129025}})
