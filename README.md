@@ -519,8 +519,21 @@ PGN definitions live in `pgn/defs/*.pgn` using a compact DSL:
 
 ```
 pgn 129025 "Position Rapid Update" {
-    latitude  int32 scale=1e-7 unit="deg"
-    longitude int32 scale=1e-7 unit="deg"
+    latitude  int32 :32 scale=1e-7 unit="deg"
+    longitude int32 :32 scale=1e-7 unit="deg"
+}
+```
+
+**Proprietary PGN dispatch**: multiple definitions of the same PGN number are supported via `value=` constraints on a discriminator field. The generator produces a dispatch function that reads the discriminator from raw bytes and routes to the correct variant decoder. Unknown discriminator values return an error.
+
+```
+# Two variants of PGN 61184, dispatched by manufacturer_code
+pgn 61184 "Victron Battery Register" {
+    manufacturer_code  uint16  :11  value=358
+    _                          :2
+    industry_code      uint8   :3
+    register_id        uint16  :16
+    payload            uint32  :32
 }
 ```
 
