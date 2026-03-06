@@ -100,10 +100,13 @@ func GenerateGo(s *Schema, pkg string) string {
 		writeVariant(&b, p)
 	}
 
-	// Dispatch functions for multi-variant PGN groups.
+	// Dispatch functions for PGN groups that need value-based routing.
+	// A group needs dispatch if it has multiple variants OR any variant
+	// has a value= constraint (even a single constrained variant needs
+	// dispatch to reject non-matching values).
 	for _, pgn := range groupOrder {
 		g := groups[pgn]
-		if len(g.indices) < 2 {
+		if !needsDispatch(s, g.indices) {
 			continue
 		}
 		writeDispatchFunc(&b, s, pgn, g.indices)
@@ -125,8 +128,8 @@ func GenerateGo(s *Schema, pkg string) string {
 		}
 		seen[pgn] = true
 		g := groups[pgn]
-		if len(g.indices) < 2 {
-			// Singleton: use the variant's decoder directly.
+		if !needsDispatch(s, g.indices) {
+			// Plain singleton: use the variant's decoder directly.
 			p := s.PGNs[g.indices[0]]
 			structName := toPascal(p.Description)
 			fmt.Fprintf(&b, "\t%d: {PGN: %d, Description: %q, Decode: func(data []byte) (any, error) { return Decode%s(data) }},\n",
@@ -148,6 +151,22 @@ func GenerateGo(s *Schema, pkg string) string {
 	b.WriteString("}\n")
 
 	return b.String()
+}
+
+// needsDispatch returns true if a PGN group requires a dispatch function.
+// This is the case when there are multiple variants OR any variant has a
+// value= constraint (a single constrained variant still needs dispatch to
+// reject frames with non-matching discriminator values).
+func needsDispatch(s *Schema, indices []int) bool {
+	if len(indices) >= 2 {
+		return true
+	}
+	for _, idx := range indices {
+		if hasMatchValues(&s.PGNs[idx]) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeVariant generates struct, Decode, and Encode for a single PGN variant.

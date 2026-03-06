@@ -2,6 +2,7 @@ package pgn
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
 )
 
@@ -116,22 +117,14 @@ func TestDecodeVictronUnknownRegister(t *testing.T) {
 }
 
 func TestDecodeProprietaryUnknownManufacturer(t *testing.T) {
-	// Synthetic: manufacturer 123 (0x7B), industry 4.
-	// Packed: 0x007B | (0x03 << 11) | (0x04 << 13) = 0x987B, LE bytes: 7B 98.
+	// Unknown manufacturer codes should return an error (no default variant).
 	raw, _ := hex.DecodeString("7b98aabbccddeeff")
-	result, err := Registry[61184].Decode(raw)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
+	_, err := Registry[61184].Decode(raw)
+	if err == nil {
+		t.Fatal("expected error for unknown manufacturer code")
 	}
-	m, ok := result.(ProprietarySingleFrame)
-	if !ok {
-		t.Fatalf("expected ProprietarySingleFrame, got %T", result)
-	}
-	if m.ManufacturerCode != 123 {
-		t.Errorf("ManufacturerCode = %d, want 123", m.ManufacturerCode)
-	}
-	if m.IndustryCode != 4 {
-		t.Errorf("IndustryCode = %d, want 4", m.IndustryCode)
+	if !strings.Contains(err.Error(), "unknown manufacturer_code") {
+		t.Errorf("error = %q, want substring about unknown manufacturer_code", err.Error())
 	}
 }
 
@@ -140,7 +133,7 @@ func TestProprietaryRegistry(t *testing.T) {
 	if !ok {
 		t.Fatal("PGN 61184 not in registry")
 	}
-	if info.Description != "Proprietary Single Frame" {
+	if info.Description != "Victron Battery Register" {
 		t.Errorf("description = %q", info.Description)
 	}
 }
@@ -194,24 +187,6 @@ func TestVictronEncodeIgnoresManufacturerCodeField(t *testing.T) {
 	}
 }
 
-func TestProprietarySingleFrameEncode(t *testing.T) {
-	m := ProprietarySingleFrame{
-		ManufacturerCode: 123,
-		IndustryCode:     4,
-	}
-	data := m.Encode()
-	got, err := DecodeProprietarySingleFrame(data)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if got.ManufacturerCode != 123 {
-		t.Errorf("ManufacturerCode = %d, want 123", got.ManufacturerCode)
-	}
-	if got.IndustryCode != 4 {
-		t.Errorf("IndustryCode = %d, want 4", got.IndustryCode)
-	}
-}
-
 func TestDispatchTooShort(t *testing.T) {
 	// Decode61184 needs at least 2 bytes to read the discriminator.
 	_, err := Decode61184([]byte{0x66})
@@ -249,10 +224,7 @@ func TestVictronDecodeShortData(t *testing.T) {
 }
 
 func TestVictronDecodeEmpty(t *testing.T) {
-	// 2 bytes of 0xFF: manufacturer_code = 0x07FF, which is not 358,
-	// so the dispatch routes to ProprietarySingleFrame. But if we call
-	// DecodeVictronBatteryRegister directly with empty data, it should
-	// pad gracefully.
+	// DecodeVictronBatteryRegister directly with empty data should pad gracefully.
 	m, err := DecodeVictronBatteryRegister(nil)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
@@ -269,28 +241,8 @@ func TestVictronDecodeEmpty(t *testing.T) {
 	}
 }
 
-func TestProprietarySingleFrameDecodeShort(t *testing.T) {
-	// 1 byte: needs padding to 2 bytes.
-	m, err := DecodeProprietarySingleFrame([]byte{0x7B})
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	// data[0]=0x7B, data[1]=0xFF (padded).
-	// LE uint16 = 0xFF7B. manufacturer_code = 0xFF7B & 0x07FF = 0x077B = 1915.
-	if m.ManufacturerCode != 1915 {
-		t.Errorf("ManufacturerCode = %d, want 1915", m.ManufacturerCode)
-	}
-	// industry_code = (0xFF >> 5) & 0x07 = 7.
-	if m.IndustryCode != 7 {
-		t.Errorf("IndustryCode = %d, want 7 (padded 0xFF)", m.IndustryCode)
-	}
-}
-
-func TestProprietaryPGNMethods(t *testing.T) {
+func TestVictronPGNMethod(t *testing.T) {
 	if (VictronBatteryRegister{}).PGN() != 61184 {
 		t.Error("VictronBatteryRegister.PGN() should be 61184")
-	}
-	if (ProprietarySingleFrame{}).PGN() != 61184 {
-		t.Error("ProprietarySingleFrame.PGN() should be 61184")
 	}
 }

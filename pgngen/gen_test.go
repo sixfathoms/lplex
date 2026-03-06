@@ -288,6 +288,49 @@ pgn 61184 "Garmin Register" {
 	}
 }
 
+func TestGenerateGoDispatchSingleVariant(t *testing.T) {
+	// A single PGN with value= should still get a dispatch function
+	// that rejects non-matching discriminator values.
+	src := `
+pgn 61184 "Victron Battery Register" {
+  manufacturer_code  uint16  :11  value=358
+  _                          :2
+  industry_code      uint8   :3
+  register_id        uint16  :16
+  payload            uint32  :32
+}
+`
+	s, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+
+	code := GenerateGo(s, "pgn")
+
+	// Should generate the variant struct and decoder.
+	if !strings.Contains(code, "type VictronBatteryRegister struct") {
+		t.Error("missing VictronBatteryRegister struct")
+	}
+
+	// Should generate a dispatch function despite being a single variant.
+	if !strings.Contains(code, "func Decode61184(data []byte) (any, error)") {
+		t.Error("missing Decode61184 dispatch function for single constrained variant")
+	}
+
+	// Dispatch should reject unknown discriminator values.
+	if !strings.Contains(code, `unknown manufacturer_code value`) {
+		t.Error("single-variant dispatch should return error for unknown discriminator")
+	}
+
+	// Registry should use the dispatch function.
+	if !strings.Contains(code, "Decode: Decode61184") {
+		t.Error("registry should use Decode61184 dispatch function")
+	}
+}
+
 func TestDispatchValidation(t *testing.T) {
 	tests := []struct {
 		name    string

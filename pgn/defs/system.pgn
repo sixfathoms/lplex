@@ -43,8 +43,8 @@ pgn 126993 "Heartbeat" {
 }
 
 # PGN 61184 — Proprietary Single Frame
-# Same PGN number, dispatched by manufacturer_code. Victron Energy (358)
-# uses a register-based protocol; the default variant captures just the header.
+# Dispatched by manufacturer_code. Only recognized manufacturers get decoded;
+# unknown manufacturer codes return an error from the dispatch function.
 
 pgn 61184 "Victron Battery Register" {
   manufacturer_code  uint16  :11  value=358
@@ -52,12 +52,6 @@ pgn 61184 "Victron Battery Register" {
   industry_code      uint8   :3
   register_id        uint16  :16
   payload            uint32  :32
-}
-
-pgn 61184 "Proprietary Single Frame" {
-  manufacturer_code  uint16  :11
-  _                          :2
-  industry_code      uint8   :3
 }
 
 # PGN 126992 — System Time
