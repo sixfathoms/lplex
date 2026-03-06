@@ -1,6 +1,7 @@
 package pgn
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -150,5 +151,37 @@ func TestBinarySwitchBankPGN(t *testing.T) {
 	var sw BinarySwitchBankStatus
 	if sw.PGN() != 127501 {
 		t.Errorf("PGN() = %d, want 127501", sw.PGN())
+	}
+}
+
+func TestBinarySwitchBankJSON(t *testing.T) {
+	sw := BinarySwitchBankStatus{
+		Instance:   1,
+		Indicators: Uint8s{1, 2, 3, 0},
+	}
+	data, err := json.Marshal(sw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+
+	// Must be a JSON integer array, not base64.
+	want := `{"instance":1,"indicators":[1,2,3,0]}`
+	if got != want {
+		t.Errorf("JSON = %s, want %s", got, want)
+	}
+
+	// Round-trip through unmarshal.
+	var decoded BinarySwitchBankStatus
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Indicators) != 4 {
+		t.Fatalf("unmarshaled len = %d, want 4", len(decoded.Indicators))
+	}
+	for i, want := range sw.Indicators {
+		if decoded.Indicators[i] != want {
+			t.Errorf("indicator[%d] = %d, want %d", i, decoded.Indicators[i], want)
+		}
 	}
 }

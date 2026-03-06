@@ -896,9 +896,9 @@ pgn 127501 "Binary Switch Bank Status" {
 
 	code := GenerateGo(s, "pgn")
 
-	// Struct should have a slice field, not individual fields.
-	if !strings.Contains(code, "Indicators []uint8") {
-		t.Error("missing Indicators []uint8 field")
+	// Struct should have a Uint8s field (not []uint8 which json base64-encodes).
+	if !strings.Contains(code, "Indicators Uint8s") {
+		t.Error("missing Indicators Uint8s field")
 	}
 	if strings.Contains(code, "Indicator1") {
 		t.Error("should not have individual Indicator1 field")
@@ -909,9 +909,9 @@ pgn 127501 "Binary Switch Bank Status" {
 		t.Error("missing indicators json tag")
 	}
 
-	// Decode should create a slice literal.
-	if !strings.Contains(code, "m.Indicators = []uint8{") {
-		t.Error("missing slice literal in decode")
+	// Decode should create a Uint8s literal.
+	if !strings.Contains(code, "m.Indicators = Uint8s{") {
+		t.Error("missing Uint8s literal in decode")
 	}
 
 	// Encode should have bounds-checked writes.
@@ -979,8 +979,8 @@ pgn 127501 "Test" {
 
 	code := GenerateGo(s, "pgn")
 
-	if !strings.Contains(code, "Switches []uint8") {
-		t.Error("missing Switches []uint8 field (as= override)")
+	if !strings.Contains(code, "Switches Uint8s") {
+		t.Error("missing Switches Uint8s field (as= override)")
 	}
 	if !strings.Contains(code, `json:"switches"`) {
 		t.Error("missing switches json tag (as= override)")
