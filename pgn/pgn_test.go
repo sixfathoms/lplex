@@ -133,12 +133,15 @@ func TestVesselHeadingRoundTrip(t *testing.T) {
 
 func TestWaterDepthRoundTrip(t *testing.T) {
 	orig := WaterDepth{
-		Sid:      0,
-		Depth:    15.25,
-		Offset:   -0.5,
-		MaxRange: 100.0,
+		Sid:    0,
+		Depth:  15.25,
+		Offset: -0.5,
+		Range:  100.0,
 	}
 	data := orig.Encode()
+	if len(data) != 8 {
+		t.Fatalf("encoded length = %d, want 8", len(data))
+	}
 	decoded, err := DecodeWaterDepth(data)
 	if err != nil {
 		t.Fatal(err)
@@ -148,6 +151,34 @@ func TestWaterDepthRoundTrip(t *testing.T) {
 	}
 	if math.Abs(decoded.Offset-(-0.5)) > 0.001 {
 		t.Errorf("offset = %f, want ~-0.5", decoded.Offset)
+	}
+	if math.Abs(decoded.Range-100.0) > 10 {
+		t.Errorf("range = %f, want ~100.0", decoded.Range)
+	}
+}
+
+func TestWaterDepthDecodeAirmarFrame(t *testing.T) {
+	// Real Airmar frame: ff3d020000a5fa0e
+	data := []byte{0xff, 0x3d, 0x02, 0x00, 0x00, 0xa5, 0xfa, 0x0e}
+	decoded, err := DecodeWaterDepth(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sid = 0xff
+	if decoded.Sid != 0xff {
+		t.Errorf("sid = %d, want 255", decoded.Sid)
+	}
+	// depth = 0x0000023d = 573 -> 573 * 0.01 = 5.73m
+	if math.Abs(decoded.Depth-5.73) > 0.01 {
+		t.Errorf("depth = %f, want ~5.73", decoded.Depth)
+	}
+	// offset = 0xfaa5 as int16 = -1371 -> -1371 * 0.001 = -1.371m
+	if math.Abs(decoded.Offset-(-1.371)) > 0.001 {
+		t.Errorf("offset = %f, want ~-1.371", decoded.Offset)
+	}
+	// range = 0x0e = 14 -> 14 * 10 = 140m
+	if math.Abs(decoded.Range-140.0) > 0.01 {
+		t.Errorf("range = %f, want 140.0", decoded.Range)
 	}
 }
 
