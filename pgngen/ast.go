@@ -152,9 +152,10 @@ func validateDispatchGroup(s *Schema, pgn uint32, indices []int) error {
 			break
 		}
 	}
+	pgnStr := itoa(int64(pgn))
 	if !found {
 		return &ResolveError{
-			Message: "PGN " + itoa(int(pgn)) + ": multiple definitions require at least one variant with a value= constraint",
+			Message: "PGN " + pgnStr + ": multiple definitions require at least one variant with a value= constraint",
 		}
 	}
 
@@ -169,7 +170,7 @@ func validateDispatchGroup(s *Schema, pgn uint32, indices []int) error {
 			if defaultCount > 1 {
 				return &ResolveError{
 					Line:    p.Line,
-					Message: "PGN " + itoa(int(pgn)) + ": multiple default variants (without value= constraints)",
+					Message: "PGN " + pgnStr + ": multiple default variants (without value= constraints)",
 				}
 			}
 			continue
@@ -177,16 +178,16 @@ func validateDispatchGroup(s *Schema, pgn uint32, indices []int) error {
 		if d.Name != discName || d.BitStart != discBitStart || d.Bits != discBits {
 			return &ResolveError{
 				Line: d.Line,
-				Message: "PGN " + itoa(int(pgn)) + ": discriminator field mismatch: " +
-					d.Name + " at bit " + itoa(d.BitStart) + ":" + itoa(d.Bits) +
-					" vs " + discName + " at bit " + itoa(discBitStart) + ":" + itoa(discBits),
+				Message: "PGN " + pgnStr + ": discriminator field mismatch: " +
+					d.Name + " at bit " + itoa(int64(d.BitStart)) + ":" + itoa(int64(d.Bits)) +
+					" vs " + discName + " at bit " + itoa(int64(discBitStart)) + ":" + itoa(int64(discBits)),
 			}
 		}
 		if prev, dup := matchValues[*d.MatchValue]; dup {
 			return &ResolveError{
 				Line: d.Line,
-				Message: "PGN " + itoa(int(pgn)) + ": duplicate match value " + itoa(int(*d.MatchValue)) +
-					" (also at line " + itoa(s.PGNs[prev].Line) + ")",
+				Message: "PGN " + pgnStr + ": duplicate match value " + itoa(*d.MatchValue) +
+					" (also at line " + itoa(int64(s.PGNs[prev].Line)) + ")",
 			}
 		}
 		matchValues[*d.MatchValue] = idx
@@ -203,14 +204,19 @@ type ResolveError struct {
 
 func (e *ResolveError) Error() string {
 	if e.Line > 0 {
-		return "line " + itoa(e.Line) + ": " + e.Message
+		return "line " + itoa(int64(e.Line)) + ": " + e.Message
 	}
 	return e.Message
 }
 
-func itoa(n int) string {
+func itoa(n int64) string {
 	if n == 0 {
 		return "0"
+	}
+	neg := false
+	if n < 0 {
+		neg = true
+		n = -n
 	}
 	buf := [20]byte{}
 	i := len(buf)
@@ -218,6 +224,10 @@ func itoa(n int) string {
 		i--
 		buf[i] = byte('0' + n%10)
 		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
 	}
 	return string(buf[i:])
 }
