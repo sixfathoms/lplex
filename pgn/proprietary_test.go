@@ -172,3 +172,125 @@ func TestVictronBatteryRegisterEncode(t *testing.T) {
 		t.Errorf("Payload = %d, want 10000", got.Payload)
 	}
 }
+
+func TestVictronEncodeIgnoresManufacturerCodeField(t *testing.T) {
+	// Encode should hardcode manufacturer_code=358 regardless of the struct value.
+	m := VictronBatteryRegister{
+		ManufacturerCode: 999, // garbage, should be ignored
+		IndustryCode:     4,
+		RegisterId:       0x0200,
+		Payload:          42,
+	}
+	data := m.Encode()
+	got, err := DecodeVictronBatteryRegister(data)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ManufacturerCode != 358 {
+		t.Errorf("ManufacturerCode = %d, want 358 (hardcoded)", got.ManufacturerCode)
+	}
+	if got.Payload != 42 {
+		t.Errorf("Payload = %d, want 42", got.Payload)
+	}
+}
+
+func TestProprietarySingleFrameEncode(t *testing.T) {
+	m := ProprietarySingleFrame{
+		ManufacturerCode: 123,
+		IndustryCode:     4,
+	}
+	data := m.Encode()
+	got, err := DecodeProprietarySingleFrame(data)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ManufacturerCode != 123 {
+		t.Errorf("ManufacturerCode = %d, want 123", got.ManufacturerCode)
+	}
+	if got.IndustryCode != 4 {
+		t.Errorf("IndustryCode = %d, want 4", got.IndustryCode)
+	}
+}
+
+func TestDispatchTooShort(t *testing.T) {
+	// Decode61184 needs at least 2 bytes to read the discriminator.
+	_, err := Decode61184([]byte{0x66})
+	if err == nil {
+		t.Fatal("expected error for 1-byte input")
+	}
+	_, err = Decode61184(nil)
+	if err == nil {
+		t.Fatal("expected error for nil input")
+	}
+}
+
+func TestVictronDecodeShortData(t *testing.T) {
+	// Only the 2-byte manufacturer header (Victron). Missing register_id and payload
+	// should pad with 0xFF.
+	raw, _ := hex.DecodeString("6699")
+	result, err := Decode61184(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	m, ok := result.(VictronBatteryRegister)
+	if !ok {
+		t.Fatalf("expected VictronBatteryRegister, got %T", result)
+	}
+	if m.ManufacturerCode != 358 {
+		t.Errorf("ManufacturerCode = %d, want 358", m.ManufacturerCode)
+	}
+	// Padded with 0xFF: register_id = 0xFFFF, payload = 0xFFFFFFFF.
+	if m.RegisterId != 0xFFFF {
+		t.Errorf("RegisterId = 0x%04X, want 0xFFFF (padded)", m.RegisterId)
+	}
+	if m.Payload != 0xFFFFFFFF {
+		t.Errorf("Payload = 0x%08X, want 0xFFFFFFFF (padded)", m.Payload)
+	}
+}
+
+func TestVictronDecodeEmpty(t *testing.T) {
+	// 2 bytes of 0xFF: manufacturer_code = 0x07FF, which is not 358,
+	// so the dispatch routes to ProprietarySingleFrame. But if we call
+	// DecodeVictronBatteryRegister directly with empty data, it should
+	// pad gracefully.
+	m, err := DecodeVictronBatteryRegister(nil)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// All 0xFF padding: manufacturer_code = 0x07FF (11 bits of 0xFF).
+	if m.ManufacturerCode != 0x07FF {
+		t.Errorf("ManufacturerCode = %d, want %d (all-ones)", m.ManufacturerCode, 0x07FF)
+	}
+	if m.RegisterId != 0xFFFF {
+		t.Errorf("RegisterId = 0x%04X, want 0xFFFF", m.RegisterId)
+	}
+	if m.Payload != 0xFFFFFFFF {
+		t.Errorf("Payload = 0x%08X, want 0xFFFFFFFF", m.Payload)
+	}
+}
+
+func TestProprietarySingleFrameDecodeShort(t *testing.T) {
+	// 1 byte: needs padding to 2 bytes.
+	m, err := DecodeProprietarySingleFrame([]byte{0x7B})
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// data[0]=0x7B, data[1]=0xFF (padded).
+	// LE uint16 = 0xFF7B. manufacturer_code = 0xFF7B & 0x07FF = 0x077B = 1915.
+	if m.ManufacturerCode != 1915 {
+		t.Errorf("ManufacturerCode = %d, want 1915", m.ManufacturerCode)
+	}
+	// industry_code = (0xFF >> 5) & 0x07 = 7.
+	if m.IndustryCode != 7 {
+		t.Errorf("IndustryCode = %d, want 7 (padded 0xFF)", m.IndustryCode)
+	}
+}
+
+func TestProprietaryPGNMethods(t *testing.T) {
+	if (VictronBatteryRegister{}).PGN() != 61184 {
+		t.Error("VictronBatteryRegister.PGN() should be 61184")
+	}
+	if (ProprietarySingleFrame{}).PGN() != 61184 {
+		t.Error("ProprietarySingleFrame.PGN() should be 61184")
+	}
+}
