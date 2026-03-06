@@ -740,3 +740,12 @@ func (b *Broker) Stats() BrokerStats {
 		DeviceCount:       len(b.devices.Snapshot()),
 	}
 }
+
+// LastFrameTime returns the timestamp of the most recently received frame,
+// or zero if no frames have been received yet.
+func (b *Broker) LastFrameTime() time.Time {
+	if nano := b.lastFrameNano.Load(); nano != 0 {
+		return time.Unix(0, nano)
+	}
+	return time.Time{}
+}

@@ -27,6 +27,7 @@ var configToFlag = map[string]string{
 	"journal.retention.overflow-policy": "journal-retention-overflow-policy",
 	"journal.archive.command":           "journal-archive-command",
 	"journal.archive.trigger":           "journal-archive-trigger",
+	"bus-silence-timeout":        "bus-silence-timeout",
 	"replication.target":         "replication-target",
 	"replication.instance-id":    "replication-instance-id",
 	"replication.tls.cert":       "replication-tls-cert",
