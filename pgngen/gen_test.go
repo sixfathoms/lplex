@@ -135,6 +135,34 @@ pgn 129025 "Position Rapid Update" {
 	}
 }
 
+func TestMinBufferBytesNonStandardWidth(t *testing.T) {
+	// A byte-aligned 24-bit uint32 reads via Uint32 (4 bytes).
+	// MinBytes (totalBits/8) would give 3, but the buffer must be 4.
+	src := `
+pgn 59904 "ISO Request" {
+  requested_pgn  uint32  :24
+}
+`
+	s, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := minBufferBytes(s.PGNs[0])
+	if got != 4 {
+		t.Errorf("minBufferBytes = %d, want 4", got)
+	}
+
+	// Verify generated code uses the correct buffer size.
+	code := GenerateGo(s, "pgn")
+	if !strings.Contains(code, "if len(data) < 4") {
+		t.Error("generated decode should pad to 4 bytes, not 3")
+	}
+}
+
 func TestNaming(t *testing.T) {
 	tests := []struct {
 		input    string

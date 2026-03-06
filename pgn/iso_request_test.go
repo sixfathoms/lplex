@@ -12,15 +12,32 @@ func TestDecodeISORequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if m.RequestedPGN != 60928 {
-		t.Errorf("RequestedPGN = %d, want 60928", m.RequestedPGN)
+	if m.RequestedPgn != 60928 {
+		t.Errorf("RequestedPgn = %d, want 60928", m.RequestedPgn)
 	}
 }
 
-func TestDecodeISORequestTooShort(t *testing.T) {
-	_, err := DecodeISORequest([]byte{0x00})
-	if err == nil {
-		t.Fatal("expected error for short data")
+func TestDecodeISORequestShortPads(t *testing.T) {
+	// 1 byte: padded with 0xFF, result is 0xFFFF00 = 16776960.
+	m, err := DecodeISORequest([]byte{0x00})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := uint32(0x00FFFF00)
+	if m.RequestedPgn != want {
+		t.Errorf("RequestedPgn = %d, want %d", m.RequestedPgn, want)
+	}
+}
+
+func TestDecodeISORequestEncode(t *testing.T) {
+	m := ISORequest{RequestedPgn: 60928}
+	data := m.Encode()
+	m2, err := DecodeISORequest(data)
+	if err != nil {
+		t.Fatalf("decode roundtrip: %v", err)
+	}
+	if m2.RequestedPgn != 60928 {
+		t.Errorf("roundtrip: got %d, want 60928", m2.RequestedPgn)
 	}
 }
 

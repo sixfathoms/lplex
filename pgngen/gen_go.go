@@ -82,7 +82,7 @@ func GenerateGo(s *Schema, pkg string) string {
 	// PGN structs and decode/encode
 	for _, p := range s.PGNs {
 		structName := toPascal(p.Description)
-		minBytes := p.MinBytes()
+		minBytes := minBufferBytes(p)
 
 		// Struct
 		fmt.Fprintf(&b, "// %s represents PGN %d — %s.\n", structName, p.PGN, p.Description)
@@ -436,6 +436,61 @@ func intGoType(bits int) string {
 		return "int32"
 	default:
 		return "int64"
+	}
+}
+
+// minBufferBytes returns the minimum buffer size needed to safely decode/encode
+// all fields. This may exceed (totalBits+7)/8 when a non-standard-width field
+// (e.g. byte-aligned :24) requires a wider read (Uint32 reads 4 bytes, not 3).
+func minBufferBytes(p PGNDef) int {
+	n := 0
+	for _, f := range p.Fields {
+		end := fieldReadEnd(f)
+		if end > n {
+			n = end
+		}
+	}
+	return n
+}
+
+// fieldReadEnd returns the byte index one past the last byte accessed when
+// reading or writing the given field. Mirrors the access patterns in
+// readBitsExpr and writeBitsStmt.
+func fieldReadEnd(f FieldDef) int {
+	byteOff := f.BitStart / 8
+	bitInByte := f.BitStart % 8
+
+	switch {
+	case f.Type == TypeString:
+		return byteOff + f.Bits/8
+	case f.Type == TypeFloat && f.Bits == 32:
+		return byteOff + 4
+	case f.Type == TypeFloat && f.Bits == 64:
+		return byteOff + 8
+	}
+
+	if bitInByte == 0 {
+		switch f.Bits {
+		case 8:
+			return byteOff + 1
+		case 16:
+			return byteOff + 2
+		case 32:
+			return byteOff + 4
+		case 64:
+			return byteOff + 8
+		}
+	}
+
+	switch {
+	case bitInByte+f.Bits <= 8:
+		return byteOff + 1
+	case bitInByte+f.Bits <= 16:
+		return byteOff + 2
+	case bitInByte+f.Bits <= 32:
+		return byteOff + 4
+	default:
+		return byteOff + 8
 	}
 }
 
