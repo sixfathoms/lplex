@@ -59,6 +59,9 @@ func (l *EventLog) Recent(n int) []ReplicationEvent {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if n <= 0 {
+		return nil
+	}
 	if n > eventLogSize {
 		n = eventLogSize
 	}
