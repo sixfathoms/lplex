@@ -46,8 +46,8 @@ enum PressureSource {
 # PGN 130306 — Wind Data
 pgn 130306 "Wind Data" interval=100ms {
   sid              uint8          :8
-  wind_speed       uint16         :16  scale=0.01   unit="m/s"
-  wind_angle       uint16         :16  scale=0.0001 unit="rad"
+  wind_speed       uint16         :16  scale=0.01   unit="m/s"  tolerance=0.5
+  wind_angle       uint16         :16  scale=0.0001 unit="rad"  tolerance=0.05
   wind_reference   WindReference  :3
   _                                :5
   _                                :16
@@ -56,8 +56,8 @@ pgn 130306 "Wind Data" interval=100ms {
 # PGN 130310 — Environmental Parameters (Outside)
 pgn 130310 "Environmental Parameters Outside" interval=500ms {
   sid                    uint8   :8
-  water_temperature      uint16  :16  scale=0.01    unit="K"
-  outside_temperature    uint16  :16  scale=0.01    unit="K"
+  water_temperature      uint16  :16  scale=0.01    unit="K"  tolerance=0.1
+  outside_temperature    uint16  :16  scale=0.01    unit="K"  tolerance=0.1
   atmospheric_pressure   uint16  :16  scale=100     unit="Pa"
   _                               :8
 }
@@ -67,7 +67,7 @@ pgn 130311 "Environmental Parameters Inside" interval=500ms {
   sid                    uint8             :8
   temperature_source     TemperatureSource :6
   humidity_source        HumiditySource    :2
-  temperature            uint16            :16  scale=0.01   unit="K"
+  temperature            uint16            :16  scale=0.01   unit="K"  tolerance=0.1
   humidity               int16             :16  scale=0.004  unit="%"
   atmospheric_pressure   uint16            :16  scale=100    unit="Pa"
 }
@@ -106,6 +106,6 @@ pgn 130316 "Temperature Extended Range" interval=2000ms {
   sid                  uint8             :8
   instance             uint8             :8
   temperature_source   TemperatureSource :8
-  actual_temperature   uint32            :24  scale=0.001 unit="K"
+  actual_temperature   uint32            :24  scale=0.001 unit="K"  tolerance=0.1
   set_temperature      uint16            :16  scale=0.1   unit="K"
 }

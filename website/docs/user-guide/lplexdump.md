@@ -33,6 +33,7 @@ lplexdump -server http://inuc1.local:8089 -decode
 | `-quiet` | `false` | Suppress stderr status messages |
 | `-json` | `false` | Force JSON output (auto-enabled when piped) |
 | `-decode` | `false` | Decode known PGNs into field values |
+| `-changes` | `false` | Only show frames with changed data (suppress duplicates within tolerance) |
 | `-file` | (empty) | Replay a `.lpj` journal file instead of connecting |
 | `-inspect` | `false` | Inspect journal file structure and exit |
 | `-speed` | `1.0` | Playback speed for journal replay (0 = max speed) |
@@ -108,6 +109,29 @@ lplexdump -pgn 129025 -pgn 129026 -manufacturer Garmin
 ```
 
 See [Filtering](/user-guide/filtering) for details.
+
+## Change tracking
+
+Use `-changes` to suppress duplicate frames and only show meaningful state changes. Each output frame is tagged with an event type:
+
+- **`[snapshot]`** (green): first observation for this source+PGN pair
+- **`[delta N/MB]`** (yellow): significant change detected (N = diff bytes, M = full packet bytes)
+- **`[idle]`**: source stopped transmitting this PGN (timeout based on the PGN's interval)
+
+```bash
+# Live stream, only significant changes
+lplexdump -server http://inuc1.local:8089 -changes -decode
+
+# Journal replay with change tracking
+lplexdump -file recording.lpj -changes -decode
+
+# JSON output includes "change" field
+lplexdump -changes -decode -json
+```
+
+"Significant" is determined by field-level tolerances declared in the PGN DSL (`tolerance=` attribute). For example, PGN 127257 (Attitude) declares `tolerance=0.005` on pitch/roll, so sub-0.005 rad sensor jitter is suppressed. PGNs without tolerances use byte-level comparison (any change is significant).
+
+When tolerances are declared on a PGN, only the tolerance-bearing fields are checked. Other fields (like SID counters that increment every packet) are ignored.
 
 ## Piping and scripting
 

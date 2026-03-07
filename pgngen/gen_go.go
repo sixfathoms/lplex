@@ -160,6 +160,7 @@ func GenerateGo(s *Schema, pkg string) string {
 	b.WriteString("\tInterval    time.Duration\n")
 	b.WriteString("\tOnDemand    bool\n")
 	b.WriteString("\tDraft       bool\n")
+	b.WriteString("\tTolerances  map[string]float64 // field name -> change detection tolerance\n")
 	b.WriteString("\tDecode      func([]byte) (any, error)\n")
 	b.WriteString("}\n\n")
 	b.WriteString("// Registry maps PGN numbers to their decoders.\n")
@@ -241,6 +242,25 @@ func pgnMetaFields(p *PGNDef) string {
 	if p.Draft {
 		s += "Draft: true, "
 	}
+
+	// Collect field tolerances.
+	var tols []string
+	for _, f := range p.Fields {
+		if f.Tolerance != nil {
+			tols = append(tols, fmt.Sprintf("%q: %g", toSnake(f.Name), *f.Tolerance))
+		}
+	}
+	if len(tols) > 0 {
+		s += "Tolerances: map[string]float64{"
+		for i, t := range tols {
+			if i > 0 {
+				s += ", "
+			}
+			s += t
+		}
+		s += "}, "
+	}
+
 	return s
 }
 

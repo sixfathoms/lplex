@@ -71,9 +71,9 @@ enum DirectionReference {
 # PGN 127250 — Vessel Heading
 pgn 127250 "Vessel Heading" interval=100ms {
   sid                uint8             :8
-  heading            uint16            :16  scale=0.0001 unit="rad"
-  deviation          int16             :16  scale=0.0001 unit="rad"
-  variation          int16             :16  scale=0.0001 unit="rad"
+  heading            uint16            :16  scale=0.0001 unit="rad"  tolerance=0.01
+  deviation          int16             :16  scale=0.0001 unit="rad"  tolerance=0.01
+  variation          int16             :16  scale=0.0001 unit="rad"  tolerance=0.01
   heading_reference  HeadingReference  :2
   _                                    :6
 }
@@ -81,16 +81,16 @@ pgn 127250 "Vessel Heading" interval=100ms {
 # PGN 127251 — Rate of Turn
 pgn 127251 "Rate of Turn" interval=100ms {
   sid         uint8   :8
-  rate        int32   :32  scale=3.125e-8  unit="rad/s"
+  rate        int32   :32  scale=3.125e-8  unit="rad/s"  tolerance=0.005
   _                   :24
 }
 
 # PGN 127257 — Attitude
 pgn 127257 "Attitude" interval=1000ms {
   sid    uint8   :8
-  yaw    int16   :16  scale=0.0001 unit="rad"
-  pitch  int16   :16  scale=0.0001 unit="rad"
-  roll   int16   :16  scale=0.0001 unit="rad"
+  yaw    int16   :16  scale=0.0001 unit="rad" tolerance=0.01
+  pitch  int16   :16  scale=0.0001 unit="rad" tolerance=0.005
+  roll   int16   :16  scale=0.0001 unit="rad" tolerance=0.005
   _               :8
 }
 
@@ -117,7 +117,7 @@ pgn 128259 "Speed Water Referenced" interval=1000ms {
 # PGN 128267 — Water Depth
 pgn 128267 "Water Depth" interval=1000ms {
   sid          uint8   :8
-  depth        uint32  :32  scale=0.01    unit="m"
+  depth        uint32  :32  scale=0.01    unit="m"  tolerance=0.1
   offset       int16   :16  scale=0.001   unit="m"
   range        uint8   :8   scale=10      unit="m"
 }

@@ -168,6 +168,9 @@ lplexdump -server http://inuc1.local:8089 -pgn 129025 -manufacturer Garmin
 # Decode known PGNs into human-readable fields
 lplexdump -decode
 
+# Only show frames with significant changes (suppress sensor noise)
+lplexdump -changes -decode
+
 # Buffered mode with automatic reconnect replay
 lplexdump -server http://inuc1.local:8089 -buffer-timeout PT5M
 ```
@@ -591,6 +594,7 @@ Each field has: `name  type  :bits  [attributes...]`
 | `offset=N` | Offset: `decoded = raw * scale + offset` |
 | `unit="..."` | Human-readable unit (e.g. `"deg"`, `"m/s"`, `"rad"`) |
 | `trim="..."` | Right-trim these characters from decoded string fields (e.g. `trim="@ "` for AIS names) |
+| `tolerance=N` | Change detection threshold for `ChangeTracker`. Fields with changes smaller than N are suppressed by `lplexdump -changes`. |
 | `value=N` | Dispatch constraint for variant PGNs (see below) |
 
 ### Enums

@@ -338,6 +338,12 @@ func (p *parser) parseField(tokens []string) (FieldDef, error) {
 				return FieldDef{}, p.errorf("field %s: group= must be \"map\", got %q", f.Name, mode)
 			}
 			f.GroupMode = mode
+		case "tolerance":
+			tol, err := strconv.ParseFloat(v, 64)
+			if err != nil || tol < 0 {
+				return FieldDef{}, p.errorf("field %s: invalid tolerance %q (must be non-negative number)", f.Name, v)
+			}
+			f.Tolerance = &tol
 		case "trim":
 			if f.Type != TypeString {
 				return FieldDef{}, p.errorf("field %s: trim= only applies to string fields", f.Name)
