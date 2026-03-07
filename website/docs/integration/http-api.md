@@ -117,7 +117,7 @@ Acknowledge receipt of frames up to the given sequence number. Advances the sess
 ### Frame transmission
 
 :::note
-Both `/send` and `/query` are **disabled by default**. Enable them with `-send-enabled` or the `send.enabled` config option. You can further restrict which PGNs and destination devices are allowed — see [Configuration](../getting-started/configuration.md).
+Both `/send` and `/query` are **disabled by default**. Enable them with `-send-enabled` or the `send.enabled` config option. Use `send.rules` to define ordered allow/deny rules with PGN ranges and CAN NAME lists — see [Configuration](../getting-started/configuration.md).
 :::
 
 #### `POST /send`

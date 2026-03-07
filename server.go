@@ -8,19 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
-	"slices"
 	"strconv"
 	"time"
 )
-
-// SendPolicy controls whether the /send and /query endpoints are enabled and
-// which PGNs and destination devices may be targeted. An empty allowlist means
-// "all allowed" (when Enabled is true).
-type SendPolicy struct {
-	Enabled     bool     // must be true for /send and /query to accept requests
-	AllowedPGNs []uint32 // if non-empty, only these PGNs may be sent/queried
-	AllowedNames []uint64 // if non-empty, destination must resolve to one of these CAN NAMEs
-}
 
 // Server handles HTTP API requests for lplex.
 type Server struct {
@@ -320,22 +310,39 @@ func (s *Server) checkSendPolicy(w http.ResponseWriter, pgn uint32, dst uint8) b
 		http.Error(w, "send is disabled", http.StatusForbidden)
 		return false
 	}
-	if len(s.sendPolicy.AllowedPGNs) > 0 && !slices.Contains(s.sendPolicy.AllowedPGNs, pgn) {
-		http.Error(w, fmt.Sprintf("PGN %d is not in the send allowlist", pgn), http.StatusForbidden)
-		return false
+
+	// No rules = allow all (backwards compatible).
+	if len(s.sendPolicy.Rules) == 0 {
+		return true
 	}
-	if len(s.sendPolicy.AllowedNames) > 0 && dst != 0xFF {
-		dev := s.broker.devices.Get(dst)
-		if dev == nil {
-			http.Error(w, fmt.Sprintf("destination %d has no known CAN NAME", dst), http.StatusForbidden)
+
+	// Resolve destination NAME for rule matching.
+	var dstNAME uint64
+	var nameKnown bool
+	if dst != 0xFF {
+		if dev := s.broker.devices.Get(dst); dev != nil {
+			dstNAME = dev.NAME
+			nameKnown = true
+		}
+	} else {
+		// Broadcast: NAME-based rules don't constrain broadcasts.
+		nameKnown = false
+	}
+
+	// Evaluate rules top-to-bottom, first match wins.
+	for _, rule := range s.sendPolicy.Rules {
+		if rule.Matches(pgn, dstNAME, nameKnown) {
+			if rule.Allow {
+				return true
+			}
+			http.Error(w, fmt.Sprintf("send denied by rule (pgn=%d, dst=%d)", pgn, dst), http.StatusForbidden)
 			return false
 		}
-		if !slices.Contains(s.sendPolicy.AllowedNames, dev.NAME) {
-			http.Error(w, fmt.Sprintf("destination NAME %016x is not in the send allowlist", dev.NAME), http.StatusForbidden)
-			return false
-		}
 	}
-	return true
+
+	// No matching rule = deny.
+	http.Error(w, fmt.Sprintf("no send rule matched (pgn=%d, dst=%d)", pgn, dst), http.StatusForbidden)
+	return false
 }
 
 // POST /send

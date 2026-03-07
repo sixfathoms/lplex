@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/gurkankaymak/hocon"
 )
@@ -27,9 +28,7 @@ var configToFlag = map[string]string{
 	"journal.retention.overflow-policy": "journal-retention-overflow-policy",
 	"journal.archive.command":           "journal-archive-command",
 	"journal.archive.trigger":           "journal-archive-trigger",
-	"send.enabled":       "send-enabled",
-	"send.allowed-pgns":  "send-allowed-pgns",
-	"send.allowed-names": "send-allowed-names",
+	"send.enabled": "send-enabled",
 	"bus-silence-timeout":        "bus-silence-timeout",
 	"replication.target":         "replication-target",
 	"replication.instance-id":    "replication-instance-id",
@@ -93,6 +92,15 @@ func applyConfig(path string) error {
 		}
 		if err := flag.Set(flagName, val); err != nil {
 			return fmt.Errorf("config key %q (flag -%s): %w", configKey, flagName, err)
+		}
+	}
+
+	// Handle send.rules as a HOCON list → semicolon-separated string.
+	if !explicit["send-rules"] {
+		if parts := cfg.GetStringSlice("send.rules"); len(parts) > 0 {
+			if err := flag.Set("send-rules", strings.Join(parts, ";")); err != nil {
+				return fmt.Errorf("config key send.rules: %w", err)
+			}
 		}
 	}
 

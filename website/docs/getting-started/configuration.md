@@ -42,15 +42,18 @@ health {
 }
 
 send {
-  # Enable /send and /query HTTP endpoints (default: false)
+  # Enable /send and /query HTTP endpoints (default: false).
+  # With no rules, all PGNs and destinations are allowed.
   enabled = true
 
-  # Restrict which PGNs may be sent/queried (comma-separated, empty = all)
-  # allowed-pgns = "59904,126208"
-
-  # Restrict which destination devices may be targeted by CAN NAME
-  # (comma-separated 64-bit hex, empty = all). Broadcast (255) is always allowed.
-  # allowed-names = "001c6e4000200000,001c6e4000200001"
+  # Ordered rules evaluated top-to-bottom; first match wins.
+  # Prefix with ! for deny. Omit pgn: or name: for wildcard.
+  # No matching rule = deny. Empty list + enabled = allow all.
+  rules = [
+    "!pgn:65280-65535"                         # deny proprietary PGNs
+    "pgn:59904"                                # allow ISO Request to any device
+    "pgn:126208 name:001c6e4000200000"         # allow command to specific device
+  ]
 }
 
 journal {
@@ -131,8 +134,7 @@ replication {
 | `-bus-silence-timeout` | `bus-silence-timeout` | `PT30S` | Alert on bus silence |
 | `-bus-silence-threshold` | `health.bus-silence-threshold` | `PT30S` | Health check silence threshold |
 | `-send-enabled` | `send.enabled` | `false` | Enable /send and /query endpoints |
-| `-send-allowed-pgns` | `send.allowed-pgns` | (empty) | Comma-separated PGN allowlist |
-| `-send-allowed-names` | `send.allowed-names` | (empty) | Comma-separated CAN NAME allowlist (hex) |
+| `-send-rules` | `send.rules` | (empty) | Semicolon-separated send rules (HOCON: string list) |
 | `-journal-dir` | `journal.dir` | (empty) | Journal directory |
 | `-journal-prefix` | `journal.prefix` | `nmea2k` | Journal file prefix |
 | `-journal-block-size` | `journal.block-size` | `262144` | Block size (bytes) |

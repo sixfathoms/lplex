@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -51,8 +50,7 @@ func main() {
 	replTLSKey := flag.String("replication-tls-key", "", "Client private key for replication mTLS")
 	replTLSCA := flag.String("replication-tls-ca", "", "CA certificate for replication server verification")
 	sendEnabled := flag.Bool("send-enabled", false, "Enable the /send and /query HTTP endpoints (default: disabled)")
-	sendAllowedPGNs := flag.String("send-allowed-pgns", "", "Comma-separated PGN numbers allowed for /send and /query (empty = all)")
-	sendAllowedNames := flag.String("send-allowed-names", "", "Comma-separated 64-bit CAN NAMEs (hex) allowed as /send and /query destinations (empty = all)")
+	sendRulesStr := flag.String("send-rules", "", "Semicolon-separated send rules (e.g. 'pgn:59904; !pgn:65280-65535')")
 	busSilenceTimeout := flag.String("bus-silence-timeout", "", "Alert when no CAN frames received for this duration (ISO 8601, e.g. PT30S)")
 	configFile := flag.String("config", "", "Path to HOCON config file (default: ./lplex.conf, /etc/lplex/lplex.conf)")
 	flag.Parse()
@@ -93,7 +91,7 @@ func main() {
 		Logger:            logger,
 	})
 
-	sendPolicy, err := parseSendPolicy(*sendEnabled, *sendAllowedPGNs, *sendAllowedNames)
+	sendPolicy, err := parseSendPolicy(*sendEnabled, *sendRulesStr)
 	if err != nil {
 		logger.Error("invalid send policy", "error", err)
 		os.Exit(1)
@@ -406,33 +404,21 @@ func buildKeeperConfig(
 }
 
 // parseSendPolicy builds a SendPolicy from the CLI flag values.
-func parseSendPolicy(enabled bool, pgnsStr, namesStr string) (lplex.SendPolicy, error) {
+func parseSendPolicy(enabled bool, rulesStr string) (lplex.SendPolicy, error) {
 	p := lplex.SendPolicy{Enabled: enabled}
-	if pgnsStr != "" {
-		for _, s := range strings.Split(pgnsStr, ",") {
+	if rulesStr != "" {
+		var ruleStrs []string
+		for _, s := range strings.Split(rulesStr, ";") {
 			s = strings.TrimSpace(s)
-			if s == "" {
-				continue
+			if s != "" {
+				ruleStrs = append(ruleStrs, s)
 			}
-			v, err := strconv.ParseUint(s, 10, 32)
-			if err != nil {
-				return p, fmt.Errorf("invalid PGN %q: %w", s, err)
-			}
-			p.AllowedPGNs = append(p.AllowedPGNs, uint32(v))
 		}
-	}
-	if namesStr != "" {
-		for _, s := range strings.Split(namesStr, ",") {
-			s = strings.TrimSpace(s)
-			if s == "" {
-				continue
-			}
-			v, err := strconv.ParseUint(s, 16, 64)
-			if err != nil {
-				return p, fmt.Errorf("invalid CAN NAME %q: must be hex: %w", s, err)
-			}
-			p.AllowedNames = append(p.AllowedNames, v)
+		rules, err := lplex.ParseSendRules(ruleStrs)
+		if err != nil {
+			return p, err
 		}
+		p.Rules = rules
 	}
 	return p, nil
 }
