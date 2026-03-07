@@ -115,6 +115,7 @@ type PGNInfo struct {
     Interval    time.Duration
     OnDemand    bool
     Draft       bool
+    Tolerances  map[string]float64         // field name -> change detection tolerance
     Decode      func([]byte) (any, error)  // nil for name-only PGNs
 }
 ```
@@ -203,11 +204,30 @@ These are per-field attributes (placed after the `:bits` specifier). For PGN-lev
 | `offset=N` | float | Add to scaled value: `decoded = raw * scale + offset`. |
 | `unit="..."` | string | Unit annotation (informational, included in generated comments) |
 | `trim="..."` | string | Right-trim these characters from decoded string (e.g. `"@ "` for AIS padding). Only valid on `string` fields. |
+| `tolerance=N` | float | Change detection threshold. Fields with changes smaller than this are suppressed by the `ChangeTracker`. See [Tolerance](#tolerance-for-change-tracking). |
 | `value=N` | integer | Fixed value for dispatch. Field must equal this value for the PGN to match. |
 | `lookup=Name` | identifier | Attach a lookup table for `Name()` method |
 | `repeat=N` | integer | Generate a slice of N elements (see [Repeated Fields](/pgn-dsl/repeated-fields)) |
 | `group="map"` | string | With `repeat=`, generate a map keyed by instance index |
 | `as="name"` | string | Custom name for the repeated field in the Go struct |
+
+### Tolerance for change tracking
+
+The `tolerance=` attribute sets a threshold for the `ChangeTracker` (used by `lplexdump -changes`). When a PGN has any fields with tolerances, only those fields are checked for significance. All other fields (SID counters, padding, etc.) are ignored. A field change that stays within its tolerance is suppressed; one that exceeds it triggers a delta event.
+
+```
+pgn 127257 "Attitude" interval=1000ms {
+  sid    uint8   :8
+  yaw    int16   :16  scale=0.0001 unit="rad" tolerance=0.01
+  pitch  int16   :16  scale=0.0001 unit="rad" tolerance=0.005
+  roll   int16   :16  scale=0.0001 unit="rad" tolerance=0.005
+  _               :8
+}
+```
+
+In this example, pitch/roll changes under 0.005 rad (~0.3 degrees) are suppressed. The `sid` field increments every packet but has no tolerance, so it's ignored entirely.
+
+Tolerances are code-generated into `PGNInfo.Tolerances` (a `map[string]float64`) and automatically wired into the `ChangeTracker` at construction time via `FieldToleranceDiff`.
 
 ## Bit layout
 
