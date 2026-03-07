@@ -13,7 +13,10 @@ title: lplexdump
 # Auto-discover server via mDNS
 lplexdump
 
-# Specify server
+# Connect to a named boat (mDNS first, cloud fallback)
+lplexdump -boat sv-dockwise
+
+# Specify server directly
 lplexdump -server http://inuc1.local:8089
 
 # With PGN decoding
@@ -25,6 +28,8 @@ lplexdump -server http://inuc1.local:8089 -decode
 | Flag | Default | Description |
 |---|---|---|
 | `-server` | (mDNS) | Server URL |
+| `-boat` | (empty) | Connect to a named boat (mDNS first, cloud fallback) |
+| `-config` | `~/.config/lplex/lplexdump.conf` | Path to config file |
 | `-client-id` | hostname | Session ID for buffered mode |
 | `-buffer-timeout` | (empty) | Enable buffered mode with this timeout (ISO 8601) |
 | `-reconnect` | `true` | Auto-reconnect on disconnect |
@@ -79,6 +84,63 @@ Fields with `lookup=` attributes in the PGN DSL are displayed as structured obje
 
 Unknown lookup values omit the `name` field: `{"register": {"id": 769}}`.
 
+## Boat discovery
+
+The `-boat` flag automates server discovery with local-first, cloud-fallback behavior. Define named boats in a config file, then connect by name without worrying about whether you're on the boat's local network or remote.
+
+### Config file
+
+Create `~/.config/lplex/lplexdump.conf` (HOCON format):
+
+```hocon
+# How long to wait for mDNS discovery before giving up (default: 3s)
+mdns-timeout = 5s
+
+boats {
+  sv-dockwise {
+    # mDNS instance name (matches the hostname lplex registers)
+    mdns = "inuc1"
+    # cloud fallback URL (used when mDNS fails)
+    cloud = "https://lplex.dockwise.app/instances/sv-dockwise"
+  }
+
+  test-bench {
+    mdns = "testpi"
+    cloud = "https://lplex.dockwise.app/instances/test-bench"
+  }
+}
+```
+
+| Setting | Default | Description |
+|---|---|---|
+| `mdns-timeout` | `3s` | How long to wait for mDNS discovery before falling back to cloud |
+| `boats.<name>.mdns` | | mDNS instance name to look for (matches the hostname lplex registers) |
+| `boats.<name>.cloud` | | Cloud fallback URL (full base URL including instance path) |
+
+### Connection flow
+
+When you run `lplexdump -boat sv-dockwise`:
+
+1. Try mDNS discovery for the configured instance name (configurable timeout, default 3s)
+2. If found, connect directly over the local network
+3. If mDNS fails, fall back to the configured cloud URL
+
+On reconnect (with `-reconnect`, which is on by default), the mDNS-then-cloud resolution runs again. So if you sail into WiFi range, lplexdump automatically switches back to the local connection.
+
+### Auto-select
+
+If only one boat is defined in the config, you can pass an empty name and it auto-selects:
+
+```bash
+lplexdump -boat ""
+```
+
+With multiple boats, the name is required.
+
+:::note
+`-boat` is mutually exclusive with `-server` and `-file`. Either the `-boat` flag handles discovery or you specify a server directly.
+:::
+
 ## Journal replay
 
 Replay a recorded journal file instead of connecting to a live server:
@@ -104,7 +166,7 @@ lplexdump -file recording.lpj -inspect
 ```
 
 :::note
-`-file` and `-server` are mutually exclusive. Journal replay does not require a running lplex server.
+`-file`, `-server`, and `-boat` are mutually exclusive. Journal replay does not require a running lplex server.
 :::
 
 ## Filtering

@@ -73,6 +73,10 @@ func main() {
 	decode := flag.Bool("decode", false, "decode known PGNs and display field values")
 	changes := flag.Bool("changes", false, "only show frames with changed data (suppress duplicates)")
 
+	// Boat discovery flags.
+	boatName := flag.String("boat", "", "connect to a named boat (mDNS first, cloud fallback; see ~/.config/lplex/lplexdump.conf)")
+	configPath := flag.String("config", "", "path to lplexdump config file (default: ~/.config/lplex/lplexdump.conf)")
+
 	// Journal flags.
 	filePath := flag.String("file", "", "replay from .lpj journal file (mutually exclusive with -server)")
 	inspect := flag.Bool("inspect", false, "inspect journal file structure (use with -file)")
@@ -138,16 +142,100 @@ func main() {
 		return
 	}
 
-	// Live streaming mode.
-	if *serverURL == "" {
-		discovered, err := lplexc.Discover(context.Background())
+	// Check which flags were explicitly set on the command line.
+	boatSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "boat" {
+			boatSet = true
+		}
+	})
+
+	// Validate mutually exclusive flags.
+	if boatSet && *serverURL != "" {
+		fmt.Fprintf(os.Stderr, "-boat and -server are mutually exclusive\n")
+		os.Exit(1)
+	}
+	if boatSet && *filePath != "" {
+		fmt.Fprintf(os.Stderr, "-boat and -file are mutually exclusive\n")
+		os.Exit(1)
+	}
+
+	// Load config if -boat is set or -config is specified.
+	var boat *BoatConfig
+	var mdnsTimeout time.Duration
+	if boatSet || *configPath != "" {
+		cfgPath := *configPath
+		if cfgPath == "" {
+			cfgPath = defaultConfigPath()
+		}
+		dc, err := loadConfig(cfgPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "config error: %v\n", err)
+			os.Exit(1)
+		}
+		mdnsTimeout = dc.MDNSTimeout
+		if boatSet {
+			bc, err := resolveBoat(*boatName, dc.Boats)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				os.Exit(1)
+			}
+			boat = &bc
+		}
+	}
+
+	// discoverWithTimeout wraps an mDNS discover call with the configured timeout.
+	discoverNamed := func(name string) (string, error) {
+		if mdnsTimeout > 0 {
+			ctx, cancel := context.WithTimeout(context.Background(), mdnsTimeout)
+			defer cancel()
+			return lplexc.DiscoverNamed(ctx, name)
+		}
+		return lplexc.DiscoverNamed(context.Background(), name)
+	}
+	discoverAny := func() (string, error) {
+		if mdnsTimeout > 0 {
+			ctx, cancel := context.WithTimeout(context.Background(), mdnsTimeout)
+			defer cancel()
+			return lplexc.Discover(ctx)
+		}
+		return lplexc.Discover(context.Background())
+	}
+
+	// resolveServer attempts mDNS discovery then cloud fallback for a boat config,
+	// or plain mDNS discovery if no boat is configured.
+	resolveServer := func() string {
+		if boat != nil {
+			if boat.MDNS != "" {
+				url, err := discoverNamed(boat.MDNS)
+				if err == nil {
+					log.Printf("discovered %s via mDNS at %s", boat.Name, url)
+					return url
+				}
+				log.Printf("mDNS discovery for %s failed: %v", boat.Name, err)
+			}
+			if boat.Cloud != "" {
+				log.Printf("using cloud endpoint for %s: %s", boat.Name, boat.Cloud)
+				return boat.Cloud
+			}
+			fmt.Fprintf(os.Stderr, "boat %s: mDNS failed and no cloud URL configured\n", boat.Name)
+			os.Exit(1)
+		}
+
+		// No boat config, try generic mDNS discovery.
+		discovered, err := discoverAny()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "mDNS discovery failed: %v\n", err)
 			fmt.Fprintf(os.Stderr, "specify -server explicitly, e.g. -server http://inuc1.local:8089\n")
 			os.Exit(1)
 		}
 		log.Printf("discovered lplex at %s", discovered)
-		*serverURL = discovered
+		return discovered
+	}
+
+	// Live streaming mode.
+	if *serverURL == "" {
+		*serverURL = resolveServer()
 	}
 
 	if *clientID == "" && *bufferTimeout != "" {
@@ -198,6 +286,16 @@ func main() {
 				ackFinal(client, *clientID, lastSeq.Load())
 			}
 			return
+		}
+
+		// Re-resolve server on reconnect (mDNS may now work, or vice versa).
+		if boat != nil {
+			newURL := resolveServer()
+			if newURL != *serverURL {
+				log.Printf("server changed: %s -> %s", *serverURL, newURL)
+				*serverURL = newURL
+				client = lplexc.NewClient(*serverURL)
+			}
 		}
 	}
 }
