@@ -267,6 +267,8 @@ lplex supports HOCON config files (`-config path` or auto-discovered from `./lpl
 
 lplex-cloud uses the same pattern with `lplex-cloud.conf` (auto-discovered from `./lplex-cloud.conf`, `/etc/lplex-cloud/lplex-cloud.conf`). Mapping in `cmd/lplex-cloud/config.go`.
 
+lplex has send policy flags to gate the `/send` and `/query` endpoints: `-send-enabled` (default false), `-send-allowed-pgns` (comma-separated PGN numbers), `-send-allowed-names` (comma-separated 64-bit hex CAN NAMEs). HOCON paths: `send.enabled`, `send.allowed-pgns`, `send.allowed-names`. These do not affect the broker's internal ISO requests for device discovery.
+
 Both binaries share the same retention/archive flags: `-journal-retention-max-age`, `-journal-retention-min-keep`, `-journal-retention-max-size`, `-journal-retention-soft-pct`, `-journal-retention-overflow-policy`, `-journal-archive-command`, `-journal-archive-trigger`. HOCON paths: `journal.retention.max-age`, `journal.retention.min-keep`, `journal.retention.max-size`, `journal.retention.soft-pct`, `journal.retention.overflow-policy`, `journal.archive.command`, `journal.archive.trigger`. See [`lplex.conf.example`](lplex.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example).
 
 ## Dependencies

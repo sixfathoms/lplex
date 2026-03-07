@@ -15,7 +15,7 @@
 //	})
 //	go broker.Run()
 //
-//	srv := lplex.NewServer(broker, logger)
+//	srv := lplex.NewServer(broker, logger, lplex.SendPolicy{})
 //	mux.Handle("/nmea/", http.StripPrefix("/nmea", srv))
 //
 // Feed frames into the broker via [Broker.RxFrames]:

@@ -14,7 +14,7 @@ import (
 func newTestServer() (*Server, *Broker) {
 	b := newTestBroker()
 	go b.Run()
-	s := NewServer(b, b.logger)
+	s := NewServer(b, b.logger, SendPolicy{Enabled: true})
 	return s, b
 }
 
@@ -825,5 +825,122 @@ func TestCreateSessionEmptyFilter(t *testing.T) {
 
 	if session.Filter != nil {
 		t.Errorf("empty filter should be normalized to nil, got %+v", session.Filter)
+	}
+}
+
+func TestSendDisabledByDefault(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	srv := NewServer(b, b.logger, SendPolicy{}) // Enabled: false (default)
+
+	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("send status: got %d, want 403", w.Code)
+	}
+}
+
+func TestQueryDisabledByDefault(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	srv := NewServer(b, b.logger, SendPolicy{})
+
+	body := `{"pgn":129025,"dst":255}`
+	req := httptest.NewRequest("POST", "/query", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("query status: got %d, want 403", w.Code)
+	}
+}
+
+func TestSendPGNAllowlist(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	srv := NewServer(b, b.logger, SendPolicy{
+		Enabled:     true,
+		AllowedPGNs: []uint32{59904},
+	})
+
+	// Allowed PGN should succeed.
+	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("allowed PGN: got %d, want 202", w.Code)
+	}
+
+	// Disallowed PGN should be rejected.
+	body = `{"pgn":126208,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("disallowed PGN: got %d, want 403", w.Code)
+	}
+}
+
+func TestSendNAMEAllowlist(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	// Drain the startup ISO broadcast.
+	select {
+	case <-b.txFrames:
+	case <-time.After(time.Second):
+	}
+
+	// Register a device at source 10 with a known NAME.
+	nameBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(nameBytes, 0x001c6e4000200000)
+	b.devices.HandleAddressClaim(10, nameBytes)
+
+	srv := NewServer(b, b.logger, SendPolicy{
+		Enabled:      true,
+		AllowedNames: []uint64{0x001c6e4000200000},
+	})
+
+	// Send to allowed device should succeed.
+	body := `{"pgn":59904,"src":254,"dst":10,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("allowed NAME: got %d, want 202", w.Code)
+	}
+
+	// Send to unknown device should be rejected.
+	body = `{"pgn":59904,"src":254,"dst":20,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("unknown dst: got %d, want 403", w.Code)
+	}
+
+	// Broadcast should be allowed even with NAME allowlist.
+	body = `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("broadcast: got %d, want 202", w.Code)
 	}
 }

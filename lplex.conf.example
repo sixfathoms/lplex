@@ -12,6 +12,23 @@ port = 8089
 # Max client buffer duration (ISO 8601)
 max-buffer-duration = PT5M
 
+# Send policy: controls whether HTTP clients can transmit CAN frames
+# via /send and /query. Disabled by default; enable explicitly.
+# Does NOT affect internal device discovery (ISO requests on startup).
+send {
+  # Set to true to enable the /send and /query endpoints
+  # enabled = true
+
+  # Comma-separated PGN numbers that may be sent/queried.
+  # Empty = all PGNs allowed (when enabled is true).
+  # allowed-pgns = "59904,126208"
+
+  # Comma-separated 64-bit CAN NAMEs (hex) of devices that may be targeted.
+  # Empty = all destinations allowed (when enabled is true).
+  # Broadcast (dst=255) is always allowed when send is enabled.
+  # allowed-names = "001c6e4000200000,001c6e4000200001"
+}
+
 # Alert when no CAN frames received for this duration (ISO 8601).
 # Detects CAN bus disconnection or power issues.
 # bus-silence-timeout = PT30S

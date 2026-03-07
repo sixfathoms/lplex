@@ -116,6 +116,10 @@ Acknowledge receipt of frames up to the given sequence number. Advances the sess
 
 ### Frame transmission
 
+:::note
+Both `/send` and `/query` are **disabled by default**. Enable them with `-send-enabled` or the `send.enabled` config option. You can further restrict which PGNs and destination devices are allowed — see [Configuration](../getting-started/configuration.md).
+:::
+
 #### `POST /send`
 
 Send a CAN frame to the bus.

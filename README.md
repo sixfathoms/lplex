@@ -387,6 +387,8 @@ Disconnected sessions keep their cursor for the buffer duration.
 
 ### Transmit
 
+Both `/send` and `/query` are disabled by default. Enable with `-send-enabled` or `send.enabled = true` in the config file. Optional allowlists restrict which PGNs and destination CAN NAMEs may be targeted (`-send-allowed-pgns`, `-send-allowed-names`). Internal device discovery (ISO requests at startup) is not affected.
+
 `POST /send` with `{"pgn": 59904, "src": 254, "dst": 255, "prio": 6, "data": "00ee00"}`
 
 ### Query on demand

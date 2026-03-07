@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -48,6 +50,9 @@ func main() {
 	replTLSCert := flag.String("replication-tls-cert", "", "Client certificate for replication mTLS")
 	replTLSKey := flag.String("replication-tls-key", "", "Client private key for replication mTLS")
 	replTLSCA := flag.String("replication-tls-ca", "", "CA certificate for replication server verification")
+	sendEnabled := flag.Bool("send-enabled", false, "Enable the /send and /query HTTP endpoints (default: disabled)")
+	sendAllowedPGNs := flag.String("send-allowed-pgns", "", "Comma-separated PGN numbers allowed for /send and /query (empty = all)")
+	sendAllowedNames := flag.String("send-allowed-names", "", "Comma-separated 64-bit CAN NAMEs (hex) allowed as /send and /query destinations (empty = all)")
 	busSilenceTimeout := flag.String("bus-silence-timeout", "", "Alert when no CAN frames received for this duration (ISO 8601, e.g. PT30S)")
 	configFile := flag.String("config", "", "Path to HOCON config file (default: ./lplex.conf, /etc/lplex/lplex.conf)")
 	flag.Parse()
@@ -88,7 +93,12 @@ func main() {
 		Logger:            logger,
 	})
 
-	srv := lplex.NewServer(broker, logger)
+	sendPolicy, err := parseSendPolicy(*sendEnabled, *sendAllowedPGNs, *sendAllowedNames)
+	if err != nil {
+		logger.Error("invalid send policy", "error", err)
+		os.Exit(1)
+	}
+	srv := lplex.NewServer(broker, logger, sendPolicy)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -393,4 +403,36 @@ func buildKeeperConfig(
 		ArchiveTrigger: archiveTrigger,
 		Logger:         logger,
 	}, nil
+}
+
+// parseSendPolicy builds a SendPolicy from the CLI flag values.
+func parseSendPolicy(enabled bool, pgnsStr, namesStr string) (lplex.SendPolicy, error) {
+	p := lplex.SendPolicy{Enabled: enabled}
+	if pgnsStr != "" {
+		for _, s := range strings.Split(pgnsStr, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			v, err := strconv.ParseUint(s, 10, 32)
+			if err != nil {
+				return p, fmt.Errorf("invalid PGN %q: %w", s, err)
+			}
+			p.AllowedPGNs = append(p.AllowedPGNs, uint32(v))
+		}
+	}
+	if namesStr != "" {
+		for _, s := range strings.Split(namesStr, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			v, err := strconv.ParseUint(s, 16, 64)
+			if err != nil {
+				return p, fmt.Errorf("invalid CAN NAME %q: must be hex: %w", s, err)
+			}
+			p.AllowedNames = append(p.AllowedNames, v)
+		}
+	}
+	return p, nil
 }

@@ -41,6 +41,18 @@ health {
   bus-silence-threshold = PT30S
 }
 
+send {
+  # Enable /send and /query HTTP endpoints (default: false)
+  enabled = true
+
+  # Restrict which PGNs may be sent/queried (comma-separated, empty = all)
+  # allowed-pgns = "59904,126208"
+
+  # Restrict which destination devices may be targeted by CAN NAME
+  # (comma-separated 64-bit hex, empty = all). Broadcast (255) is always allowed.
+  # allowed-names = "001c6e4000200000,001c6e4000200001"
+}
+
 journal {
   # Directory for .lpj journal files (empty = disabled)
   dir = /var/log/lplex
@@ -118,6 +130,9 @@ replication {
 | `-max-buffer-duration` | `max-buffer-duration` | `PT5M` | Max buffer timeout for sessions |
 | `-bus-silence-timeout` | `bus-silence-timeout` | `PT30S` | Alert on bus silence |
 | `-bus-silence-threshold` | `health.bus-silence-threshold` | `PT30S` | Health check silence threshold |
+| `-send-enabled` | `send.enabled` | `false` | Enable /send and /query endpoints |
+| `-send-allowed-pgns` | `send.allowed-pgns` | (empty) | Comma-separated PGN allowlist |
+| `-send-allowed-names` | `send.allowed-names` | (empty) | Comma-separated CAN NAME allowlist (hex) |
 | `-journal-dir` | `journal.dir` | (empty) | Journal directory |
 | `-journal-prefix` | `journal.prefix` | `nmea2k` | Journal file prefix |
 | `-journal-block-size` | `journal.block-size` | `262144` | Block size (bytes) |
