@@ -238,6 +238,97 @@ func TestSendBadHex(t *testing.T) {
 	}
 }
 
+func TestQuery(t *testing.T) {
+	srv, b := newTestServer()
+	defer close(b.rxFrames)
+
+	// Drain the startup ISO broadcast from broker.
+	select {
+	case <-b.txFrames:
+	case <-time.After(time.Second):
+	}
+
+	// Simulate a device responding to the query in a goroutine.
+	go func() {
+		// Wait for the ISO Request to be sent.
+		select {
+		case tx := <-b.txFrames:
+			if tx.Header.PGN != 59904 {
+				return
+			}
+		case <-time.After(2 * time.Second):
+			return
+		}
+
+		// Inject a response frame for PGN 129025 (Position Rapid Update).
+		data := make([]byte, 8)
+		binary.LittleEndian.PutUint32(data[0:4], uint32(int32(476062000)))  // lat
+		binary.LittleEndian.PutUint32(data[4:8], uint32(int32(-1223321000))) // lon
+		b.rxFrames <- RxFrame{
+			Timestamp: time.Now(),
+			Header:    CANHeader{Priority: 2, PGN: 129025, Source: 1, Destination: 255},
+			Data:      data,
+		}
+	}()
+
+	body := `{"pgn":129025,"dst":255}`
+	req := httptest.NewRequest("POST", "/query", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("query status: got %d, want 200. Body: %s", w.Code, w.Body.String())
+	}
+
+	var frame struct {
+		PGN uint32 `json:"pgn"`
+		Src uint8  `json:"src"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &frame); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if frame.PGN != 129025 {
+		t.Errorf("PGN: got %d, want 129025", frame.PGN)
+	}
+	if frame.Src != 1 {
+		t.Errorf("src: got %d, want 1", frame.Src)
+	}
+}
+
+func TestQueryTimeout(t *testing.T) {
+	srv, b := newTestServer()
+	defer close(b.rxFrames)
+
+	// Drain the startup ISO broadcast.
+	select {
+	case <-b.txFrames:
+	case <-time.After(time.Second):
+	}
+
+	body := `{"pgn":129025,"dst":255,"timeout":"PT1S"}`
+	req := httptest.NewRequest("POST", "/query", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("query status: got %d, want 504", w.Code)
+	}
+}
+
+func TestQueryMissingPGN(t *testing.T) {
+	srv, b := newTestServer()
+	defer close(b.rxFrames)
+
+	body := `{"dst":255}`
+	req := httptest.NewRequest("POST", "/query", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("query status: got %d, want 400", w.Code)
+	}
+}
+
 func TestDevices(t *testing.T) {
 	srv, b := newTestServer()
 	defer close(b.rxFrames)

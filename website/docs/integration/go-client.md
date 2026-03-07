@@ -209,6 +209,50 @@ for _, d := range devices {
 err := client.Send(ctx, 129025, 10, 255, 2, []byte{0x01, 0x02, 0x03})
 ```
 
+## Query on demand
+
+`RequestPGN` sends an ISO Request (PGN 59904) and waits for the response. The server handles the ISO protocol and returns the first matching frame.
+
+```go
+// Request position from all devices
+frame, err := client.RequestPGN(ctx, 129025, 0xFF)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("pgn=%d src=%d data=%s\n", frame.PGN, frame.Src, frame.Data)
+
+// Request product info from a specific device
+frame, err = client.RequestPGN(ctx, 126996, 10)
+```
+
+## Last-known values
+
+`Values` returns the most recent frame for each (device, PGN) pair without subscribing to a stream.
+
+```go
+values, err := client.Values(ctx, nil) // all values
+for _, dv := range values {
+    fmt.Printf("device src=%d %s\n", dv.Source, dv.Manufacturer)
+    for _, v := range dv.Values {
+        fmt.Printf("  pgn=%d data=%s\n", v.PGN, v.Data)
+    }
+}
+
+// With filter
+values, err = client.Values(ctx, &lplexc.Filter{PGNs: []uint32{129025}})
+```
+
+`DecodedValues` returns the same data with PGN fields decoded into named fields.
+
+```go
+decoded, err := client.DecodedValues(ctx, nil)
+for _, dv := range decoded {
+    for _, v := range dv.Values {
+        fmt.Printf("  pgn=%d %s fields=%v\n", v.PGN, v.Description, v.Fields)
+    }
+}
+```
+
 ## mDNS discovery
 
 Find an lplex server on the local network:
@@ -270,5 +314,36 @@ type Event struct {
 type WatchValue struct {
     Frame Frame
     Value any   // type-assert to the specific PGN struct
+}
+
+type PGNValue struct {
+    PGN  uint32 `json:"pgn"`
+    Ts   string `json:"ts"`
+    Data string `json:"data"`
+    Seq  uint64 `json:"seq"`
+}
+
+type DeviceValues struct {
+    Name         string     `json:"name"`
+    Source       uint8      `json:"src"`
+    Manufacturer string     `json:"manufacturer,omitempty"`
+    ModelID      string     `json:"model_id,omitempty"`
+    Values       []PGNValue `json:"values"`
+}
+
+type DecodedPGNValue struct {
+    PGN         uint32 `json:"pgn"`
+    Description string `json:"description"`
+    Ts          string `json:"ts"`
+    Seq         uint64 `json:"seq"`
+    Fields      any    `json:"fields"`
+}
+
+type DecodedDeviceValues struct {
+    Name         string            `json:"name"`
+    Source       uint8             `json:"src"`
+    Manufacturer string            `json:"manufacturer,omitempty"`
+    ModelID      string            `json:"model_id,omitempty"`
+    Values       []DecodedPGNValue `json:"values"`
 }
 ```

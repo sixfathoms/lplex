@@ -357,8 +357,9 @@ HTTP Server (:8089)                JournalWriter goroutine
     +-- GET  /clients/{id}/events       |  device table per block
     +-- PUT  /clients/{id}/ack          |  O(log N) time seeking
     +-- POST /send                      |  ~2-3 MB/hour at 200 fps
-    +-- GET  /devices                   v
-    +-- GET  /values                .lpj journal files
+    +-- POST /query                     v
+    +-- GET  /devices                .lpj journal files
+    +-- GET  /values
     +-- GET  /replication/status
 
 CANWriter goroutine            ReplicationClient (optional)
@@ -387,6 +388,10 @@ Disconnected sessions keep their cursor for the buffer duration.
 ### Transmit
 
 `POST /send` with `{"pgn": 59904, "src": 254, "dst": 255, "prio": 6, "data": "00ee00"}`
+
+### Query on demand
+
+`POST /query` with `{"pgn": 129025, "dst": 255}` sends an ISO Request (PGN 59904) and waits for the response. Returns the first matching frame as JSON. Optional `"timeout": "PT5S"` (default 2s). Returns `504 Gateway Timeout` if no response arrives.
 
 ### Devices
 

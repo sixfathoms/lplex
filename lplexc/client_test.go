@@ -257,6 +257,146 @@ func TestNextBackoff(t *testing.T) {
 	}
 }
 
+func TestValues(t *testing.T) {
+	values := []DeviceValues{
+		{
+			Name:   "0x0000000000e50000",
+			Source: 1,
+			Values: []PGNValue{{PGN: 129025, Ts: "2024-01-01T00:00:00Z", Data: "abcd", Seq: 1}},
+		},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/values" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(values)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	got, err := c.Values(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Source != 1 {
+		t.Errorf("got %+v", got)
+	}
+	if len(got[0].Values) != 1 || got[0].Values[0].PGN != 129025 {
+		t.Errorf("values = %+v", got[0].Values)
+	}
+}
+
+func TestValuesWithFilter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/values" {
+			http.NotFound(w, r)
+			return
+		}
+		// Verify filter params were passed.
+		if r.URL.Query().Get("pgn") != "129025" {
+			t.Errorf("expected pgn=129025, got %q", r.URL.Query().Get("pgn"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]DeviceValues{})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	_, err := c.Values(context.Background(), &Filter{PGNs: []uint32{129025}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDecodedValues(t *testing.T) {
+	values := []DecodedDeviceValues{
+		{
+			Source: 1,
+			Values: []DecodedPGNValue{{PGN: 129025, Description: "Position Rapid Update", Ts: "2024-01-01T00:00:00Z", Seq: 1, Fields: map[string]any{"latitude": 47.6}}},
+		},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/values/decoded" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(values)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	got, err := c.DecodedValues(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Source != 1 {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestRequestPGN(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/query" || r.Method != "POST" {
+			http.NotFound(w, r)
+			return
+		}
+		var req struct {
+			PGN uint32 `json:"pgn"`
+			Dst uint8  `json:"dst"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if req.PGN != 129025 {
+			t.Errorf("expected pgn=129025, got %d", req.PGN)
+		}
+
+		frame := Frame{
+			Seq:  42,
+			Ts:   "2024-01-01T00:00:00Z",
+			Prio: 2,
+			PGN:  129025,
+			Src:  1,
+			Dst:  255,
+			Data: "abcd1234",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(frame)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	f, err := c.RequestPGN(context.Background(), 129025, 0xFF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.PGN != 129025 {
+		t.Errorf("PGN = %d, want 129025", f.PGN)
+	}
+	if f.Src != 1 {
+		t.Errorf("Src = %d, want 1", f.Src)
+	}
+}
+
+func TestRequestPGNTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "timeout waiting for response", http.StatusGatewayTimeout)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	_, err := c.RequestPGN(context.Background(), 129025, 0xFF)
+	if err == nil {
+		t.Fatal("expected error for timeout")
+	}
+}
+
 func TestFilterQueryParams(t *testing.T) {
 	f := &Filter{
 		PGNs:          []uint32{129025, 130306},

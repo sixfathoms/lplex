@@ -81,7 +81,8 @@ HTTP Server (:8089)                    JournalWriter goroutine
     +-- GET  /clients/{id}/events           |  rotates files by duration/size
     +-- PUT  /clients/{id}/ack              |  tracks device table per block
     +-- POST /send                          v
-    +-- GET  /devices                  .lpj journal files (v2, with BaseSeq)
+    +-- POST /query                        .lpj journal files (v2, with BaseSeq)
+    +-- GET  /devices
     +-- GET  /values
     +-- GET  /replication/status
                                        Consumer (pull-based reader)
@@ -157,7 +158,7 @@ lplex-cloud process
 |---|---|
 | `broker.go` | `Broker`, `BrokerConfig` (including `ReplicaMode`, `InitialHead`), `ClientSession`, `subscriber`, `EventFilter`, ring buffer, fan-out, session lifecycle, ephemeral subscriptions, consumer registry, journal feed, value store feed |
 | `consumer.go` | `Consumer`, `Frame`, `ErrFallenBehind`, pull-based tiered reader (journal -> ring -> live), journal fallback with file discovery and seq-based seeking |
-| `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint |
+| `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint, on-demand PGN query (`POST /query` via ISO Request PGN 59904) |
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
 | `fastpacket.go` | `FastPacketAssembler`, `FragmentFastPacket`, `IsFastPacket` (checks `pgn.Registry` for `FastPacket` flag) |

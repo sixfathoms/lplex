@@ -144,6 +144,49 @@ Send a CAN frame to the bus.
 
 ---
 
+#### `POST /query`
+
+Send an ISO Request (PGN 59904) asking devices to transmit a specific PGN, then wait for the response. This is the primary way to query on-demand PGNs (e.g., address claim, product info) from specific devices.
+
+**Request body:**
+
+```json
+{
+  "pgn": 129025,
+  "dst": 255,
+  "timeout": "PT5S"
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `pgn` | uint32 | PGN to request (required) |
+| `dst` | uint8 | Destination address (default 255 for broadcast) |
+| `timeout` | string | ISO 8601 duration to wait for response (default `PT2S`) |
+
+**Response:** `200 OK` — the first matching frame as JSON (same format as SSE frame events).
+
+**Error responses:**
+- `400 Bad Request` — missing PGN or invalid timeout
+- `503 Service Unavailable` — tx queue full
+- `504 Gateway Timeout` — no response within timeout
+
+**Example:**
+
+```bash
+# Request position from all devices
+curl -X POST http://localhost:8089/query \
+  -H 'Content-Type: application/json' \
+  -d '{"pgn": 129025}'
+
+# Request product info from device at address 10
+curl -X POST http://localhost:8089/query \
+  -H 'Content-Type: application/json' \
+  -d '{"pgn": 126996, "dst": 10, "timeout": "PT5S"}'
+```
+
+---
+
 ### Device discovery
 
 #### `GET /devices`

@@ -1,6 +1,7 @@
 package lplex
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -30,6 +31,7 @@ func NewServer(broker *Broker, logger *slog.Logger) *Server {
 	s.mux.HandleFunc("GET /clients/{clientId}/events", s.handleSSE)
 	s.mux.HandleFunc("PUT /clients/{clientId}/ack", s.handleAck)
 	s.mux.HandleFunc("POST /send", s.handleSend)
+	s.mux.HandleFunc("POST /query", s.handleQuery)
 	s.mux.HandleFunc("GET /devices", s.handleDevices)
 	s.mux.HandleFunc("GET /values", s.handleValues)
 	s.mux.HandleFunc("GET /values/decoded", s.handleDecodedValues)
@@ -330,6 +332,61 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	default:
 		http.Error(w, "tx queue full", http.StatusServiceUnavailable)
+	}
+}
+
+// POST /query
+// Sends an ISO Request (PGN 59904) asking devices to transmit the specified PGN,
+// then waits for a matching response and returns the value.
+func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PGN     uint32 `json:"pgn"`
+		Dst     uint8  `json:"dst"`
+		Timeout string `json:"timeout"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.PGN == 0 {
+		http.Error(w, "pgn is required", http.StatusBadRequest)
+		return
+	}
+	if req.Dst == 0 {
+		req.Dst = 0xFF // broadcast
+	}
+
+	timeout := 2 * time.Second
+	if req.Timeout != "" {
+		d, err := ParseISO8601Duration(req.Timeout)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid timeout: %v", err), http.StatusBadRequest)
+			return
+		}
+		timeout = d
+	}
+
+	// Subscribe to matching frames before sending the request.
+	filter := &EventFilter{PGNs: []uint32{req.PGN}}
+	sub, cleanup := s.broker.Subscribe(filter)
+	defer cleanup()
+
+	// Send the ISO Request.
+	if err := s.broker.SendISORequest(req.Dst, req.PGN); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	// Wait for a response frame.
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	select {
+	case data := <-sub.ch:
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(data)
+	case <-ctx.Done():
+		http.Error(w, "timeout waiting for response", http.StatusGatewayTimeout)
 	}
 }
 
