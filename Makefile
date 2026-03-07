@@ -1,4 +1,6 @@
-.PHONY: proto generate build test lint clean
+.PHONY: all proto generate build test lint clean
+
+all: proto build
 
 proto:
 	protoc --go_out=. --go_opt=module=github.com/sixfathoms/lplex \
