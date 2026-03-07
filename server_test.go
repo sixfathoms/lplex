@@ -262,8 +262,10 @@ func TestQuery(t *testing.T) {
 
 		// Inject a response frame for PGN 129025 (Position Rapid Update).
 		data := make([]byte, 8)
-		binary.LittleEndian.PutUint32(data[0:4], uint32(int32(476062000)))  // lat
-		binary.LittleEndian.PutUint32(data[4:8], uint32(int32(-1223321000))) // lon
+		lat := int32(476062000)
+		lon := int32(-1223321000)
+		binary.LittleEndian.PutUint32(data[0:4], uint32(lat)) // lat
+		binary.LittleEndian.PutUint32(data[4:8], uint32(lon)) // lon
 		b.rxFrames <- RxFrame{
 			Timestamp: time.Now(),
 			Header:    CANHeader{Priority: 2, PGN: 129025, Source: 1, Destination: 255},
