@@ -1031,21 +1031,17 @@ func (a *annotatedDecoded) MarshalJSON() ([]byte, error) {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return b, nil
 	}
+	type lookupObj struct {
+		ID   json.RawMessage `json:"id"`
+		Name string          `json:"name,omitempty"`
+	}
 	for jsonKey, name := range a.fields {
 		val, ok := raw[jsonKey]
 		if !ok {
 			continue
 		}
-		if name != "" {
-			nameBytes, _ := json.Marshal(name)
-			raw[jsonKey] = json.RawMessage(
-				fmt.Sprintf(`{"id":%s,"name":%s}`, val, nameBytes),
-			)
-		} else {
-			raw[jsonKey] = json.RawMessage(
-				fmt.Sprintf(`{"id":%s}`, val),
-			)
-		}
+		obj, _ := json.Marshal(lookupObj{ID: val, Name: name})
+		raw[jsonKey] = obj
 	}
 	return json.Marshal(raw)
 }
