@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/gurkankaymak/hocon"
 )
@@ -27,6 +28,7 @@ var configToFlag = map[string]string{
 	"journal.retention.overflow-policy": "journal-retention-overflow-policy",
 	"journal.archive.command":           "journal-archive-command",
 	"journal.archive.trigger":           "journal-archive-trigger",
+	"send.enabled": "send-enabled",
 	"bus-silence-timeout":        "bus-silence-timeout",
 	"replication.target":         "replication-target",
 	"replication.instance-id":    "replication-instance-id",
@@ -93,5 +95,68 @@ func applyConfig(path string) error {
 		}
 	}
 
+	// Handle send.rules: supports both string elements (DSL syntax) and
+	// object elements ({ deny, pgn, name }) in the same array.
+	if !explicit["send-rules"] {
+		if arr := cfg.GetArray("send.rules"); len(arr) > 0 {
+			parts := make([]string, 0, len(arr))
+			for i, elem := range arr {
+				switch elem.Type() {
+				case hocon.StringType:
+					parts = append(parts, string(elem.(hocon.String)))
+				case hocon.ObjectType:
+					dsl, err := hoconRuleToDSL(elem.(hocon.Object))
+					if err != nil {
+						return fmt.Errorf("config key send.rules[%d]: %w", i, err)
+					}
+					parts = append(parts, dsl)
+				default:
+					return fmt.Errorf("config key send.rules[%d]: expected string or object, got %v", i, elem.Type())
+				}
+			}
+			if err := flag.Set("send-rules", strings.Join(parts, ";")); err != nil {
+				return fmt.Errorf("config key send.rules: %w", err)
+			}
+		}
+	}
+
 	return nil
+}
+
+// hoconRuleToDSL converts a HOCON object rule to a DSL string.
+// Supported fields: deny (bool), pgn (string), name (string or string array).
+func hoconRuleToDSL(obj hocon.Object) (string, error) {
+	var parts []string
+
+	if v, ok := obj["deny"]; ok {
+		if bool(v.(hocon.Boolean)) {
+			parts = append(parts, "!")
+		}
+	}
+
+	if v, ok := obj["pgn"]; ok {
+		parts = append(parts, "pgn:"+string(v.(hocon.String)))
+	}
+
+	if v, ok := obj["name"]; ok {
+		switch v.Type() {
+		case hocon.StringType:
+			parts = append(parts, "name:"+string(v.(hocon.String)))
+		case hocon.ArrayType:
+			arr := v.(hocon.Array)
+			names := make([]string, len(arr))
+			for i, n := range arr {
+				names[i] = string(n.(hocon.String))
+			}
+			parts = append(parts, "name:"+strings.Join(names, ","))
+		default:
+			return "", fmt.Errorf("name field must be a string or array")
+		}
+	}
+
+	if len(parts) == 0 {
+		return "", fmt.Errorf("rule object must have at least one of: deny, pgn, name")
+	}
+
+	return strings.Join(parts, " "), nil
 }

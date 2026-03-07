@@ -81,6 +81,123 @@ func TestApplyConfigCLIFlagsWin(t *testing.T) {
 	}
 }
 
+func TestApplyConfigSendRulesStringArray(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lplex.conf")
+	content := `send { rules = ["pgn:59904", "!pgn:65280-65535"] }`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	old := flag.CommandLine
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	sendRules := fs.String("send-rules", "", "")
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	flag.CommandLine = fs
+	t.Cleanup(func() { flag.CommandLine = old })
+
+	if err := applyConfig(path); err != nil {
+		t.Fatalf("applyConfig: %v", err)
+	}
+
+	if *sendRules != "pgn:59904;!pgn:65280-65535" {
+		t.Fatalf("expected send-rules from string array, got %q", *sendRules)
+	}
+}
+
+func TestApplyConfigSendRulesObjectFormat(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lplex.conf")
+	content := `send { rules = [
+		{ pgn = "59904" }
+		{ deny = true, pgn = "65280-65535" }
+		{ pgn = "126208", name = "001c6e4000200000" }
+		{ deny = true }
+	] }`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	old := flag.CommandLine
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	sendRules := fs.String("send-rules", "", "")
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	flag.CommandLine = fs
+	t.Cleanup(func() { flag.CommandLine = old })
+
+	if err := applyConfig(path); err != nil {
+		t.Fatalf("applyConfig: %v", err)
+	}
+
+	want := "pgn:59904;! pgn:65280-65535;pgn:126208 name:001c6e4000200000;!"
+	if *sendRules != want {
+		t.Fatalf("expected %q, got %q", want, *sendRules)
+	}
+}
+
+func TestApplyConfigSendRulesObjectNameArray(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lplex.conf")
+	content := `send { rules = [
+		{ pgn = "129025-129029", name = ["001c6e4000200000", "001c6e4000200001"] }
+	] }`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	old := flag.CommandLine
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	sendRules := fs.String("send-rules", "", "")
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	flag.CommandLine = fs
+	t.Cleanup(func() { flag.CommandLine = old })
+
+	if err := applyConfig(path); err != nil {
+		t.Fatalf("applyConfig: %v", err)
+	}
+
+	want := "pgn:129025-129029 name:001c6e4000200000,001c6e4000200001"
+	if *sendRules != want {
+		t.Fatalf("expected %q, got %q", want, *sendRules)
+	}
+}
+
+func TestApplyConfigSendRulesMixed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lplex.conf")
+	content := `send { rules = [
+		"pgn:59904"
+		{ deny = true, pgn = "65280-65535" }
+	] }`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	old := flag.CommandLine
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	sendRules := fs.String("send-rules", "", "")
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	flag.CommandLine = fs
+	t.Cleanup(func() { flag.CommandLine = old })
+
+	if err := applyConfig(path); err != nil {
+		t.Fatalf("applyConfig: %v", err)
+	}
+
+	want := "pgn:59904;! pgn:65280-65535"
+	if *sendRules != want {
+		t.Fatalf("expected %q, got %q", want, *sendRules)
+	}
+}
+
 func TestApplyConfigSetsUnsetFlags(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lplex.conf")
 	content := "interface = can9\nport = 9000\n"

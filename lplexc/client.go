@@ -130,6 +130,108 @@ func (c *Client) Send(ctx context.Context, pgn uint32, src, dst, prio uint8, dat
 	return nil
 }
 
+// Values returns a snapshot of last-known values, optionally filtered.
+func (c *Client) Values(ctx context.Context, filter *Filter) ([]DeviceValues, error) {
+	u := c.baseURL + "/values"
+	if filter != nil && !filter.IsEmpty() {
+		u += "?" + filterQueryParams(filter)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GET /values returned %d: %s", resp.StatusCode, body)
+	}
+
+	var result []DeviceValues
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding values: %w", err)
+	}
+	return result, nil
+}
+
+// DecodedValues returns a snapshot of last-known values with PGN fields decoded.
+func (c *Client) DecodedValues(ctx context.Context, filter *Filter) ([]DecodedDeviceValues, error) {
+	u := c.baseURL + "/values/decoded"
+	if filter != nil && !filter.IsEmpty() {
+		u += "?" + filterQueryParams(filter)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GET /values/decoded returned %d: %s", resp.StatusCode, body)
+	}
+
+	var result []DecodedDeviceValues
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding values: %w", err)
+	}
+	return result, nil
+}
+
+// RequestPGN sends an ISO Request (PGN 59904) asking devices to transmit the
+// specified PGN, and waits for the response. dst is the destination address
+// (use 0xFF for broadcast). The server blocks until a matching frame arrives
+// or the timeout expires.
+func (c *Client) RequestPGN(ctx context.Context, pgn uint32, dst uint8) (*Frame, error) {
+	body := struct {
+		PGN uint32 `json:"pgn"`
+		Dst uint8  `json:"dst"`
+	}{
+		PGN: pgn,
+		Dst: dst,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/query", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("POST /query returned %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var f Frame
+	if err := json.NewDecoder(resp.Body).Decode(&f); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	return &f, nil
+}
+
 // Subscription reads events from an SSE stream.
 type Subscription struct {
 	scanner *bufio.Scanner

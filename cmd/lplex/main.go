@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -48,6 +49,8 @@ func main() {
 	replTLSCert := flag.String("replication-tls-cert", "", "Client certificate for replication mTLS")
 	replTLSKey := flag.String("replication-tls-key", "", "Client private key for replication mTLS")
 	replTLSCA := flag.String("replication-tls-ca", "", "CA certificate for replication server verification")
+	sendEnabled := flag.Bool("send-enabled", false, "Enable the /send and /query HTTP endpoints (default: disabled)")
+	sendRulesStr := flag.String("send-rules", "", "Semicolon-separated send rules (e.g. 'pgn:59904; !pgn:65280-65535')")
 	busSilenceTimeout := flag.String("bus-silence-timeout", "", "Alert when no CAN frames received for this duration (ISO 8601, e.g. PT30S)")
 	configFile := flag.String("config", "", "Path to HOCON config file (default: ./lplex.conf, /etc/lplex/lplex.conf)")
 	flag.Parse()
@@ -88,7 +91,12 @@ func main() {
 		Logger:            logger,
 	})
 
-	srv := lplex.NewServer(broker, logger)
+	sendPolicy, err := parseSendPolicy(*sendEnabled, *sendRulesStr)
+	if err != nil {
+		logger.Error("invalid send policy", "error", err)
+		os.Exit(1)
+	}
+	srv := lplex.NewServer(broker, logger, sendPolicy)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -393,4 +401,24 @@ func buildKeeperConfig(
 		ArchiveTrigger: archiveTrigger,
 		Logger:         logger,
 	}, nil
+}
+
+// parseSendPolicy builds a SendPolicy from the CLI flag values.
+func parseSendPolicy(enabled bool, rulesStr string) (lplex.SendPolicy, error) {
+	p := lplex.SendPolicy{Enabled: enabled}
+	if rulesStr != "" {
+		var ruleStrs []string
+		for _, s := range strings.Split(rulesStr, ";") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				ruleStrs = append(ruleStrs, s)
+			}
+		}
+		rules, err := lplex.ParseSendRules(ruleStrs)
+		if err != nil {
+			return p, err
+		}
+		p.Rules = rules
+	}
+	return p, nil
 }

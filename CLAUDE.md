@@ -81,7 +81,8 @@ HTTP Server (:8089)                    JournalWriter goroutine
     +-- GET  /clients/{id}/events           |  rotates files by duration/size
     +-- PUT  /clients/{id}/ack              |  tracks device table per block
     +-- POST /send                          v
-    +-- GET  /devices                  .lpj journal files (v2, with BaseSeq)
+    +-- POST /query                        .lpj journal files (v2, with BaseSeq)
+    +-- GET  /devices
     +-- GET  /values
     +-- GET  /replication/status
                                        Consumer (pull-based reader)
@@ -157,7 +158,8 @@ lplex-cloud process
 |---|---|
 | `broker.go` | `Broker`, `BrokerConfig` (including `ReplicaMode`, `InitialHead`), `ClientSession`, `subscriber`, `EventFilter`, ring buffer, fan-out, session lifecycle, ephemeral subscriptions, consumer registry, journal feed, value store feed |
 | `consumer.go` | `Consumer`, `Frame`, `ErrFallenBehind`, pull-based tiered reader (journal -> ring -> live), journal fallback with file discovery and seq-based seeking |
-| `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint |
+| `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint, on-demand PGN query (`POST /query` via ISO Request PGN 59904) |
+| `send_policy.go` | `SendPolicy`, `SendRule`, `PGNMatcher`, `ParseSendRule`, `ParseSendRules`, rule DSL parser and evaluator for `/send` and `/query` gating |
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
 | `fastpacket.go` | `FastPacketAssembler`, `FragmentFastPacket`, `IsFastPacket` (checks `pgn.Registry` for `FastPacket` flag) |
@@ -265,6 +267,8 @@ The documentation site lives in `website/` (Docusaurus). See [`website/CLAUDE.md
 lplex supports HOCON config files (`-config path` or auto-discovered from `./lplex.conf`, `/etc/lplex/lplex.conf`). CLI flags always override config file values (detected via `flag.Visit()`). Config values are applied through `flag.Set()` so they share the same parsing path as CLI flags. The mapping from HOCON paths to flag names lives in `configToFlag` in `cmd/lplex/config.go`.
 
 lplex-cloud uses the same pattern with `lplex-cloud.conf` (auto-discovered from `./lplex-cloud.conf`, `/etc/lplex-cloud/lplex-cloud.conf`). Mapping in `cmd/lplex-cloud/config.go`.
+
+lplex has send policy flags to gate the `/send` and `/query` endpoints: `-send-enabled` (default false) and `-send-rules` (semicolon-separated rule strings). HOCON paths: `send.enabled`, `send.rules` (string or object array). CLI uses DSL syntax: `[!] [pgn:<spec>] [name:<hex>,...]` where `<spec>` supports values, comma-separated lists, and ranges (e.g. `pgn:59904,126208`, `pgn:65280-65535`). `!` prefix = deny. Omit pgn/name for wildcard. HOCON config also supports native object rules: `{ deny = true/false, pgn = "<spec>", name = "<hex>" or ["<hex>", ...] }`. Both string and object forms can be mixed in the same array. Rules are evaluated top-to-bottom, first match wins. No matching rule = deny. Empty rules + enabled = allow all. These do not affect the broker's internal ISO requests for device discovery.
 
 Both binaries share the same retention/archive flags: `-journal-retention-max-age`, `-journal-retention-min-keep`, `-journal-retention-max-size`, `-journal-retention-soft-pct`, `-journal-retention-overflow-policy`, `-journal-archive-command`, `-journal-archive-trigger`. HOCON paths: `journal.retention.max-age`, `journal.retention.min-keep`, `journal.retention.max-size`, `journal.retention.soft-pct`, `journal.retention.overflow-policy`, `journal.archive.command`, `journal.archive.trigger`. See [`lplex.conf.example`](lplex.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example).
 

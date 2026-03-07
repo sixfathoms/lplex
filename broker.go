@@ -338,6 +338,24 @@ func (b *Broker) sendISORequest(dst uint8, pgn uint32) {
 	}
 }
 
+// SendISORequest sends an ISO Request (PGN 59904) to the given destination,
+// asking it to transmit the specified PGN. Returns an error if the tx queue is full.
+func (b *Broker) SendISORequest(dst uint8, pgn uint32) error {
+	header := CANHeader{
+		Priority:    6,
+		PGN:         59904,
+		Source:      254,
+		Destination: dst,
+	}
+	data := []byte{byte(pgn), byte(pgn >> 8), byte(pgn >> 16)}
+	select {
+	case b.txFrames <- TxRequest{Header: header, Data: data}:
+		return nil
+	default:
+		return fmt.Errorf("tx queue full")
+	}
+}
+
 func (b *Broker) handleFrame(frame RxFrame) {
 	src := frame.Header.Source
 

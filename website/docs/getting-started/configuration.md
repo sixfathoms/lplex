@@ -41,6 +41,28 @@ health {
   bus-silence-threshold = PT30S
 }
 
+send {
+  # Enable /send and /query HTTP endpoints (default: false).
+  # With no rules, all PGNs and destinations are allowed.
+  enabled = true
+
+  # Ordered rules evaluated top-to-bottom; first match wins.
+  # No matching rule = deny. Empty list + enabled = allow all.
+  #
+  # Rules can be strings (DSL syntax) or native HOCON objects:
+  #   String:  [!] [pgn:<spec>] [name:<hex>,...]
+  #   Object:  { deny = true/false, pgn = "<spec>", name = "<hex>" or [...] }
+  rules = [
+    "!pgn:65280-65535"                         # string: deny proprietary PGNs
+    "pgn:59904"                                # string: allow ISO Request
+    { pgn = "126208", name = "001c6e4000200000" }   # object: allow command to device
+    { pgn = "129025-129029", name = [               # object: PGN range + device list
+      "001c6e4000200000"
+      "001c6e4000200001"
+    ]}
+  ]
+}
+
 journal {
   # Directory for .lpj journal files (empty = disabled)
   dir = /var/log/lplex
@@ -118,6 +140,8 @@ replication {
 | `-max-buffer-duration` | `max-buffer-duration` | `PT5M` | Max buffer timeout for sessions |
 | `-bus-silence-timeout` | `bus-silence-timeout` | `PT30S` | Alert on bus silence |
 | `-bus-silence-threshold` | `health.bus-silence-threshold` | `PT30S` | Health check silence threshold |
+| `-send-enabled` | `send.enabled` | `false` | Enable /send and /query endpoints |
+| `-send-rules` | `send.rules` | (empty) | Semicolon-separated send rules (HOCON: string or object array) |
 | `-journal-dir` | `journal.dir` | (empty) | Journal directory |
 | `-journal-prefix` | `journal.prefix` | `nmea2k` | Journal file prefix |
 | `-journal-block-size` | `journal.block-size` | `262144` | Block size (bytes) |

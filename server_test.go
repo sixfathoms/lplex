@@ -14,7 +14,7 @@ import (
 func newTestServer() (*Server, *Broker) {
 	b := newTestBroker()
 	go b.Run()
-	s := NewServer(b, b.logger)
+	s := NewServer(b, b.logger, SendPolicy{Enabled: true})
 	return s, b
 }
 
@@ -235,6 +235,99 @@ func TestSendBadHex(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("send status: got %d, want 400", w.Code)
+	}
+}
+
+func TestQuery(t *testing.T) {
+	srv, b := newTestServer()
+	defer close(b.rxFrames)
+
+	// Drain the startup ISO broadcast from broker.
+	select {
+	case <-b.txFrames:
+	case <-time.After(time.Second):
+	}
+
+	// Simulate a device responding to the query in a goroutine.
+	go func() {
+		// Wait for the ISO Request to be sent.
+		select {
+		case tx := <-b.txFrames:
+			if tx.Header.PGN != 59904 {
+				return
+			}
+		case <-time.After(2 * time.Second):
+			return
+		}
+
+		// Inject a response frame for PGN 129025 (Position Rapid Update).
+		data := make([]byte, 8)
+		lat := int32(476062000)
+		lon := int32(-1223321000)
+		binary.LittleEndian.PutUint32(data[0:4], uint32(lat)) // lat
+		binary.LittleEndian.PutUint32(data[4:8], uint32(lon)) // lon
+		b.rxFrames <- RxFrame{
+			Timestamp: time.Now(),
+			Header:    CANHeader{Priority: 2, PGN: 129025, Source: 1, Destination: 255},
+			Data:      data,
+		}
+	}()
+
+	body := `{"pgn":129025,"dst":255}`
+	req := httptest.NewRequest("POST", "/query", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("query status: got %d, want 200. Body: %s", w.Code, w.Body.String())
+	}
+
+	var frame struct {
+		PGN uint32 `json:"pgn"`
+		Src uint8  `json:"src"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &frame); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if frame.PGN != 129025 {
+		t.Errorf("PGN: got %d, want 129025", frame.PGN)
+	}
+	if frame.Src != 1 {
+		t.Errorf("src: got %d, want 1", frame.Src)
+	}
+}
+
+func TestQueryTimeout(t *testing.T) {
+	srv, b := newTestServer()
+	defer close(b.rxFrames)
+
+	// Drain the startup ISO broadcast.
+	select {
+	case <-b.txFrames:
+	case <-time.After(time.Second):
+	}
+
+	body := `{"pgn":129025,"dst":255,"timeout":"PT1S"}`
+	req := httptest.NewRequest("POST", "/query", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("query status: got %d, want 504", w.Code)
+	}
+}
+
+func TestQueryMissingPGN(t *testing.T) {
+	srv, b := newTestServer()
+	defer close(b.rxFrames)
+
+	body := `{"dst":255}`
+	req := httptest.NewRequest("POST", "/query", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("query status: got %d, want 400", w.Code)
 	}
 }
 
@@ -734,5 +827,250 @@ func TestCreateSessionEmptyFilter(t *testing.T) {
 
 	if session.Filter != nil {
 		t.Errorf("empty filter should be normalized to nil, got %+v", session.Filter)
+	}
+}
+
+func TestSendDisabledByDefault(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	srv := NewServer(b, b.logger, SendPolicy{}) // Enabled: false (default)
+
+	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("send status: got %d, want 403", w.Code)
+	}
+}
+
+func TestQueryDisabledByDefault(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	srv := NewServer(b, b.logger, SendPolicy{})
+
+	body := `{"pgn":129025,"dst":255}`
+	req := httptest.NewRequest("POST", "/query", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("query status: got %d, want 403", w.Code)
+	}
+}
+
+func TestSendEnabledNoRulesAllowsAll(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	// Enabled with no rules = allow all (backwards compatible).
+	srv := NewServer(b, b.logger, SendPolicy{Enabled: true})
+
+	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("enabled no rules: got %d, want 202", w.Code)
+	}
+}
+
+func TestSendRulePGNAllow(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	rules, _ := ParseSendRules([]string{"pgn:59904"})
+	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+
+	// Allowed PGN should succeed.
+	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("allowed PGN: got %d, want 202", w.Code)
+	}
+
+	// Unmatched PGN should be denied (no matching rule).
+	body = `{"pgn":126208,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("unmatched PGN: got %d, want 403", w.Code)
+	}
+}
+
+func TestSendRulePGNRange(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	rules, _ := ParseSendRules([]string{"pgn:129025-129029"})
+	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+
+	// PGN in range.
+	body := `{"pgn":129026,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("in-range PGN: got %d, want 202", w.Code)
+	}
+
+	// PGN outside range.
+	body = `{"pgn":129030,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("out-of-range PGN: got %d, want 403", w.Code)
+	}
+}
+
+func TestSendRuleDenyBeforeAllow(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	// Deny proprietary range, then allow all — first match wins.
+	rules, _ := ParseSendRules([]string{
+		"!pgn:65280-65535",
+		"pgn:0-131071",
+	})
+	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+
+	// Normal PGN allowed.
+	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("normal PGN: got %d, want 202", w.Code)
+	}
+
+	// Proprietary PGN denied.
+	body = `{"pgn":65300,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("proprietary PGN: got %d, want 403", w.Code)
+	}
+}
+
+func TestSendRuleNAMEWithDevice(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	// Drain the startup ISO broadcast.
+	select {
+	case <-b.txFrames:
+	case <-time.After(time.Second):
+	}
+
+	// Register a device at source 10 with a known NAME.
+	nameBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(nameBytes, 0x001c6e4000200000)
+	b.devices.HandleAddressClaim(10, nameBytes)
+
+	rules, _ := ParseSendRules([]string{"pgn:59904 name:001c6e4000200000"})
+	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+
+	// Send to allowed device should succeed.
+	body := `{"pgn":59904,"src":254,"dst":10,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("allowed NAME: got %d, want 202", w.Code)
+	}
+
+	// Send to unknown device should be denied (NAME unknown).
+	body = `{"pgn":59904,"src":254,"dst":20,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("unknown dst: got %d, want 403", w.Code)
+	}
+
+	// Broadcast bypasses NAME constraint (NAME rules don't match broadcasts).
+	// With only a NAME-constrained rule, broadcast won't match and falls through to deny.
+	body = `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("broadcast with NAME rule only: got %d, want 403 (no matching rule)", w.Code)
+	}
+}
+
+func TestSendRuleOrderedEvaluation(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	// Drain the startup ISO broadcast.
+	select {
+	case <-b.txFrames:
+	case <-time.After(time.Second):
+	}
+
+	nameBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(nameBytes, 0x001c6e4000200000)
+	b.devices.HandleAddressClaim(10, nameBytes)
+
+	// Allow PGN 59904 to specific device, allow broadcast PGN 59904, deny everything else.
+	rules, _ := ParseSendRules([]string{
+		"pgn:59904 name:001c6e4000200000",
+		"pgn:59904",
+		"!pgn:0-131071",
+	})
+	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+
+	// Targeted send to allowed device — matches rule 1.
+	body := `{"pgn":59904,"src":254,"dst":10,"prio":6,"data":"00ee00"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("targeted: got %d, want 202", w.Code)
+	}
+
+	// Broadcast PGN 59904 — rule 1 doesn't match (NAME constraint), rule 2 matches.
+	body = `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("broadcast: got %d, want 202", w.Code)
+	}
+
+	// Other PGN — hits deny rule 3.
+	body = `{"pgn":126208,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
+	req = httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("denied PGN: got %d, want 403", w.Code)
 	}
 }

@@ -1,6 +1,7 @@
 package lplex
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,23 +14,26 @@ import (
 
 // Server handles HTTP API requests for lplex.
 type Server struct {
-	broker *Broker
-	logger *slog.Logger
-	mux    *http.ServeMux
+	broker     *Broker
+	logger     *slog.Logger
+	mux        *http.ServeMux
+	sendPolicy SendPolicy
 }
 
 // NewServer creates a new HTTP server wired to the given broker.
-func NewServer(broker *Broker, logger *slog.Logger) *Server {
+func NewServer(broker *Broker, logger *slog.Logger, policy SendPolicy) *Server {
 	s := &Server{
-		broker: broker,
-		logger: logger,
-		mux:    http.NewServeMux(),
+		broker:     broker,
+		logger:     logger,
+		mux:        http.NewServeMux(),
+		sendPolicy: policy,
 	}
 	s.mux.HandleFunc("GET /events", s.HandleEphemeralSSE)
 	s.mux.HandleFunc("PUT /clients/{clientId}", s.handleCreateSession)
 	s.mux.HandleFunc("GET /clients/{clientId}/events", s.handleSSE)
 	s.mux.HandleFunc("PUT /clients/{clientId}/ack", s.handleAck)
 	s.mux.HandleFunc("POST /send", s.handleSend)
+	s.mux.HandleFunc("POST /query", s.handleQuery)
 	s.mux.HandleFunc("GET /devices", s.handleDevices)
 	s.mux.HandleFunc("GET /values", s.handleValues)
 	s.mux.HandleFunc("GET /values/decoded", s.handleDecodedValues)
@@ -298,6 +302,49 @@ func (s *Server) handleAck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// checkSendPolicy validates that the send policy allows a frame with the given
+// PGN and destination address. Returns true if allowed, false if the request
+// was rejected (with an appropriate HTTP error written).
+func (s *Server) checkSendPolicy(w http.ResponseWriter, pgn uint32, dst uint8) bool {
+	if !s.sendPolicy.Enabled {
+		http.Error(w, "send is disabled", http.StatusForbidden)
+		return false
+	}
+
+	// No rules = allow all (backwards compatible).
+	if len(s.sendPolicy.Rules) == 0 {
+		return true
+	}
+
+	// Resolve destination NAME for rule matching.
+	var dstNAME uint64
+	var nameKnown bool
+	if dst != 0xFF {
+		if dev := s.broker.devices.Get(dst); dev != nil {
+			dstNAME = dev.NAME
+			nameKnown = true
+		}
+	} else {
+		// Broadcast: NAME-based rules don't constrain broadcasts.
+		nameKnown = false
+	}
+
+	// Evaluate rules top-to-bottom, first match wins.
+	for _, rule := range s.sendPolicy.Rules {
+		if rule.Matches(pgn, dstNAME, nameKnown) {
+			if rule.Allow {
+				return true
+			}
+			http.Error(w, fmt.Sprintf("send denied by rule (pgn=%d, dst=%d)", pgn, dst), http.StatusForbidden)
+			return false
+		}
+	}
+
+	// No matching rule = deny.
+	http.Error(w, fmt.Sprintf("no send rule matched (pgn=%d, dst=%d)", pgn, dst), http.StatusForbidden)
+	return false
+}
+
 // POST /send
 func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -309,6 +356,9 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if !s.checkSendPolicy(w, req.PGN, req.Dst) {
 		return
 	}
 
@@ -330,6 +380,64 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	default:
 		http.Error(w, "tx queue full", http.StatusServiceUnavailable)
+	}
+}
+
+// POST /query
+// Sends an ISO Request (PGN 59904) asking devices to transmit the specified PGN,
+// then waits for a matching response and returns the value.
+func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PGN     uint32 `json:"pgn"`
+		Dst     uint8  `json:"dst"`
+		Timeout string `json:"timeout"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.PGN == 0 {
+		http.Error(w, "pgn is required", http.StatusBadRequest)
+		return
+	}
+	if req.Dst == 0 {
+		req.Dst = 0xFF // broadcast
+	}
+	if !s.checkSendPolicy(w, req.PGN, req.Dst) {
+		return
+	}
+
+	timeout := 2 * time.Second
+	if req.Timeout != "" {
+		d, err := ParseISO8601Duration(req.Timeout)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid timeout: %v", err), http.StatusBadRequest)
+			return
+		}
+		timeout = d
+	}
+
+	// Subscribe to matching frames before sending the request.
+	filter := &EventFilter{PGNs: []uint32{req.PGN}}
+	sub, cleanup := s.broker.Subscribe(filter)
+	defer cleanup()
+
+	// Send the ISO Request.
+	if err := s.broker.SendISORequest(req.Dst, req.PGN); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	// Wait for a response frame.
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	select {
+	case data := <-sub.ch:
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(data)
+	case <-ctx.Done():
+		http.Error(w, "timeout waiting for response", http.StatusGatewayTimeout)
 	}
 }
 

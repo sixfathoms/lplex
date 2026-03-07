@@ -377,7 +377,7 @@ func registerCloudHTTP(mux *http.ServeMux, im *lplex.InstanceManager, replServer
 			return
 		}
 
-		srv := lplex.NewServer(broker, logger)
+		srv := lplex.NewServer(broker, logger, lplex.SendPolicy{})
 		srv.HandleEphemeralSSE(w, r)
 	})
 

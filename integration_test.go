@@ -52,7 +52,7 @@ func startCloudHTTP(t *testing.T, im *InstanceManager, replServer *ReplicationSe
 			http.Error(w, "instance not found or broker not running", http.StatusNotFound)
 			return
 		}
-		srv := NewServer(broker, logger)
+		srv := NewServer(broker, logger, SendPolicy{})
 		srv.HandleEphemeralSSE(w, r)
 	})
 

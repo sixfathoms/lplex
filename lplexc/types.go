@@ -49,6 +49,41 @@ func (f *Filter) IsEmpty() bool {
 		len(f.Manufacturers) == 0 && len(f.Instances) == 0 && len(f.Names) == 0)
 }
 
+// PGNValue is a single PGN's last-known value.
+type PGNValue struct {
+	PGN  uint32 `json:"pgn"`
+	Ts   string `json:"ts"`
+	Data string `json:"data"`
+	Seq  uint64 `json:"seq"`
+}
+
+// DeviceValues groups PGN values by device.
+type DeviceValues struct {
+	Name         string     `json:"name"`
+	Source       uint8      `json:"src"`
+	Manufacturer string     `json:"manufacturer,omitempty"`
+	ModelID      string     `json:"model_id,omitempty"`
+	Values       []PGNValue `json:"values"`
+}
+
+// DecodedPGNValue is a single PGN's last-known value decoded into named fields.
+type DecodedPGNValue struct {
+	PGN         uint32 `json:"pgn"`
+	Description string `json:"description"`
+	Ts          string `json:"ts"`
+	Seq         uint64 `json:"seq"`
+	Fields      any    `json:"fields"`
+}
+
+// DecodedDeviceValues groups decoded PGN values by device.
+type DecodedDeviceValues struct {
+	Name         string            `json:"name"`
+	Source       uint8             `json:"src"`
+	Manufacturer string            `json:"manufacturer,omitempty"`
+	ModelID      string            `json:"model_id,omitempty"`
+	Values       []DecodedPGNValue `json:"values"`
+}
+
 // Event is a message received from an lplex SSE stream.
 // Exactly one of Frame or Device will be non-nil.
 type Event struct {
