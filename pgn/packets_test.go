@@ -463,8 +463,12 @@ func compareStructs(t *testing.T, got, want any, epsilon float64) {
 	wantJSON, _ := json.Marshal(want)
 
 	var gotMap, wantMap map[string]any
-	json.Unmarshal(gotJSON, &gotMap)
-	json.Unmarshal(wantJSON, &wantMap)
+	if err := json.Unmarshal(gotJSON, &gotMap); err != nil {
+		t.Fatalf("unmarshal got: %v", err)
+	}
+	if err := json.Unmarshal(wantJSON, &wantMap); err != nil {
+		t.Fatalf("unmarshal want: %v", err)
+	}
 
 	for key, wv := range wantMap {
 		gv, exists := gotMap[key]
