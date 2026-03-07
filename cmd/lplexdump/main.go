@@ -76,7 +76,7 @@ func main() {
 	// Journal flags.
 	filePath := flag.String("file", "", "replay from .lpj journal file (mutually exclusive with -server)")
 	inspect := flag.Bool("inspect", false, "inspect journal file structure (use with -file)")
-	speed := flag.Float64("speed", 0, "playback speed multiplier (0 = as fast as possible, 1.0 = real-time)")
+	speed := flag.Float64("speed", 1.0, "playback speed multiplier (0 = as fast as possible, 1.0 = real-time)")
 	startTime := flag.String("start", "", "seek to RFC3339 timestamp before replaying")
 
 	var filterPGNs uintSlice
