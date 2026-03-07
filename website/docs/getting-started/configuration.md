@@ -47,12 +47,19 @@ send {
   enabled = true
 
   # Ordered rules evaluated top-to-bottom; first match wins.
-  # Prefix with ! for deny. Omit pgn: or name: for wildcard.
   # No matching rule = deny. Empty list + enabled = allow all.
+  #
+  # Rules can be strings (DSL syntax) or native HOCON objects:
+  #   String:  [!] [pgn:<spec>] [name:<hex>,...]
+  #   Object:  { deny = true/false, pgn = "<spec>", name = "<hex>" or [...] }
   rules = [
-    "!pgn:65280-65535"                         # deny proprietary PGNs
-    "pgn:59904"                                # allow ISO Request to any device
-    "pgn:126208 name:001c6e4000200000"         # allow command to specific device
+    "!pgn:65280-65535"                         # string: deny proprietary PGNs
+    "pgn:59904"                                # string: allow ISO Request
+    { pgn = "126208", name = "001c6e4000200000" }   # object: allow command to device
+    { pgn = "129025-129029", name = [               # object: PGN range + device list
+      "001c6e4000200000"
+      "001c6e4000200001"
+    ]}
   ]
 }
 
@@ -134,7 +141,7 @@ replication {
 | `-bus-silence-timeout` | `bus-silence-timeout` | `PT30S` | Alert on bus silence |
 | `-bus-silence-threshold` | `health.bus-silence-threshold` | `PT30S` | Health check silence threshold |
 | `-send-enabled` | `send.enabled` | `false` | Enable /send and /query endpoints |
-| `-send-rules` | `send.rules` | (empty) | Semicolon-separated send rules (HOCON: string list) |
+| `-send-rules` | `send.rules` | (empty) | Semicolon-separated send rules (HOCON: string or object array) |
 | `-journal-dir` | `journal.dir` | (empty) | Journal directory |
 | `-journal-prefix` | `journal.prefix` | `nmea2k` | Journal file prefix |
 | `-journal-block-size` | `journal.block-size` | `262144` | Block size (bytes) |

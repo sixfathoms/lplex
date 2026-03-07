@@ -21,17 +21,27 @@ send {
   # enabled = true
 
   # Ordered rules evaluated top-to-bottom; first match wins.
-  # Prefix with ! for deny rules. Omit pgn: or name: for wildcard.
   # No matching rule = deny. Empty list + enabled = allow all.
   #
-  # PGN specs support values (59904), lists (59904,126208), and ranges (65280-65535).
-  # NAME specs are comma-separated 64-bit hex CAN NAMEs.
+  # Rules can be strings (DSL syntax) or objects. Both forms can be mixed.
+  #
+  # String form: [!] [pgn:<spec>] [name:<hex>,...]
+  #   PGN specs: values (59904), lists (59904,126208), ranges (65280-65535)
+  #   NAME specs: comma-separated 64-bit hex CAN NAMEs
+  #   ! prefix = deny
+  #
+  # Object form: { deny = true/false, pgn = "<spec>", name = "<hex>" or ["<hex>", ...] }
+  #   All fields optional; at least one required.
   #
   # rules = [
-  #   "!pgn:65280-65535"                             # deny proprietary PGNs
-  #   "pgn:59904"                                    # allow ISO Request to any device
-  #   "pgn:126208 name:001c6e4000200000"             # allow NMEA Command to specific device
-  #   "pgn:129025-129029 name:001c6e4000200000,001c6e4000200001"  # PGN range to device list
+  #   "!pgn:65280-65535"                             # string: deny proprietary PGNs
+  #   "pgn:59904"                                    # string: allow ISO Request
+  #   { pgn = "126208", name = "001c6e4000200000" }  # object: PGN + single device
+  #   { pgn = "129025-129029", name = [              # object: PGN range + device list
+  #     "001c6e4000200000"
+  #     "001c6e4000200001"
+  #   ]}
+  #   { deny = true }                                # object: catch-all deny
   # ]
 }
 

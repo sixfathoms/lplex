@@ -387,7 +387,7 @@ Disconnected sessions keep their cursor for the buffer duration.
 
 ### Transmit
 
-Both `/send` and `/query` are disabled by default. Enable with `-send-enabled` or `send.enabled = true` in the config file. Use `send.rules` (HOCON list) or `-send-rules` (semicolon-separated) to define ordered allow/deny rules with PGN ranges and CAN NAME lists. Rules are evaluated top-to-bottom, first match wins. Internal device discovery (ISO requests at startup) is not affected.
+Both `/send` and `/query` are disabled by default. Enable with `-send-enabled` or `send.enabled = true` in the config file. Use `send.rules` (HOCON string or object array) or `-send-rules` (semicolon-separated DSL) to define ordered allow/deny rules with PGN ranges and CAN NAME lists. HOCON config supports both string rules (`"pgn:59904"`) and native objects (`{ pgn = "59904", name = "..." }`). Rules are evaluated top-to-bottom, first match wins. Internal device discovery (ISO requests at startup) is not affected.
 
 `POST /send` with `{"pgn": 59904, "src": 254, "dst": 255, "prio": 6, "data": "00ee00"}`
 
