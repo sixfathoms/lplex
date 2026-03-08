@@ -31,6 +31,7 @@ var configToFlag = map[string]string{
 	"journal.retention.soft-pct":        "journal-retention-soft-pct",
 	"journal.retention.overflow-policy": "journal-retention-overflow-policy",
 	"journal.rotate-duration":           "journal-rotate-duration",
+	"journal.rotate-size":               "journal-rotate-size",
 	"journal.archive.command":           "journal-archive-command",
 	"journal.archive.trigger":           "journal-archive-trigger",
 }

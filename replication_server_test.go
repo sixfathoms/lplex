@@ -279,7 +279,7 @@ func TestCloudJournalWriterRotation(t *testing.T) {
 	}
 	defer im.Shutdown()
 
-	im.SetJournalRotateDuration(42 * time.Second)
+	im.SetJournalRotation(42*time.Second, 1024*1024)
 
 	var rotated atomic.Int32
 	im.SetOnRotate(func(instanceID string, rf RotatedFile) {
@@ -304,6 +304,9 @@ func TestCloudJournalWriterRotation(t *testing.T) {
 	}
 	if inst.journalWriter.cfg.RotateDuration != 42*time.Second {
 		t.Fatalf("JournalWriter.RotateDuration: got %v, want 42s", inst.journalWriter.cfg.RotateDuration)
+	}
+	if inst.journalWriter.cfg.RotateSize != 1024*1024 {
+		t.Fatalf("JournalWriter.RotateSize: got %d, want 1MB", inst.journalWriter.cfg.RotateSize)
 	}
 	broker := inst.broker
 	inst.mu.Unlock()
@@ -346,8 +349,8 @@ func TestCloudJournalWriterRotation(t *testing.T) {
 	}
 }
 
-// Verify SetJournalRotateDuration retroactively updates existing instances.
-func TestSetJournalRotateDurationRetroactive(t *testing.T) {
+// Verify SetJournalRotation retroactively updates existing instances.
+func TestSetJournalRotationRetroactive(t *testing.T) {
 	dir := t.TempDir()
 	im, err := NewInstanceManager(dir, slog.Default())
 	if err != nil {
@@ -357,12 +360,15 @@ func TestSetJournalRotateDurationRetroactive(t *testing.T) {
 
 	inst := im.GetOrCreate("boat-1")
 
-	// Set duration after instance was created.
-	im.SetJournalRotateDuration(5 * time.Minute)
+	// Set rotation after instance was created.
+	im.SetJournalRotation(5*time.Minute, 512*1024*1024)
 
 	inst.mu.Lock()
 	if inst.rotateDuration != 5*time.Minute {
-		t.Fatalf("retroactive update failed: got %v, want 5m", inst.rotateDuration)
+		t.Fatalf("retroactive duration: got %v, want 5m", inst.rotateDuration)
+	}
+	if inst.rotateSize != 512*1024*1024 {
+		t.Fatalf("retroactive size: got %d, want 512MB", inst.rotateSize)
 	}
 	inst.mu.Unlock()
 }

@@ -45,6 +45,7 @@ type InstanceState struct {
 	cancelFunc     context.CancelFunc  // stops the broker's journal writer
 	onRotate       func(RotatedFile)   // optional callback for keeper
 	rotateDuration time.Duration       // journal rotation interval for live writer
+	rotateSize     int64               // journal rotation size cap for live writer
 	logger         *slog.Logger
 }
 
@@ -135,6 +136,7 @@ func (s *InstanceState) ensureBroker() {
 		BlockSize:      262144,
 		Compression:    journal.CompressionZstd,
 		RotateDuration: s.rotateDuration,
+		RotateSize:     s.rotateSize,
 		OnRotate:       s.onRotate,
 		Logger:         s.logger.With("instance", s.ID, "component", "journal"),
 	}, b.Devices(), s.journalCh)
@@ -190,6 +192,7 @@ type InstanceManager struct {
 	logger          *slog.Logger
 	onRotate        func(instanceID string, rf RotatedFile) // optional callback for keeper
 	rotateDuration  time.Duration                           // journal rotation interval for live writers
+	rotateSize      int64                                   // journal rotation size cap for live writers
 }
 
 // NewInstanceManager creates a new instance manager, loading any persisted state.
@@ -262,16 +265,18 @@ func (im *InstanceManager) SetOnRotate(fn func(instanceID string, rf RotatedFile
 	}
 }
 
-// SetJournalRotateDuration sets the rotation interval for live journal writers.
+// SetJournalRotation configures rotation for live journal writers.
 // Must be called before any connections are accepted. Retroactively updates
 // all existing instances loaded at startup.
-func (im *InstanceManager) SetJournalRotateDuration(d time.Duration) {
+func (im *InstanceManager) SetJournalRotation(duration time.Duration, size int64) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
-	im.rotateDuration = d
+	im.rotateDuration = duration
+	im.rotateSize = size
 	for _, s := range im.instances {
 		s.mu.Lock()
-		s.rotateDuration = d
+		s.rotateDuration = duration
+		s.rotateSize = size
 		s.mu.Unlock()
 	}
 }
@@ -324,6 +329,7 @@ func (im *InstanceManager) GetOrCreate(id string) *InstanceState {
 		journalDir:     dir,
 		onRotate:       im.makeOnRotate(id),
 		rotateDuration: im.rotateDuration,
+		rotateSize:     im.rotateSize,
 		logger:         im.logger,
 	}
 	im.instances[id] = s

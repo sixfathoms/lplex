@@ -149,15 +149,16 @@ WantedBy=multi-user.target
 
 ## Journal rotation
 
-Live journal files on the cloud side must be rotated for archival to work. Without rotation, the `on-rotate` trigger never fires and files grow indefinitely. Configure with `-journal-rotate-duration` (default `PT1H`):
+Live journal files on the cloud side must be rotated for archival to work. Without rotation, the `on-rotate` trigger never fires and files grow indefinitely. Rotation is configured the same way as on the boat, with duration and/or size thresholds (whichever triggers first):
 
 ```hocon
 journal {
-  rotate-duration = PT1H
+  rotate-duration = PT1H         # default, rotate after 1 hour
+  # rotate-size = 536870912      # optional, rotate after 512 MB
 }
 ```
 
-This is set by default, so no action is needed unless you want a different interval. Backfill files (from the backfill stream) rotate automatically when each backfill session closes.
+Duration-based rotation is on by default (`PT1H`), so no action is needed unless you want a different interval or want to add a size cap. Backfill files (from the backfill stream) rotate automatically when each backfill session closes.
 
 ## Retention and archival
 
