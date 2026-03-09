@@ -2218,3 +2218,135 @@ func TestEndToEndSoftToHardToPause(t *testing.T) {
 		t.Errorf("expected [true, false], got %v", pauseHistory)
 	}
 }
+
+// -----------------------------------------------------------------------
+// Startup archive sweep
+// -----------------------------------------------------------------------
+
+// TestStartupArchivesUnarchivedFiles verifies that Run() archives all
+// non-archived .lpj files on startup, regardless of trigger mode.
+func TestStartupArchivesUnarchivedFiles(t *testing.T) {
+	dir := t.TempDir()
+	scriptDir := t.TempDir()
+	now := time.Now().UTC()
+
+	// Three files, none archived, none expired.
+	p1 := createTestJournal(t, dir, lpjName("nmea2k", now.Add(-3*time.Hour)), 100)
+	p2 := createTestJournal(t, dir, lpjName("nmea2k", now.Add(-2*time.Hour)), 100)
+	p3 := createTestJournal(t, dir, lpjName("nmea2k", now.Add(-1*time.Hour)), 100)
+
+	script := writeArchiveScript(t, scriptDir, okScript)
+
+	keeper := NewJournalKeeper(KeeperConfig{
+		Dirs:           []KeeperDir{{Dir: dir, InstanceID: "test"}},
+		ArchiveCommand: script,
+		ArchiveTrigger: ArchiveOnRotate,
+		MaxAge:         30 * 24 * time.Hour, // files are nowhere near expiry
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(2 * time.Second)
+		cancel()
+	}()
+	keeper.Run(ctx)
+
+	// All three should be archived. The startup sweep runs before any
+	// brokers are started, so all files are from previous runs.
+	if !isArchived(p1) {
+		t.Errorf("p1 should be archived: %s", p1)
+	}
+	if !isArchived(p2) {
+		t.Errorf("p2 should be archived: %s", p2)
+	}
+	if !isArchived(p3) {
+		t.Errorf("p3 should be archived: %s", p3)
+	}
+}
+
+// TestStartupSkipsAlreadyArchivedFiles verifies the startup sweep doesn't
+// re-archive files that already have .archived markers.
+func TestStartupSkipsAlreadyArchivedFiles(t *testing.T) {
+	dir := t.TempDir()
+	scriptDir := t.TempDir()
+	now := time.Now().UTC()
+
+	p1 := createTestJournal(t, dir, lpjName("nmea2k", now.Add(-3*time.Hour)), 100)
+	p2 := createTestJournal(t, dir, lpjName("nmea2k", now.Add(-2*time.Hour)), 100)
+	p3 := createTestJournal(t, dir, lpjName("nmea2k", now.Add(-1*time.Hour)), 100)
+
+	// p1 is already archived.
+	markArchived(p1)
+
+	trackFile := filepath.Join(scriptDir, "calls.log")
+	trackScript := fmt.Sprintf(`
+for arg in "$@"; do
+  echo "$arg" >> %s
+  echo "{\"path\":\"$arg\",\"status\":\"ok\"}"
+done
+`, trackFile)
+	script := writeArchiveScript(t, scriptDir, trackScript)
+
+	keeper := NewJournalKeeper(KeeperConfig{
+		Dirs:           []KeeperDir{{Dir: dir, InstanceID: "test"}},
+		ArchiveCommand: script,
+		ArchiveTrigger: ArchiveOnRotate,
+		MaxAge:         30 * 24 * time.Hour,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(2 * time.Second)
+		cancel()
+	}()
+	keeper.Run(ctx)
+
+	// p1 was already archived, p2 and p3 should now be archived too.
+	if !isArchived(p2) {
+		t.Error("p2 should be archived")
+	}
+	if !isArchived(p3) {
+		t.Error("p3 should be archived")
+	}
+
+	// Check the tracking file: p2 and p3 should appear (p1 was already archived).
+	data, err := os.ReadFile(trackFile)
+	if err != nil {
+		t.Fatalf("tracking file missing: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 archive calls, got %d: %v", len(lines), lines)
+	}
+}
+
+// TestStartupArchivesSingleFile verifies the startup sweep archives even when
+// there's only one file in a directory. This is the critical case: after a
+// short-lived deployment, there's one file from finalize and it must be archived.
+func TestStartupArchivesSingleFile(t *testing.T) {
+	dir := t.TempDir()
+	scriptDir := t.TempDir()
+	now := time.Now().UTC()
+
+	p1 := createTestJournal(t, dir, lpjName("nmea2k", now.Add(-1*time.Hour)), 100)
+
+	script := writeArchiveScript(t, scriptDir, okScript)
+
+	keeper := NewJournalKeeper(KeeperConfig{
+		Dirs:           []KeeperDir{{Dir: dir, InstanceID: "test"}},
+		ArchiveCommand: script,
+		ArchiveTrigger: ArchiveOnRotate,
+		MaxAge:         30 * 24 * time.Hour,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(2 * time.Second)
+		cancel()
+	}()
+	keeper.Run(ctx)
+
+	if !isArchived(p1) {
+		t.Error("single file should be archived on startup")
+	}
+}

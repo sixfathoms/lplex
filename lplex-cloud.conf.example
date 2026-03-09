@@ -40,8 +40,14 @@ http {
 # Data directory for instance state and journals
 data-dir = "/data/lplex"
 
-# Journal retention and archival (all optional, comment out to disable)
+# Journal rotation and retention (all optional, comment out to disable)
 journal {
+
+  # Rotate live journal files after this duration or size (whichever comes first).
+  # Required for on-rotate archival to trigger. Backfill files rotate
+  # automatically when each backfill session ends.
+  # rotate-duration = PT1H
+  # rotate-size = 0              # bytes, 0 = disabled
 
   # Retention policy (applied per-instance journal directory)
   retention {

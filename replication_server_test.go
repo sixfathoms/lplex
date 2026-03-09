@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -261,12 +262,115 @@ func TestInstanceManagerStopBrokerCleanup(t *testing.T) {
 	if inst.journalCh != nil {
 		t.Fatal("journalCh should be nil after stopBroker")
 	}
+	if inst.journalDone != nil {
+		t.Fatal("journalDone should be nil after stopBroker")
+	}
 	if inst.cancelFunc != nil {
 		t.Fatal("cancelFunc should be nil after stopBroker")
 	}
 
 	// stopBroker on nil broker should be safe
 	inst.stopBroker()
+	inst.mu.Unlock()
+}
+
+func TestCloudJournalWriterRotation(t *testing.T) {
+	dir := t.TempDir()
+	im, err := NewInstanceManager(dir, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer im.Shutdown()
+
+	im.SetJournalRotation(42*time.Second, 1024*1024)
+
+	var rotated atomic.Int32
+	im.SetOnRotate(func(instanceID string, rf RotatedFile) {
+		if instanceID != "rotate-test" {
+			t.Errorf("unexpected instanceID in OnRotate: %q", instanceID)
+		}
+		rotated.Add(1)
+	})
+
+	inst := im.GetOrCreate("rotate-test")
+
+	// Verify the duration propagated to the instance.
+	inst.mu.Lock()
+	if inst.rotateDuration != 42*time.Second {
+		t.Fatalf("rotateDuration: got %v, want 42s", inst.rotateDuration)
+	}
+
+	// Start broker, which creates the JournalWriter with our rotation duration.
+	inst.ensureBroker()
+	if inst.journalWriter == nil {
+		t.Fatal("journalWriter should exist after ensureBroker")
+	}
+	if inst.journalWriter.cfg.RotateDuration != 42*time.Second {
+		t.Fatalf("JournalWriter.RotateDuration: got %v, want 42s", inst.journalWriter.cfg.RotateDuration)
+	}
+	if inst.journalWriter.cfg.RotateSize != 1024*1024 {
+		t.Fatalf("JournalWriter.RotateSize: got %d, want 1MB", inst.journalWriter.cfg.RotateSize)
+	}
+	broker := inst.broker
+	inst.mu.Unlock()
+
+	// Feed a frame so the journal file gets created.
+	broker.RxFrames() <- RxFrame{
+		Timestamp: time.Now(),
+		Header:    ParseCANID(0x09F80100),
+		Data:      make([]byte, 8),
+		Seq:       1,
+	}
+	time.Sleep(50 * time.Millisecond) // let the writer drain
+
+	// Stop the broker. stopBroker now waits for the journal writer goroutine
+	// to finish, so finalize() and OnRotate complete before this returns.
+	inst.mu.Lock()
+	inst.stopBroker()
+	inst.mu.Unlock()
+
+	if got := rotated.Load(); got != 1 {
+		t.Fatalf("expected 1 OnRotate callback (from finalize), got %d", got)
+	}
+
+	// Verify a .lpj file was created.
+	journalDir := filepath.Join(dir, "instances", "rotate-test", "journal")
+	entries, err := os.ReadDir(journalDir)
+	if err != nil {
+		t.Fatalf("read journal dir: %v", err)
+	}
+	var lpjCount int
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".lpj" {
+			lpjCount++
+		}
+	}
+	if lpjCount == 0 {
+		t.Fatal("expected at least 1 .lpj file")
+	}
+}
+
+// Verify SetJournalRotation retroactively updates existing instances.
+func TestSetJournalRotationRetroactive(t *testing.T) {
+	dir := t.TempDir()
+	im, err := NewInstanceManager(dir, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer im.Shutdown()
+
+	inst := im.GetOrCreate("boat-1")
+
+	// Set rotation after instance was created.
+	im.SetJournalRotation(5*time.Minute, 512*1024*1024)
+
+	inst.mu.Lock()
+	if inst.rotateDuration != 5*time.Minute {
+		t.Fatalf("retroactive duration: got %v, want 5m", inst.rotateDuration)
+	}
+	if inst.rotateSize != 512*1024*1024 {
+		t.Fatalf("retroactive size: got %d, want 512MB", inst.rotateSize)
+	}
 	inst.mu.Unlock()
 }
 

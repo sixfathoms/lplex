@@ -147,11 +147,26 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
+## Journal rotation
+
+Live journal files on the cloud side must be rotated for archival to work. Without rotation, the `on-rotate` trigger never fires and files grow indefinitely. Rotation is configured the same way as on the boat, with duration and/or size thresholds (whichever triggers first):
+
+```hocon
+journal {
+  rotate-duration = PT1H         # default, rotate after 1 hour
+  # rotate-size = 536870912      # optional, rotate after 512 MB
+}
+```
+
+Duration-based rotation is on by default (`PT1H`), so no action is needed unless you want a different interval or want to add a size cap. Backfill files (from the backfill stream) rotate automatically when each backfill session closes.
+
 ## Retention and archival
 
 lplex-cloud uses the same retention and archival system as lplex. A single JournalKeeper goroutine manages all instance directories.
 
-See [Retention & Archival](/user-guide/retention) for configuration details. The same flags and HOCON paths apply.
+On startup, the keeper runs a one-time sweep to archive any `.lpj` files that are missing `.archived` markers. This runs before any brokers start, so all files on disk are completed files from previous runs. This handles the case where the process was restarted before `on-rotate` archival could complete.
+
+See [Retention & Archival](/user-guide/retention) for configuration details. The same retention and archive flags apply.
 
 ## Monitoring
 

@@ -155,6 +155,11 @@ func (k *JournalKeeper) Run(ctx context.Context) {
 	// Startup scan: handle files rotated while we were down.
 	k.scanAll(ctx)
 
+	// Archive any .lpj files that were rotated but never archived (e.g. process
+	// crashed before on-rotate fired, or files accumulated before archiving was
+	// configured). Runs once on startup regardless of trigger mode.
+	k.archiveUnarchived(ctx)
+
 	scanTicker := time.NewTicker(keeperScanInterval)
 	defer scanTicker.Stop()
 
@@ -164,7 +169,17 @@ func (k *JournalKeeper) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			// Drain any rotation notifications that arrived between
+			// im.Shutdown() and cancel(). Without this, files finalized
+			// during shutdown would never get archived.
+			for {
+				select {
+				case rf := <-k.rotateCh:
+					k.handleRotation(context.Background(), rf)
+				default:
+					return
+				}
+			}
 
 		case rf := <-k.rotateCh:
 			k.handleRotation(ctx, rf)
@@ -210,6 +225,60 @@ func (k *JournalKeeper) handleRotation(ctx context.Context, rf RotatedFile) {
 	}
 
 	k.archiveFiles(ctx, []pendingFile{pf})
+}
+
+// archiveUnarchived is a one-shot startup sweep that archives any .lpj files
+// missing their .archived sidecar marker. Only runs with on-rotate trigger:
+// if the process crashed before on-rotate fired, these files would never be
+// archived otherwise. With before-expire, files get archived naturally at
+// retention time. This runs at startup before any brokers are started, so
+// all files are from previous runs and are complete.
+func (k *JournalKeeper) archiveUnarchived(ctx context.Context) {
+	if k.cfg.ArchiveCommand == "" || k.cfg.ArchiveTrigger != ArchiveOnRotate {
+		return
+	}
+
+	dirs := k.cfg.Dirs
+	if k.cfg.DirFunc != nil {
+		dirs = k.cfg.DirFunc()
+	}
+
+	var toArchive []pendingFile
+	for _, d := range dirs {
+		if ctx.Err() != nil {
+			return
+		}
+
+		entries, err := os.ReadDir(d.Dir)
+		if err != nil {
+			continue
+		}
+
+		for _, e := range entries {
+			name := e.Name()
+			if !strings.HasSuffix(name, ".lpj") {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			path := filepath.Join(d.Dir, name)
+			if !isArchived(path) && !k.isPending(path) {
+				toArchive = append(toArchive, pendingFile{
+					path:       path,
+					instanceID: d.InstanceID,
+					size:       info.Size(),
+					created:    parseTimestampFromFilename(name),
+				})
+			}
+		}
+	}
+
+	if len(toArchive) > 0 {
+		k.logger.Info("startup archive sweep", "files", len(toArchive))
+		k.archiveFiles(ctx, toArchive)
+	}
 }
 
 // scanAll scans all configured directories and applies retention + archive rules.

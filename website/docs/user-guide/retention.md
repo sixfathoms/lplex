@@ -110,6 +110,10 @@ nmea2k-20260306T101500Z.lpj.archived
 
 The keeper uses these markers to track archive state across restarts.
 
+### Startup archive sweep
+
+When the archive trigger is `on-rotate`, the keeper runs a one-time sweep on startup to archive any `.lpj` files that are missing their `.archived` marker. This runs before any brokers start, so all files on disk are completed files from previous runs. This catches files that were rotated but never archived, for example if the process was restarted before the `on-rotate` callback fired.
+
 ### Retry behavior
 
 Failed archives retry with exponential backoff: 1 minute initial delay, doubling up to a 1 hour cap.
