@@ -349,6 +349,7 @@ var packetTests = []packetTest{
 		},
 		epsilon: 0.01,
 	},
+
 }
 
 func TestPacketDecode(t *testing.T) {
