@@ -1,3 +1,4 @@
 FROM scratch
-COPY lplex /lplex
+ARG TARGETARCH
+COPY linux/${TARGETARCH}/lplex /lplex
 ENTRYPOINT ["/lplex"]
