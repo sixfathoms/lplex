@@ -72,6 +72,9 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'releases/v0.3.1',
+        'releases/v0.2.0',
+        'releases/v0.1.2',
+        'releases/v0.1.0',
       ],
     },
   ],
