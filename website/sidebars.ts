@@ -71,7 +71,7 @@ const sidebars: SidebarsConfig = {
       label: 'Releases',
       collapsed: false,
       items: [
-        'releases/v0.3.0',
+        'releases/v0.3.1',
       ],
     },
   ],
