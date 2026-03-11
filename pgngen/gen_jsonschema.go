@@ -72,7 +72,25 @@ func GenerateJSONSchema(s *Schema) string {
 			var fieldName string
 			var prop map[string]any
 
-			if f.Type == TypeStruct {
+			if f.Type == TypeBytes {
+				fieldName = toSnake(f.Name)
+				if f.PGNRef != "" {
+					prop = map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"field": map[string]any{"type": "integer"},
+								"name":  map[string]any{"type": "string"},
+								"value": map[string]any{"type": "integer"},
+							},
+							"required": []string{"field", "value"},
+						},
+					}
+				} else {
+					prop = map[string]any{"type": "string", "description": "hex-encoded raw bytes"}
+				}
+			} else if f.Type == TypeStruct {
 				fieldName = toSnake(f.Name)
 				prop = map[string]any{
 					"type":  "array",

@@ -81,6 +81,10 @@ func GenerateProto(s *Schema, pkg string) string {
 				}
 			}
 			switch {
+			case f.Type == TypeBytes:
+				// bytes without pgn_ref -> raw bytes; with pgn_ref -> opaque bytes (pairs are runtime-decoded)
+				fmt.Fprintf(&b, "  bytes %s = %d;%s\n",
+					toSnake(f.Name), fieldNum, comment)
 			case f.Type == TypeStruct:
 				msgType := toPascal(f.StructRef)
 				fmt.Fprintf(&b, "  repeated %s %s = %d;%s\n",

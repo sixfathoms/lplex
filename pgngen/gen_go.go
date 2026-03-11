@@ -290,9 +290,97 @@ func GenerateGo(s *Schema, pkg string) string {
 				pgn, pgn, desc, pgnMetaFields(meta), pgn)
 		}
 	}
-	b.WriteString("}\n")
+	b.WriteString("}\n\n")
+
+	// Field metadata table for cross-PGN pair decoding (PGN 126208 Command/Request).
+	writeFieldTable(&b, s)
 
 	return b.String()
+}
+
+// writeFieldTable generates the fieldTable map that maps PGN numbers to their
+// field metadata (name + byte width). Used by decodeParamPairs for cross-PGN
+// pair decoding in PGN 126208 Command/Request.
+func writeFieldTable(b *strings.Builder, s *Schema) {
+	// Collect PGNs that have usable field layouts (non-nil fields, no dynamic repeat).
+	// We need to deduplicate by PGN number (dispatch groups share the same fields
+	// from the first variant's perspective, but we want one entry per PGN).
+	type fieldEntry struct {
+		name      string
+		byteWidth int
+	}
+	type pgnFields struct {
+		pgn     uint32
+		entries []fieldEntry
+	}
+	var tables []pgnFields
+	seen := make(map[uint32]bool)
+
+	for _, p := range s.PGNs {
+		if p.IsNameOnly() || seen[p.PGN] {
+			continue
+		}
+		// Skip PGNs with dynamic repeat (TypeStruct) since field numbering is
+		// not static and we can't reliably produce a field table.
+		hasDynamic := false
+		for _, f := range p.Fields {
+			if f.Type == TypeStruct || f.Type == TypeBytes {
+				hasDynamic = true
+				break
+			}
+		}
+		if hasDynamic {
+			seen[p.PGN] = true
+			continue
+		}
+
+		var entries []fieldEntry
+		for _, f := range p.Fields {
+			if f.IsRepeated() {
+				// Static repeats expand to N entries named field_1 through field_N.
+				for i := 1; i <= f.RepeatCount; i++ {
+					name := ""
+					if !f.IsSkipped() {
+						name = toSnake(f.Name) + "_" + itoa(int64(i))
+					}
+					entries = append(entries, fieldEntry{
+						name:      name,
+						byteWidth: (f.Bits + 7) / 8,
+					})
+				}
+			} else {
+				name := ""
+				if !f.IsSkipped() {
+					name = toSnake(f.Name)
+				}
+				entries = append(entries, fieldEntry{
+					name:      name,
+					byteWidth: (f.Bits + 7) / 8,
+				})
+			}
+		}
+		if len(entries) > 0 {
+			tables = append(tables, pgnFields{pgn: p.PGN, entries: entries})
+		}
+		seen[p.PGN] = true
+	}
+
+	if len(tables) == 0 {
+		b.WriteString("var fieldTable = map[uint32][]FieldMeta{}\n")
+		return
+	}
+
+	b.WriteString("// fieldTable maps PGN numbers to their field layouts for cross-PGN pair decoding.\n")
+	b.WriteString("// Field numbers are 1-based; index 0 corresponds to NMEA field 1.\n")
+	b.WriteString("var fieldTable = map[uint32][]FieldMeta{\n")
+	for _, pf := range tables {
+		fmt.Fprintf(b, "\t%d: {\n", pf.pgn)
+		for _, e := range pf.entries {
+			fmt.Fprintf(b, "\t\t{%q, %d},\n", e.name, e.byteWidth)
+		}
+		b.WriteString("\t},\n")
+	}
+	b.WriteString("}\n")
 }
 
 // needsDispatch returns true if a PGN group requires a dispatch function.
@@ -474,7 +562,7 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 	// Split fields into static prefix (before first variable-width field) and the rest.
 	splitIdx := 0
 	for i, f := range p.Fields {
-		if f.Type == TypeStringLAU || f.Type == TypeStruct {
+		if f.Type == TypeStringLAU || f.Type == TypeStruct || f.Type == TypeBytes {
 			splitIdx = i
 			break
 		}
@@ -507,6 +595,16 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 			jsonName := toSnake(f.Name)
 			tag := fmt.Sprintf("`json:\"%s,omitempty\"`", jsonName)
 			fmt.Fprintf(b, "\t%s []%s %s\n", fieldName, goType, tag)
+		case TypeBytes:
+			fieldName := toPascal(f.Name)
+			jsonName := toSnake(f.Name)
+			if f.PGNRef != "" {
+				tag := fmt.Sprintf("`json:\"%s,omitempty\"`", jsonName)
+				fmt.Fprintf(b, "\t%s []ParamPair %s\n", fieldName, tag)
+			} else {
+				tag := fmt.Sprintf("`json:\"%s,omitempty\"`", jsonName)
+				fmt.Fprintf(b, "\t%s HexBytes %s\n", fieldName, tag)
+			}
 		default:
 			goType := goFieldType(f)
 			tag := fmt.Sprintf("`json:%q`", toSnake(f.Name))
@@ -592,6 +690,20 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 				writeVarStructFieldDecodes(b, sd, "off", "e", "\t\t\t")
 				fmt.Fprintf(b, "\t\t\tm.%s = append(m.%s, e)\n", fieldName, fieldName)
 				fmt.Fprintf(b, "\t\t}\n")
+				fmt.Fprintf(b, "\t}\n")
+			}
+
+		case TypeBytes:
+			goField := toPascal(f.Name)
+			if f.PGNRef != "" {
+				pgnRefField := toPascal(f.PGNRef)
+				countRefField := toPascal(f.CountRef)
+				fmt.Fprintf(b, "\tm.%s = decodeParamPairs(m.%s, int(m.%s), data[off:])\n",
+					goField, pgnRefField, countRefField)
+			} else {
+				fmt.Fprintf(b, "\tif off < len(data) {\n")
+				fmt.Fprintf(b, "\t\tm.%s = make(HexBytes, len(data)-off)\n", goField)
+				fmt.Fprintf(b, "\t\tcopy(m.%s, data[off:])\n", goField)
 				fmt.Fprintf(b, "\t}\n")
 			}
 
@@ -1189,7 +1301,7 @@ func readBitsExpr(byteOff, bitInByte, bits int, signed bool) string {
 }
 
 func signExtendExpr(expr string, bits int) string {
-	return fmt.Sprintf("signExtend(%s, %d)", expr, bits)
+	return fmt.Sprintf("signExtend(uint64(%s), %d)", expr, bits)
 }
 
 // writeBitsStmt emits Go code to write rawExpr (as uint64) into data[].
@@ -1384,7 +1496,7 @@ func GenerateGoHelpers(pkg string) string {
 	var b strings.Builder
 	b.WriteString("// Code generated by pgngen; DO NOT EDIT.\n\n")
 	b.WriteString("package " + pkg + "\n\n")
-	b.WriteString("import (\n\t\"encoding/binary\"\n\t\"encoding/json\"\n\t\"strconv\"\n\t\"strings\"\n)\n\n")
+	b.WriteString("import (\n\t\"encoding/binary\"\n\t\"encoding/hex\"\n\t\"encoding/json\"\n\t\"strconv\"\n\t\"strings\"\n)\n\n")
 	b.WriteString(`// signExtend performs sign extension on a value with the given number of significant bits.
 func signExtend(v uint64, bits int) int64 {
 	shift := uint(64 - bits)
@@ -1474,6 +1586,90 @@ func decodeLAU(data []byte) (string, int) {
 		return string(runes), totalLen
 	}
 	return string(payload), totalLen
+}
+
+// HexBytes is a []byte that JSON-marshals as a hex string.
+type HexBytes []byte
+
+func (h HexBytes) MarshalJSON() ([]byte, error) {
+	if h == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(hex.EncodeToString(h))
+}
+
+func (h *HexBytes) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*h = nil
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return err
+	}
+	*h = b
+	return nil
+}
+
+// ParamPair represents a single parameter field/value pair from a PGN 126208
+// Group Function command or request. Field numbers are 1-based per the NMEA spec.
+type ParamPair struct {
+	Field uint8  ` + "`" + `json:"field"` + "`" + `
+	Name  string ` + "`" + `json:"name,omitempty"` + "`" + `
+	Value uint64 ` + "`" + `json:"value"` + "`" + `
+}
+
+// FieldMeta describes a single field's name and byte width for cross-PGN pair decoding.
+type FieldMeta struct {
+	Name      string
+	ByteWidth int
+}
+
+// readUintLE reads an unsigned integer of 1-8 bytes from a little-endian byte slice.
+func readUintLE(data []byte) uint64 {
+	switch len(data) {
+	case 1:
+		return uint64(data[0])
+	case 2:
+		return uint64(binary.LittleEndian.Uint16(data))
+	case 3:
+		return uint64(data[0]) | uint64(data[1])<<8 | uint64(data[2])<<16
+	case 4:
+		return uint64(binary.LittleEndian.Uint32(data))
+	default:
+		// For widths 5-8, read what we have and zero-extend.
+		var buf [8]byte
+		copy(buf[:], data)
+		return binary.LittleEndian.Uint64(buf[:])
+	}
+}
+
+// decodeParamPairs decodes NMEA 2000 parameter field/value pairs from raw bytes.
+// Each pair is a 1-byte field number followed by a variable-width value whose
+// size is determined by the target PGN's field layout in fieldTable.
+func decodeParamPairs(targetPGN uint32, count int, data []byte) []ParamPair {
+	fields := fieldTable[targetPGN]
+	var pairs []ParamPair
+	off := 0
+	for i := 0; i < count && off < len(data); i++ {
+		fieldNum := int(data[off])
+		off++
+		if fields == nil || fieldNum < 1 || fieldNum > len(fields) {
+			break // unknown field layout, stop decoding
+		}
+		fm := fields[fieldNum-1] // NMEA field numbers are 1-based
+		if off+fm.ByteWidth > len(data) {
+			break
+		}
+		val := readUintLE(data[off : off+fm.ByteWidth])
+		off += fm.ByteWidth
+		pairs = append(pairs, ParamPair{Field: uint8(fieldNum), Name: fm.Name, Value: val})
+	}
+	return pairs
 }
 `)
 	return b.String()
