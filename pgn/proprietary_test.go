@@ -246,3 +246,106 @@ func TestVictronPGNMethod(t *testing.T) {
 		t.Error("VictronBatteryRegister.PGN() should be 61184")
 	}
 }
+
+// PGN 65284 — BEP Proprietary
+
+func TestDecodeBEPProprietary(t *testing.T) {
+	// Real frame from Bilt Solar (717) device, manufacturer_code=295 (BEP Marine).
+	raw, _ := hex.DecodeString("2799ff0f00000000")
+	result, err := Registry[65284].Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	m, ok := result.(BEPProprietary)
+	if !ok {
+		t.Fatalf("expected BEPProprietary, got %T", result)
+	}
+	if m.ManufacturerCode != 295 {
+		t.Errorf("ManufacturerCode = %d, want 295", m.ManufacturerCode)
+	}
+	if m.IndustryCode != 4 {
+		t.Errorf("IndustryCode = %d, want 4", m.IndustryCode)
+	}
+}
+
+func TestDecode65284UnknownManufacturer(t *testing.T) {
+	// Unknown manufacturer codes should return (nil, nil).
+	raw, _ := hex.DecodeString("7b98aabbccddeeff")
+	result, err := Registry[65284].Decode(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil for unknown manufacturer, got %v", result)
+	}
+}
+
+func TestBEPProprietaryRegistry(t *testing.T) {
+	info, ok := Registry[65284]
+	if !ok {
+		t.Fatal("PGN 65284 not in registry")
+	}
+	if info.Description != "Manufacturer Proprietary Single Frame" {
+		t.Errorf("description = %q", info.Description)
+	}
+	if !info.Draft {
+		t.Error("PGN 65284 should be marked as draft")
+	}
+}
+
+func TestBEPProprietaryPGNMethod(t *testing.T) {
+	if (BEPProprietary{}).PGN() != 65284 {
+		t.Error("BEPProprietary.PGN() should be 65284")
+	}
+}
+
+// PGN 65300 — Mastervolt Proprietary
+
+func TestDecodeMastervoltProprietary(t *testing.T) {
+	// Real frame from Mastervolt (176) device.
+	raw, _ := hex.DecodeString("b0980100003e1000")
+	result, err := Registry[65300].Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	m, ok := result.(MastervoltProprietary)
+	if !ok {
+		t.Fatalf("expected MastervoltProprietary, got %T", result)
+	}
+	if m.ManufacturerCode != 176 {
+		t.Errorf("ManufacturerCode = %d, want 176", m.ManufacturerCode)
+	}
+	if m.IndustryCode != 4 {
+		t.Errorf("IndustryCode = %d, want 4", m.IndustryCode)
+	}
+}
+
+func TestDecode65300UnknownManufacturer(t *testing.T) {
+	raw, _ := hex.DecodeString("7b98aabbccddeeff")
+	result, err := Registry[65300].Decode(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil for unknown manufacturer, got %v", result)
+	}
+}
+
+func TestMastervoltProprietaryRegistry(t *testing.T) {
+	info, ok := Registry[65300]
+	if !ok {
+		t.Fatal("PGN 65300 not in registry")
+	}
+	if info.Description != "Manufacturer Proprietary Single Frame" {
+		t.Errorf("description = %q", info.Description)
+	}
+	if !info.Draft {
+		t.Error("PGN 65300 should be marked as draft")
+	}
+}
+
+func TestMastervoltProprietaryPGNMethod(t *testing.T) {
+	if (MastervoltProprietary{}).PGN() != 65300 {
+		t.Error("MastervoltProprietary.PGN() should be 65300")
+	}
+}

@@ -1469,6 +1469,250 @@ func TestGenerateGoHelpersDecodeLAU(t *testing.T) {
 	}
 }
 
+func TestParseBytes(t *testing.T) {
+	src := `
+pgn 126208 "Group Function Command" fast_packet on_demand {
+  function_code   uint8   :8   value=1
+  commanded_pgn   uint32  :24
+  priority        uint8   :4
+  _                        :4
+  num_pairs       uint8   :8
+  params          bytes        pgn_ref=commanded_pgn  count=num_pairs
+}
+`
+	s, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+	f := s.PGNs[0].Fields[5] // params
+	if f.Type != TypeBytes {
+		t.Errorf("Type = %d, want TypeBytes", f.Type)
+	}
+	if f.PGNRef != "commanded_pgn" {
+		t.Errorf("PGNRef = %q, want commanded_pgn", f.PGNRef)
+	}
+	if f.CountRef != "num_pairs" {
+		t.Errorf("CountRef = %q, want num_pairs", f.CountRef)
+	}
+	if f.Bits != 0 {
+		t.Errorf("Bits = %d, want 0", f.Bits)
+	}
+}
+
+func TestParseBytesRaw(t *testing.T) {
+	src := `
+pgn 126208 "Group Function Acknowledge" fast_packet on_demand {
+  function_code  uint8   :8   value=2
+  acked_pgn      uint32  :24
+  error_code     uint8   :8
+  params         bytes
+}
+`
+	s, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+	f := s.PGNs[0].Fields[3] // params
+	if f.Type != TypeBytes {
+		t.Errorf("Type = %d, want TypeBytes", f.Type)
+	}
+	if f.PGNRef != "" {
+		t.Errorf("PGNRef = %q, want empty", f.PGNRef)
+	}
+	if f.CountRef != "" {
+		t.Errorf("CountRef = %q, want empty", f.CountRef)
+	}
+}
+
+func TestParseBytesErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{
+			name: "bytes with scale",
+			src: `
+pgn 99999 "Test" {
+  x  uint8  :8
+  p  bytes  scale=1.0
+}
+`,
+			wantErr: "bytes cannot have scale",
+		},
+		{
+			name: "bytes with value",
+			src: `
+pgn 99999 "Test" {
+  x  uint8  :8
+  p  bytes  value=1
+}
+`,
+			wantErr: "bytes cannot have value=",
+		},
+		{
+			name: "bytes with repeat",
+			src: `
+pgn 99999 "Test" {
+  x  uint8  :8
+  p  bytes  repeat=2
+}
+`,
+			wantErr: "bytes cannot have repeat=",
+		},
+		{
+			name: "bytes not last field",
+			src: `
+pgn 99999 "Test" {
+  x  uint8  :8
+  p  bytes
+  y  uint8  :8
+}
+`,
+			wantErr: "bytes field must be the last field",
+		},
+		{
+			name: "pgn_ref without count",
+			src: `
+pgn 99999 "Test" {
+  x  uint32  :24
+  p  bytes   pgn_ref=x
+}
+`,
+			wantErr: "pgn_ref and count must be used together",
+		},
+		{
+			name: "count without pgn_ref",
+			src: `
+pgn 99999 "Test" {
+  n  uint8   :8
+  p  bytes   count=n
+}
+`,
+			wantErr: "pgn_ref and count must be used together",
+		},
+		{
+			name: "pgn_ref on non-bytes field",
+			src: `
+pgn 99999 "Test" {
+  x  uint8  :8  pgn_ref=x
+}
+`,
+			wantErr: "pgn_ref= only applies to bytes fields",
+		},
+		{
+			name: "pgn_ref references unknown field",
+			src: `
+pgn 99999 "Test" {
+  n  uint8  :8
+  p  bytes  pgn_ref=nonexistent  count=n
+}
+`,
+			wantErr: "pgn_ref=nonexistent references unknown field",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, err := Parse(tt.src)
+			if err != nil {
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("parse error = %q, want substring %q", err.Error(), tt.wantErr)
+				}
+				return
+			}
+			err = s.Resolve()
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestGenerateGoBytesWithPGNRef(t *testing.T) {
+	src := `
+pgn 127501 "Binary Switch Bank" {
+  instance    uint8   :8
+  indicator   uint8   :2  repeat=4
+}
+
+pgn 126208 "Command" fast_packet on_demand {
+  function_code   uint8   :8   value=1
+  commanded_pgn   uint32  :24
+  priority        uint8   :4
+  _                        :4
+  num_pairs       uint8   :8
+  params          bytes        pgn_ref=commanded_pgn  count=num_pairs
+}
+`
+	s, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+
+	code := GenerateGo(s, "pgn")
+
+	// Struct should have []ParamPair for bytes with pgn_ref.
+	if !strings.Contains(code, "Params []ParamPair") {
+		t.Error("missing Params []ParamPair field")
+	}
+
+	// Decode should call decodeParamPairs.
+	if !strings.Contains(code, "decodeParamPairs(m.CommandedPgn, int(m.NumPairs), data[off:])") {
+		t.Error("missing decodeParamPairs call")
+	}
+
+	// Field table should include PGN 127501.
+	if !strings.Contains(code, "127501: {") {
+		t.Error("missing PGN 127501 in fieldTable")
+	}
+	if !strings.Contains(code, `{"instance", 1}`) {
+		t.Error("missing instance field in fieldTable for 127501")
+	}
+}
+
+func TestGenerateGoBytesRaw(t *testing.T) {
+	src := `
+pgn 126208 "Acknowledge" fast_packet on_demand {
+  function_code   uint8   :8   value=2
+  acked_pgn       uint32  :24
+  error_code      uint8   :8
+  params          bytes
+}
+`
+	s, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+
+	code := GenerateGo(s, "pgn")
+
+	// Struct should have HexBytes for bytes without pgn_ref.
+	if !strings.Contains(code, "Params HexBytes") {
+		t.Error("missing Params HexBytes field")
+	}
+
+	// Decode should use raw copy.
+	if !strings.Contains(code, "make(HexBytes, len(data)-off)") {
+		t.Error("missing HexBytes copy in decode")
+	}
+}
+
 func TestNaming(t *testing.T) {
 	tests := []struct {
 		input    string

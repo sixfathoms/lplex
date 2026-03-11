@@ -350,6 +350,156 @@ var packetTests = []packetTest{
 		epsilon: 0.01,
 	},
 
+	// ---- PGN 127500: Load Controller Connection State/Control ----
+	{
+		desc: "Mastervolt connection 0, PWM 100%",
+		pgn:  127500,
+		hex:  "ff00000000640000",
+		want: LoadControllerConnectionStateControl{
+			Sid:                      0xff,
+			ConnectionId:             0,
+			State:                    0,
+			Status:                   0,
+			OperationalStatusControl: 0,
+			PwmDutyCycle:             100,
+			TimeOn:                   0,
+			TimeOff:                  0,
+		},
+	},
+	{
+		desc: "Mastervolt connection 5, all zeros",
+		pgn:  127500,
+		hex:  "ff05000000000000",
+		want: LoadControllerConnectionStateControl{
+			Sid:          0xff,
+			ConnectionId: 5,
+		},
+	},
+
+	// ---- PGN 127751: DC Voltage/Current ----
+	{
+		desc: "Mastervolt connection 0, no readings",
+		pgn:  127751,
+		hex:  "ff000000000000ff",
+		want: DCVoltageCurrent{
+			Sid:              0xff,
+			ConnectionNumber: 0,
+			DcVoltage:        0,
+			DcCurrent:        0,
+		},
+	},
+
+	// ---- PGN 126208: NMEA Group Function ----
+	{
+		desc:        "Command: switch bank 127501, 2 pairs",
+		pgn:         126208,
+		hex:         "010df201f80201200a01",
+		noRoundTrip: true, // variable-width PGN, no Encode method
+		want: NMEAGroupFunctionCommand{
+			FunctionCode:    1,
+			CommandedPgn:    127501,
+			PrioritySetting: 8, // 0x8 = don't change priority
+			NumberOfPairs:   2,
+			Params: []ParamPair{
+				{Field: 1, Name: "instance", Value: 32},
+				{Field: 10, Name: "indicator_9", Value: 1},
+			},
+		},
+	},
+	{
+		desc:        "Acknowledge: reject 127501 (error 4)",
+		pgn:         126208,
+		hex:         "020df20144ff",
+		noRoundTrip: true,
+		want: NMEAGroupFunctionAcknowledge{
+			FunctionCode:     2,
+			AcknowledgedPgn:  127501,
+			PgnErrorCode:     4,
+			ControlErrorCode: 4,
+			NumberOfPairs:    0xFF,
+		},
+	},
+	{
+		desc:        "Acknowledge: accept 127501 (error 0, raw params)",
+		pgn:         126208,
+		hex:         "020df201000200",
+		noRoundTrip: true,
+		want: NMEAGroupFunctionAcknowledge{
+			FunctionCode:     2,
+			AcknowledgedPgn:  127501,
+			PgnErrorCode:     0,
+			ControlErrorCode: 0,
+			NumberOfPairs:    2,
+			Params:           HexBytes{0x00},
+		},
+	},
+
+}
+
+func TestBytesParamPairJSON(t *testing.T) {
+	// Verify the JSON output format for Command pairs matches the spec.
+	data, _ := hex.DecodeString("010df201f80201200a01")
+	result, err := Registry[126208].Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd, ok := result.(NMEAGroupFunctionCommand)
+	if !ok {
+		t.Fatalf("expected NMEAGroupFunctionCommand, got %T", result)
+	}
+	if len(cmd.Params) != 2 {
+		t.Fatalf("expected 2 params, got %d", len(cmd.Params))
+	}
+	if cmd.Params[0].Field != 1 || cmd.Params[0].Name != "instance" || cmd.Params[0].Value != 32 {
+		t.Errorf("param[0] = %+v, want {1 instance 32}", cmd.Params[0])
+	}
+	if cmd.Params[1].Field != 10 || cmd.Params[1].Name != "indicator_9" || cmd.Params[1].Value != 1 {
+		t.Errorf("param[1] = %+v, want {10 indicator_9 1}", cmd.Params[1])
+	}
+
+	// Verify JSON matches expected format.
+	j, _ := json.Marshal(cmd)
+	var m map[string]any
+	if err := json.Unmarshal(j, &m); err != nil {
+		t.Fatal(err)
+	}
+	params, ok := m["params"].([]any)
+	if !ok {
+		t.Fatalf("params is not an array: %T", m["params"])
+	}
+	pair := params[0].(map[string]any)
+	if pair["field"].(float64) != 1 {
+		t.Errorf("pair[0].field = %v, want 1", pair["field"])
+	}
+	if pair["name"].(string) != "instance" {
+		t.Errorf("pair[0].name = %v, want instance", pair["name"])
+	}
+}
+
+func TestBytesHexBytesJSON(t *testing.T) {
+	// Verify HexBytes marshals as hex string.
+	data, _ := hex.DecodeString("020df201000200")
+	result, err := Registry[126208].Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ack, ok := result.(NMEAGroupFunctionAcknowledge)
+	if !ok {
+		t.Fatalf("expected NMEAGroupFunctionAcknowledge, got %T", result)
+	}
+	if len(ack.Params) != 1 || ack.Params[0] != 0x00 {
+		t.Errorf("Params = %x, want [00]", ack.Params)
+	}
+
+	// JSON should be a hex string.
+	j, _ := json.Marshal(ack)
+	var m map[string]any
+	if err := json.Unmarshal(j, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["params"].(string) != "00" {
+		t.Errorf("params JSON = %q, want \"00\"", m["params"])
+	}
 }
 
 func TestPacketDecode(t *testing.T) {
@@ -486,8 +636,14 @@ func compareStructs(t *testing.T, got, want any, epsilon float64) {
 			if math.Abs(wf-gf) > epsilon {
 				t.Errorf("field %q = %v, want %v (epsilon=%v)", key, gf, wf, epsilon)
 			}
-		} else if wv != gv {
-			t.Errorf("field %q = %v, want %v", key, gv, wv)
+		} else {
+			// For non-float types (including slices/maps which aren't comparable
+			// with !=), compare via JSON re-serialization.
+			wj, _ := json.Marshal(wv)
+			gj, _ := json.Marshal(gv)
+			if string(wj) != string(gj) {
+				t.Errorf("field %q = %s, want %s", key, gj, wj)
+			}
 		}
 	}
 }

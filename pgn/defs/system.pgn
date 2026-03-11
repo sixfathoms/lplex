@@ -6,6 +6,38 @@ pgn 60416 "ISO Transport Protocol Connection Management"
 pgn 65240 "Commanded Address"
 pgn 126208 "NMEA Request Group Function" fast_packet
 pgn 126464 "PGN List" fast_packet
+
+# PGN 126208 — NMEA Request/Command/Acknowledge Group Function (fast-packet)
+# Dispatched by function_code (byte 0). Request/Command have variable-length
+# parameter pairs decoded via cross-PGN field table lookup. Acknowledge has
+# raw parameter bytes (no structured pair decode).
+
+pgn 126208 "NMEA Group Function Request" fast_packet on_demand {
+  function_code          uint8   :8   value=0
+  requested_pgn          uint32  :24
+  transmission_interval  uint32  :32
+  transmission_offset    uint16  :16
+  number_of_parameters   uint8   :8
+  params                 bytes        pgn_ref=requested_pgn  count=number_of_parameters
+}
+
+pgn 126208 "NMEA Group Function Command" fast_packet on_demand {
+  function_code      uint8   :8   value=1
+  commanded_pgn      uint32  :24
+  priority_setting   uint8   :4
+  _                           :4
+  number_of_pairs    uint8   :8
+  params             bytes        pgn_ref=commanded_pgn  count=number_of_pairs
+}
+
+pgn 126208 "NMEA Group Function Acknowledge" fast_packet on_demand {
+  function_code        uint8   :8   value=2
+  acknowledged_pgn     uint32  :24
+  pgn_error_code       uint8   :4
+  control_error_code   uint8   :4
+  number_of_pairs      uint8   :8
+  params               bytes
+}
 pgn 126720 "Proprietary Fast Packet" fast_packet
 pgn 126998 "Configuration Information" fast_packet
 
@@ -99,6 +131,32 @@ pgn 61184 "Victron Battery Register" on_demand {
   industry_code      uint8   :3
   register           uint16  :16  lookup=VictronRegister
   payload            uint32  :32
+}
+
+# PGN 65284 — Manufacturer Proprietary Single Frame
+# Dispatched by manufacturer_code. BEP Marine (295) variant observed from
+# Bilt Solar (717) devices broadcasting every ~5s. Field layout beyond the
+# standard proprietary header is undocumented; bytes are marked unknown.
+pgn 65284 "Manufacturer Proprietary Single Frame"
+
+pgn 65284 "BEP Proprietary" draft interval=5000ms {
+  manufacturer_code  uint16  :11  value=295
+  _                          :2
+  industry_code      uint8   :3
+  ?                          :48
+}
+
+# PGN 65300 — Manufacturer Proprietary Single Frame
+# Dispatched by manufacturer_code. Mastervolt (176) variant observed
+# broadcasting every ~4s. Field layout beyond the proprietary header
+# is undocumented; bytes are marked unknown.
+pgn 65300 "Manufacturer Proprietary Single Frame"
+
+pgn 65300 "Mastervolt Proprietary" draft interval=4000ms {
+  manufacturer_code  uint16  :11  value=176
+  _                          :2
+  industry_code      uint8   :3
+  ?                          :48
 }
 
 # PGN 126992 — System Time

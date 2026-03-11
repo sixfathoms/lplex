@@ -319,8 +319,8 @@ func (p *parser) parseField(tokens []string) (FieldDef, error) {
 		}
 		f.Bits = bits
 		idx++
-	} else if f.Type == TypeStringLAU {
-		// string_lau has no bit width (variable-length)
+	} else if f.Type == TypeStringLAU || f.Type == TypeBytes {
+		// string_lau and bytes have no bit width (variable-length)
 		f.Bits = 0
 	} else if f.Type == TypeEnum {
 		// Could be a struct ref (resolved in Resolve). If no `:N` follows,
@@ -406,6 +406,16 @@ func (p *parser) parseField(tokens []string) (FieldDef, error) {
 			f.Trim = unquote(v)
 		case "as":
 			f.AliasPlural = unquote(v)
+		case "pgn_ref":
+			if f.Type != TypeBytes {
+				return FieldDef{}, p.errorf("field %s: pgn_ref= only applies to bytes fields", f.Name)
+			}
+			f.PGNRef = v
+		case "count":
+			if f.Type != TypeBytes {
+				return FieldDef{}, p.errorf("field %s: count= only applies to bytes fields", f.Name)
+			}
+			f.CountRef = v
 		default:
 			return FieldDef{}, p.errorf("field %s: unknown attribute %q", f.Name, k)
 		}
@@ -432,6 +442,28 @@ func (p *parser) parseField(tokens []string) (FieldDef, error) {
 		}
 		if f.RepeatCount > 0 || f.RepeatRef != "" {
 			return FieldDef{}, p.errorf("field %s: string_lau cannot have repeat=", f.Name)
+		}
+	}
+
+	// Validate bytes constraints
+	if f.Type == TypeBytes {
+		if f.Scale != 0 || f.Offset != 0 {
+			return FieldDef{}, p.errorf("field %s: bytes cannot have scale or offset", f.Name)
+		}
+		if f.Tolerance != nil {
+			return FieldDef{}, p.errorf("field %s: bytes cannot have tolerance=", f.Name)
+		}
+		if f.MatchValue != nil {
+			return FieldDef{}, p.errorf("field %s: bytes cannot have value=", f.Name)
+		}
+		if f.LookupRef != "" {
+			return FieldDef{}, p.errorf("field %s: bytes cannot have lookup=", f.Name)
+		}
+		if f.RepeatCount > 0 || f.RepeatRef != "" {
+			return FieldDef{}, p.errorf("field %s: bytes cannot have repeat=", f.Name)
+		}
+		if f.Trim != "" {
+			return FieldDef{}, p.errorf("field %s: bytes cannot have trim=", f.Name)
 		}
 	}
 
@@ -474,6 +506,8 @@ func classifyType(s string) (FieldType, bool, string) {
 		return TypeString, false, ""
 	case "string_lau":
 		return TypeStringLAU, false, ""
+	case "bytes":
+		return TypeBytes, false, ""
 	default:
 		// Assume it's an enum or struct reference (resolved later in Resolve)
 		return TypeEnum, false, s

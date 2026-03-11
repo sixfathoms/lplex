@@ -95,11 +95,11 @@ func (p *PGNDef) IsNameOnly() bool {
 	return p.Fields == nil
 }
 
-// HasVariableWidth returns true if any field is variable-length (TypeStringLAU
-// or TypeStruct with dynamic repeat), making the packet size unknowable at compile time.
+// HasVariableWidth returns true if any field is variable-length (TypeStringLAU,
+// TypeStruct with dynamic repeat, or TypeBytes), making the packet size unknowable at compile time.
 func (p *PGNDef) HasVariableWidth() bool {
 	for _, f := range p.Fields {
-		if f.Type == TypeStringLAU || f.Type == TypeStruct {
+		if f.Type == TypeStringLAU || f.Type == TypeStruct || f.Type == TypeBytes {
 			return true
 		}
 	}
@@ -108,11 +108,11 @@ func (p *PGNDef) HasVariableWidth() bool {
 
 // TotalBits returns the total number of bits across all fields.
 // Repeated fields contribute Bits * RepeatCount.
-// Variable-width fields (TypeStringLAU, TypeStruct) contribute 0 bits.
+// Variable-width fields (TypeStringLAU, TypeStruct, TypeBytes) contribute 0 bits.
 func (p *PGNDef) TotalBits() int {
 	total := 0
 	for _, f := range p.Fields {
-		if f.Type == TypeStringLAU || f.Type == TypeStruct {
+		if f.Type == TypeStringLAU || f.Type == TypeStruct || f.Type == TypeBytes {
 			continue
 		}
 		if f.IsRepeated() {
@@ -151,6 +151,8 @@ type FieldDef struct {
 	RepeatCount int       // number of repetitions (0 = not repeated, must be >= 2 when set)
 	GroupMode   string    // "" (array, default) or "map" (map[int]T)
 	AliasPlural string    // override for auto-pluralized field name (from as= attribute)
+	PGNRef      string    // field name holding the target PGN for cross-PGN pair decoding (bytes fields only)
+	CountRef    string    // field name holding the number of parameter pairs (bytes fields only)
 	Line        int       // source line for error reporting
 }
 
@@ -198,6 +200,7 @@ const (
 	TypeUnknown                    // unknown data (observed but undocumented)
 	TypeStringLAU                  // variable-length NMEA 2000 STRING_LAU
 	TypeStruct                     // reference to a StructDef (generates a slice)
+	TypeBytes                      // remaining raw bytes (captures packet tail)
 )
 
 // Resolve computes BitStart offsets for all fields in all PGNs and validates
@@ -275,7 +278,7 @@ func (s *Schema) Resolve() error {
 			f := &s.PGNs[i].Fields[j]
 
 			switch {
-			case f.Type == TypeStringLAU || f.Type == TypeStruct:
+			case f.Type == TypeStringLAU || f.Type == TypeStruct || f.Type == TypeBytes:
 				// Variable-width: contributes 0 to static offset
 			case f.IsRepeated():
 				offset += f.Bits * f.RepeatCount
@@ -328,10 +331,60 @@ func (s *Schema) Resolve() error {
 			}
 
 			// Validate byte alignment before first variable-width field.
-			if (f.Type == TypeStringLAU || f.Type == TypeStruct) && offset%8 != 0 {
+			if (f.Type == TypeStringLAU || f.Type == TypeStruct || f.Type == TypeBytes) && offset%8 != 0 {
 				return &ResolveError{
 					Line:    f.Line,
 					Message: "field " + f.Name + ": variable-width field must be byte-aligned (cumulative bits = " + itoa(int64(offset)) + ")",
+				}
+			}
+
+			// Validate bytes field must be the last non-skipped field.
+			if f.Type == TypeBytes {
+				for k := j + 1; k < len(s.PGNs[i].Fields); k++ {
+					if !s.PGNs[i].Fields[k].IsSkipped() {
+						return &ResolveError{
+							Line:    f.Line,
+							Message: "field " + f.Name + ": bytes field must be the last field in the PGN",
+						}
+					}
+				}
+			}
+
+			// Validate PGNRef/CountRef reference existing uint fields, and are paired.
+			if f.PGNRef != "" {
+				ref, ok := fieldNames[f.PGNRef]
+				if !ok {
+					return &ResolveError{
+						Line:    f.Line,
+						Message: "field " + f.Name + ": pgn_ref=" + f.PGNRef + " references unknown field",
+					}
+				}
+				if ref.Type != TypeUint {
+					return &ResolveError{
+						Line:    f.Line,
+						Message: "field " + f.Name + ": pgn_ref=" + f.PGNRef + " must reference a uint field",
+					}
+				}
+			}
+			if f.CountRef != "" {
+				ref, ok := fieldNames[f.CountRef]
+				if !ok {
+					return &ResolveError{
+						Line:    f.Line,
+						Message: "field " + f.Name + ": count=" + f.CountRef + " references unknown field",
+					}
+				}
+				if ref.Type != TypeUint {
+					return &ResolveError{
+						Line:    f.Line,
+						Message: "field " + f.Name + ": count=" + f.CountRef + " must reference a uint field",
+					}
+				}
+			}
+			if (f.PGNRef != "") != (f.CountRef != "") {
+				return &ResolveError{
+					Line:    f.Line,
+					Message: "field " + f.Name + ": pgn_ref and count must be used together",
 				}
 			}
 

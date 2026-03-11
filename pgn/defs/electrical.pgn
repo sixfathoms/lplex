@@ -1,0 +1,29 @@
+# Electrical & Power Distribution PGNs
+
+# PGN 127500 — Load Controller Connection State/Control
+# Per-connection state for load controllers (breakers, switches, relays).
+# Each connection ID maps to a physical output. Sent as a burst of frames,
+# one per connection, typically alongside PGN 127501 (Binary Switch Bank Status).
+# Field layout from canboat (marked incomplete upstream).
+pgn 127500 "Load Controller Connection State/Control" draft {
+  sid                        uint8   :8
+  connection_id              uint8   :8
+  state                      uint8   :8
+  status                     uint8   :8
+  operational_status_control uint8   :8
+  pwm_duty_cycle             uint8   :8  unit="%"
+  time_on                    uint8   :8
+  time_off                   uint8   :8
+}
+
+# PGN 127751 — DC Voltage/Current
+# Per-connection DC electrical measurements. Sent as a burst alongside
+# PGN 127500, one frame per connection.
+# Field layout from canboat (marked incomplete upstream).
+pgn 127751 "DC Voltage/Current" draft {
+  sid                uint8   :8
+  connection_number  uint8   :8
+  dc_voltage         uint16  :16  scale=0.1  unit="V"
+  dc_current         int32   :24  scale=0.01  unit="A"
+  _                           :8
+}
