@@ -5,7 +5,7 @@ title: Embedding
 
 # Embedding lplex
 
-The `lplex` package can be imported as a Go library to embed the broker and HTTP API into your own application. This lets you build custom NMEA 2000 integrations without running the `lplex` binary.
+The `lplex` package can be imported as a Go library to embed the broker and HTTP API into your own application. This lets you build custom NMEA 2000 integrations without running the `lplex-server` binary.
 
 ## Install
 

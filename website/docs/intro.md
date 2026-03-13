@@ -17,12 +17,12 @@ lplex sits between your boat's NMEA 2000 bus and your applications. It handles a
        |
    SocketCAN (can0)
        |
-     lplex                          lplex-cloud
+     lplex-server                    lplex-cloud
        |                                |
    HTTP/SSE (:8089)    ---- gRPC ----> HTTP/SSE (:8080)
        |                (mTLS)          |
   Local clients                    Remote clients
-  (lplexdump, apps)               (dashboards, APIs)
+  (lplex, apps)                   (dashboards, APIs)
 ```
 
 ## Key features
@@ -40,9 +40,9 @@ lplex sits between your boat's NMEA 2000 bus and your applications. It handles a
 
 | Binary | Description | Platforms |
 |---|---|---|
-| `lplex` | Boat server (CAN reader, broker, HTTP, journaling, replication) | Linux (SocketCAN) |
+| `lplex-server` | Boat server (CAN reader, broker, HTTP, journaling, replication) | Linux (SocketCAN) |
 | `lplex-cloud` | Cloud server (gRPC receiver, per-instance brokers, HTTP API) | Linux |
-| `lplexdump` | CLI client (SSE consumer, PGN decoder, journal replay) | Linux, macOS |
+| `lplex` | CLI client (SSE consumer, PGN decoder, journal replay) | Linux, macOS |
 
 ## Architecture
 

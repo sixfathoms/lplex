@@ -17,9 +17,9 @@ title: Contributing
 go build ./...
 
 # Build specific binaries
-go build -o lplex ./cmd/lplex
+go build -o lplex-server ./cmd/lplex-server
 go build -o lplex-cloud ./cmd/lplex-cloud
-go build -o lplexdump ./cmd/lplexdump
+go build -o lplex ./cmd/lplex
 
 # Run all tests
 go test ./... -v -count=1
@@ -57,11 +57,11 @@ make proto
 
 ## PGN packet tests
 
-PGN decoders have a table-driven test framework in `pgn/packets_test.go`. Each entry specifies a PGN number, hex packet data (as output by `lplexdump`), and the expected decoded struct. The framework verifies both decode and encode round-trip automatically.
+PGN decoders have a table-driven test framework in `pgn/packets_test.go`. Each entry specifies a PGN number, hex packet data (as output by `lplex`), and the expected decoded struct. The framework verifies both decode and encode round-trip automatically.
 
 To add a test from real device data:
 
-1. Capture a frame: `lplexdump -decode -json -pgn <pgn>`
+1. Capture a frame: `lplex dump --decode --json --pgn <pgn>`
 2. Copy the `data` field as `hex` and the `decoded` fields as the `want` struct
 3. Append to the `packetTests` slice in `pgn/packets_test.go`
 
@@ -80,9 +80,9 @@ See the [PGN tutorial](/pgn-dsl/tutorial) for the full walkthrough.
 | Package | Owns |
 |---|---|
 | `lplex` (root) | Broker, Server, Consumer, CANReader, CANWriter, JournalWriter, JournalKeeper, DeviceRegistry, ValueStore, FastPacketAssembler, ReplicationClient, ReplicationServer, InstanceManager, HoleTracker, BlockWriter, EventLog, filters, ring buffer |
-| `cmd/lplex/` | Boat server binary |
+| `cmd/lplex-server/` | Boat server binary |
 | `cmd/lplex-cloud/` | Cloud server binary |
-| `cmd/lplexdump/` | CLI client binary |
+| `cmd/lplex/` | CLI client binary |
 | `cmd/pgngen/` | PGN code generator binary |
 | `lplexc/` | Go client library |
 | `canbus/` | CAN ID parsing and ISO NAME decoding |
@@ -100,4 +100,4 @@ git tag -a v0.2.0 -m "v0.2.0"
 git push origin v0.2.0
 ```
 
-This builds binaries (Linux amd64/arm64), `.deb` packages, Docker images (`ghcr.io/sixfathoms/lplex`), and pushes the Homebrew formula to `sixfathoms/homebrew-tap`.
+This builds binaries (Linux amd64/arm64), `.deb` packages, Docker images (`ghcr.io/sixfathoms/lplex`), and pushes the Homebrew formula for `lplex` to `sixfathoms/homebrew-tap`.

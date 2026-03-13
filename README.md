@@ -16,28 +16,28 @@ CAN bus HTTP bridge for NMEA 2000. Reads raw CAN frames from a SocketCAN interfa
 
 ## Installation
 
-### Client (lplexdump)
+### Client (lplex)
 
 ```bash
 # Homebrew (macOS / Linux)
-brew install sixfathoms/tap/lplexdump
+brew install sixfathoms/tap/lplex
 
 # From source
-go install github.com/sixfathoms/lplex/cmd/lplexdump@latest
+go install github.com/sixfathoms/lplex/cmd/lplex@latest
 ```
 
 ### Server (Linux only, requires SocketCAN)
 
 ```bash
-# Debian/Ubuntu (.deb includes both lplex server and lplexdump)
+# Debian/Ubuntu (.deb includes both lplex-server and lplex)
 sudo dpkg -i lplex_*.deb
-sudo systemctl start lplex
+sudo systemctl start lplex-server
 
 # Docker
 docker run --network host --device /dev/can0 ghcr.io/sixfathoms/lplex:latest
 
 # From source
-go install github.com/sixfathoms/lplex/cmd/lplex@latest
+go install github.com/sixfathoms/lplex/cmd/lplex-server@latest
 ```
 
 ### Cloud Server
@@ -124,23 +124,23 @@ Lifecycle: the broker goroutine exits when you call `broker.CloseRx()`. Close th
 
 ```bash
 # Start the server (requires SocketCAN interface)
-lplex -interface can0 -port 8089
+lplex-server -interface can0 -port 8089
 
 # With a config file
-lplex -config /etc/lplex/lplex.conf
+lplex-server -config /etc/lplex/lplex-server.conf
 
 # With journal recording enabled
-lplex -interface can0 -port 8089 -journal-dir /var/log/lplex
+lplex-server -interface can0 -port 8089 -journal-dir /var/log/lplex
 
 # With cloud replication
-lplex -interface can0 -replication-target cloud.example.com:9443 \
+lplex-server -interface can0 -replication-target cloud.example.com:9443 \
   -replication-instance-id boat-001 \
   -replication-tls-cert /etc/lplex/boat.crt \
   -replication-tls-key /etc/lplex/boat.key \
   -replication-tls-ca /etc/lplex/ca.crt
 
 # Or with systemd
-sudo systemctl enable --now lplex
+sudo systemctl enable --now lplex-server
 ```
 
 ### Cloud Server
@@ -156,27 +156,39 @@ lplex-cloud -data-dir /data/lplex \
 lplex-cloud -config /etc/lplex-cloud/lplex-cloud.conf
 ```
 
-### Client (lplexdump)
+### Client (lplex)
 
 ```bash
 # Auto-discover via mDNS and stream all frames
-lplexdump
+lplex dump
 
 # Connect to a specific server with filtering
-lplexdump -server http://inuc1.local:8089 -pgn 129025 -manufacturer Garmin
+lplex dump --server http://inuc1.local:8089 --pgn 129025 --manufacturer Garmin
 
 # Decode known PGNs into human-readable fields
-lplexdump -decode
+lplex dump --decode
 
-# Filter on decoded field values (auto-enables -decode)
-lplexdump -where "pgn == 130310 && water_temperature < 280"
-lplexdump -where 'register.name == "State of Charge"'
+# Filter on decoded field values (auto-enables --decode)
+lplex dump --where "pgn == 130310 && water_temperature < 280"
+lplex dump --where 'register.name == "State of Charge"'
 
 # Only show frames with significant changes (suppress sensor noise)
-lplexdump -changes -decode
+lplex dump --changes --decode
 
 # Buffered mode with automatic reconnect replay
-lplexdump -server http://inuc1.local:8089 -buffer-timeout PT5M
+lplex dump --server http://inuc1.local:8089 --buffer-timeout PT5M
+
+# List devices on the bus
+lplex devices
+
+# Show last-known decoded values
+lplex values
+
+# Request a specific PGN from all devices
+lplex request --pgn 126996 --decode
+
+# Inspect a journal file
+lplex inspect recording.lpj
 ```
 
 ### Go Client Library (`lplexc`)
@@ -252,12 +264,14 @@ lplex can be configured with CLI flags, a [HOCON](https://github.com/lightbend/c
 
 ### Config file discovery
 
-Use `-config path/to/lplex.conf` to specify a config file explicitly. If `-config` is not set, lplex searches for:
+Use `-config path/to/lplex-server.conf` to specify a config file explicitly. If `-config` is not set, lplex-server searches for:
 
-1. `./lplex.conf`
-2. `/etc/lplex/lplex.conf`
+1. `./lplex-server.conf`
+2. `/etc/lplex/lplex-server.conf`
+3. `./lplex.conf` (backward compat)
+4. `/etc/lplex/lplex.conf` (backward compat)
 
-If no config file is found, lplex continues with defaults (fully backward compatible).
+If no config file is found, lplex-server continues with defaults (fully backward compatible).
 
 ### Example config (boat)
 
@@ -328,7 +342,7 @@ journal {
 }
 ```
 
-See [`lplex.conf.example`](lplex.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example) for the full annotated versions.
+See [`lplex-server.conf.example`](lplex-server.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example) for the full annotated versions.
 
 ## Architecture
 
@@ -445,13 +459,13 @@ lplex can record all CAN frames to disk as block-based binary journal files (`.l
 
 ```bash
 # Enable recording (zstd compression by default)
-lplex -interface can0 -journal-dir /var/log/lplex
+lplex-server -interface can0 -journal-dir /var/log/lplex
 
 # With rotation (new file every hour)
-lplex -interface can0 -journal-dir /var/log/lplex -journal-rotate-duration PT1H
+lplex-server -interface can0 -journal-dir /var/log/lplex -journal-rotate-duration PT1H
 
 # Disable compression
-lplex -interface can0 -journal-dir /var/log/lplex -journal-compression none
+lplex-server -interface can0 -journal-dir /var/log/lplex -journal-compression none
 ```
 
 **Flags:**
@@ -479,15 +493,15 @@ Journal files accumulate indefinitely unless you configure a retention policy. R
 
 ```bash
 # Keep at most 30 days of journals, but never delete files less than 24 hours old
-lplex -interface can0 -journal-dir /var/log/lplex \
+lplex-server -interface can0 -journal-dir /var/log/lplex \
   -journal-retention-max-age P30D -journal-retention-min-keep PT24H
 
 # Hard size cap: keep at most 10 GB, oldest files deleted first
-lplex -interface can0 -journal-dir /var/log/lplex \
+lplex-server -interface can0 -journal-dir /var/log/lplex \
   -journal-retention-max-size 10737418240
 
 # Archive to S3 on rotation, then delete after 30 days
-lplex -interface can0 -journal-dir /var/log/lplex \
+lplex-server -interface can0 -journal-dir /var/log/lplex \
   -journal-retention-max-age P30D \
   -journal-archive-command /usr/local/bin/archive-to-s3 \
   -journal-archive-trigger on-rotate
@@ -513,24 +527,24 @@ lplex -interface can0 -journal-dir /var/log/lplex \
 
 ## PGN Decoding
 
-lplexdump can decode known NMEA 2000 PGNs into human-readable field values using the `-decode` flag:
+lplex can decode known NMEA 2000 PGNs into human-readable field values using the `--decode` flag:
 
 ```bash
 # Terminal: decoded fields appear below each frame
-lplexdump -decode
+lplex dump --decode
 
 # JSON output: adds a "decoded" object to each frame
-lplexdump -decode -json
+lplex dump --decode --json
 
 # Journal replay with decoding
-lplexdump -file recording.lpj -decode
+lplex dump --file recording.lpj --decode
 ```
 
 The registry contains ~120 PGNs, of which ~30 have full decoders (position, heading, wind, depth, engine, battery, environment, etc.). The remaining PGNs are name-only: they carry descriptions and metadata (fast-packet, interval) but no field layout. Unknown PGNs pass through with raw hex data as usual.
 
 ### Packet tests
 
-PGN decoders are verified by table-driven tests in `pgn/packets_test.go`. Each test vector specifies hex packet data and the expected decoded struct, with automatic round-trip verification. To add a test from real device data, capture a frame with `lplexdump -decode -json` and copy the `data` and `decoded` fields into a new entry.
+PGN decoders are verified by table-driven tests in `pgn/packets_test.go`. Each test vector specifies hex packet data and the expected decoded struct, with automatic round-trip verification. To add a test from real device data, capture a frame with `lplex dump --decode --json` and copy the `data` and `decoded` fields into a new entry.
 
 ## PGN DSL
 
@@ -599,7 +613,7 @@ Each field has: `name  type  :bits  [attributes...]`
 | `offset=N` | Offset: `decoded = raw * scale + offset` |
 | `unit="..."` | Human-readable unit (e.g. `"deg"`, `"m/s"`, `"rad"`) |
 | `trim="..."` | Right-trim these characters from decoded string fields (e.g. `trim="@ "` for AIS names) |
-| `tolerance=N` | Change detection threshold for `ChangeTracker`. Fields with changes smaller than N are suppressed by `lplexdump -changes`. |
+| `tolerance=N` | Change detection threshold for `ChangeTracker`. Fields with changes smaller than N are suppressed by `lplex dump --changes`. |
 | `value=N` | Dispatch constraint for variant PGNs (see below) |
 
 ### Enums
@@ -745,11 +759,11 @@ The `.deb` package installs a systemd service that binds to `can0`. Configure wi
 
 ```bash
 # Option 1: config file (recommended)
-sudo cp lplex.conf.example /etc/lplex/lplex.conf
-sudo vi /etc/lplex/lplex.conf
+sudo cp lplex-server.conf.example /etc/lplex/lplex-server.conf
+sudo vi /etc/lplex/lplex-server.conf
 
 # Option 2: environment variable
-# Edit /etc/default/lplex:
+# Edit /etc/default/lplex-server:
 LPLEX_ARGS="-interface can0 -port 8089 -journal-dir /var/log/lplex -journal-compression zstd"
 ```
 

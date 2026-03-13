@@ -5,17 +5,17 @@ title: Overview
 
 # Cloud Overview
 
-`lplex-cloud` is the cloud counterpart to `lplex`. It receives boat data over gRPC, stores it, and re-serves it via HTTP/SSE. Multiple boats can replicate to a single cloud instance.
+`lplex-cloud` is the cloud counterpart to `lplex-server`. It receives boat data over gRPC, stores it, and re-serves it via HTTP/SSE. Multiple boats can replicate to a single cloud instance.
 
 ## Architecture
 
 ```
-Boat 1 (lplex)                       lplex-cloud
+Boat 1 (lplex-server)                lplex-cloud
   |                                      |
   +-- Live gRPC stream ---- mTLS ------>-+-- InstanceManager
   +-- Backfill gRPC stream ------------>-|     +-- Instance "boat-001"
                                          |     |     +-- Broker (replica mode)
-Boat 2 (lplex)                          |     |     +-- BlockWriter
+Boat 2 (lplex-server)                   |     |     +-- BlockWriter
   |                                      |     |     +-- HoleTracker
   +-- Live gRPC stream ---- mTLS ------>-+     +-- Instance "boat-002"
   +-- Backfill gRPC stream ------------>-|           +-- Broker (replica mode)

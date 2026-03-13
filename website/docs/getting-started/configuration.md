@@ -5,21 +5,21 @@ title: Configuration
 
 # Configuration
 
-Both `lplex` and `lplex-cloud` support [HOCON](https://github.com/lightbend/config/blob/main/HOCON.md) configuration files. CLI flags always override config file values.
+Both `lplex-server` and `lplex-cloud` support [HOCON](https://github.com/lightbend/config/blob/main/HOCON.md) configuration files. CLI flags always override config file values.
 
 ## Config file discovery
 
-**lplex** looks for config files in this order:
+**lplex-server** looks for config files in this order:
 1. Path specified with `-config /path/to/file`
-2. `./lplex.conf` (current directory)
-3. `/etc/lplex/lplex.conf`
+2. `./lplex-server.conf` (current directory)
+3. `/etc/lplex-server/lplex-server.conf`
 
 **lplex-cloud** uses the same pattern:
 1. `-config /path/to/file`
 2. `./lplex-cloud.conf`
 3. `/etc/lplex-cloud/lplex-cloud.conf`
 
-## lplex (boat server)
+## lplex-server (boat server)
 
 ### Full annotated config
 
@@ -125,13 +125,13 @@ replication {
 
   tls {
     # Client certificate for mTLS
-    cert = /etc/lplex/client.crt
+    cert = /etc/lplex-server/client.crt
 
     # Client private key
-    key = /etc/lplex/client.key
+    key = /etc/lplex-server/client.key
 
     # CA certificate to verify cloud server
-    ca = /etc/lplex/ca.crt
+    ca = /etc/lplex-server/ca.crt
   }
 }
 ```
@@ -200,7 +200,7 @@ http {
 # Instance state and journal storage
 data-dir = "/data/lplex"
 
-# Same retention/archive config as lplex
+# Same retention/archive config as lplex-server
 journal {
   # Rotate live journal files after this duration or size (whichever comes first).
   # Required for on-rotate archival to work (files must rotate to trigger archival).
@@ -238,28 +238,28 @@ journal {
 | `-journal-rotate-duration` | `journal.rotate-duration` | `PT1H` | Rotate live journal files after this duration (ISO 8601) |
 | `-journal-rotate-size` | `journal.rotate-size` | `0` | Rotate live journal files after this many bytes (0 = disabled) |
 
-Retention and archive flags are the same as lplex (see table above).
+Retention and archive flags are the same as lplex-server (see table above).
 
 ## Systemd
 
-The `.deb` package installs a systemd unit at `/lib/systemd/system/lplex.service`. You can override settings via environment variables in `/etc/default/lplex`:
+The `.deb` package installs a systemd unit at `/lib/systemd/system/lplex-server.service`. You can override settings via environment variables in `/etc/default/lplex-server`:
 
 ```bash
-# /etc/default/lplex
+# /etc/default/lplex-server
 LPLEX_ARGS="-interface can0 -port 8089"
 ```
 
-Or use the config file at `/etc/lplex/lplex.conf` (preferred).
+Or use the config file at `/etc/lplex-server/lplex-server.conf` (preferred).
 
 ```bash
 # Check service status
-sudo systemctl status lplex
+sudo systemctl status lplex-server
 
 # View logs
-sudo journalctl -u lplex -f
+sudo journalctl -u lplex-server -f
 
 # Restart after config changes
-sudo systemctl restart lplex
+sudo systemctl restart lplex-server
 ```
 
 ## Duration format

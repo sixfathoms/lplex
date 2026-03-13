@@ -162,7 +162,7 @@ Duration-based rotation is on by default (`PT1H`), so no action is needed unless
 
 ## Retention and archival
 
-lplex-cloud uses the same retention and archival system as lplex. A single JournalKeeper goroutine manages all instance directories.
+lplex-cloud uses the same retention and archival system as lplex-server. A single JournalKeeper goroutine manages all instance directories.
 
 On startup, the keeper runs a one-time sweep to archive any `.lpj` files that are missing `.archived` markers. This runs before any brokers start, so all files on disk are completed files from previous runs. This handles the case where the process was restarted before `on-rotate` archival could complete.
 

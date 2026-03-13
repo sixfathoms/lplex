@@ -2,165 +2,218 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gurkankaymak/hocon"
 )
 
-// configToFlag maps HOCON config paths to CLI flag names.
-var configToFlag = map[string]string{
-	"interface":               "interface",
-	"port":                    "port",
-	"max-buffer-duration":     "max-buffer-duration",
-	"journal.dir":             "journal-dir",
-	"journal.prefix":          "journal-prefix",
-	"journal.block-size":      "journal-block-size",
-	"journal.compression":     "journal-compression",
-	"journal.rotate.duration": "journal-rotate-duration",
-	"journal.rotate.size":     "journal-rotate-size",
-	"journal.retention.max-age":         "journal-retention-max-age",
-	"journal.retention.min-keep":        "journal-retention-min-keep",
-	"journal.retention.max-size":        "journal-retention-max-size",
-	"journal.retention.soft-pct":        "journal-retention-soft-pct",
-	"journal.retention.overflow-policy": "journal-retention-overflow-policy",
-	"journal.archive.command":           "journal-archive-command",
-	"journal.archive.trigger":           "journal-archive-trigger",
-	"device.idle-timeout":            "device-idle-timeout",
-	"send.enabled": "send-enabled",
-	"bus-silence-timeout":        "bus-silence-timeout",
-	"replication.target":         "replication-target",
-	"replication.instance-id":    "replication-instance-id",
-	"replication.tls.cert":       "replication-tls-cert",
-	"replication.tls.key":        "replication-tls-key",
-	"replication.tls.ca":                    "replication-tls-ca",
-	"replication.max-live-lag":               "replication-max-live-lag",
-	"replication.lag-check-interval":         "replication-lag-check-interval",
-	"replication.min-lag-reconnect-interval": "replication-min-lag-reconnect-interval",
-	"health.bus-silence-threshold":           "bus-silence-threshold",
+// BoatConfig holds the connection settings for a named boat.
+type BoatConfig struct {
+	Name         string   // config key, e.g. "sv-dockwise"
+	MDNS         string   // mDNS instance name to search for, e.g. "inuc1"
+	Cloud        string   // cloud fallback URL, e.g. "https://lplex.dockwise.app/instances/sv-dockwise"
+	ExcludePGNs  []uint32 // PGNs to exclude for this boat (additive with global)
+	ExcludeNames []string // CAN NAMEs to exclude for this boat (additive with global)
 }
 
-// findConfigFile resolves which config file to use.
-// If configFlag is non-empty, that exact path is required (error if missing).
-// Otherwise, searches ./lplex.conf then /etc/lplex/lplex.conf.
-// Returns "" with no error if no config file is found.
-func findConfigFile(configFlag string) (string, error) {
-	if configFlag != "" {
-		info, err := os.Stat(configFlag)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return "", fmt.Errorf("config file not found: %s", configFlag)
-			}
-
-			return "", fmt.Errorf("checking config file %s: %w", configFlag, err)
-		}
-		if info.IsDir() {
-			return "", fmt.Errorf("config path is a directory: %s", configFlag)
-		}
-
-		return configFlag, nil
-	}
-
-	for _, path := range []string{"./lplex.conf", "/etc/lplex/lplex.conf"} {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
-	}
-
-	return "", nil
+// DumpConfig holds global settings from the config file.
+type DumpConfig struct {
+	Boats        map[string]BoatConfig
+	MDNSTimeout  time.Duration // 0 means use default (3s)
+	ExcludePGNs  []uint32      // PGNs to exclude globally (all boats)
+	ExcludeNames []string      // CAN NAMEs to exclude globally (all boats)
 }
 
-// applyConfig parses a HOCON config file and sets any flag values that
-// weren't explicitly provided on the command line. CLI flags always win.
-func applyConfig(path string) error {
+// defaultConfigPath returns the first config file that exists from:
+// ~/.config/lplex/lplex.conf, ~/.config/lplex/lplexcli.conf, ~/.config/lplex/lplexdump.conf.
+func defaultConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(home, ".config", "lplex")
+	for _, name := range []string{"lplex.conf", "lplexcli.conf", "lplexdump.conf"} {
+		p := filepath.Join(dir, name)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return filepath.Join(dir, "lplex.conf")
+}
+
+// loadConfig reads the HOCON config file and returns the parsed config.
+// Returns a zero DumpConfig (no error) if the file doesn't exist.
+func loadConfig(path string) (DumpConfig, error) {
+	if path == "" {
+		return DumpConfig{}, nil
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return DumpConfig{}, nil
+		}
+		return DumpConfig{}, fmt.Errorf("checking config %s: %w", path, err)
+	}
+	if info.IsDir() {
+		return DumpConfig{}, fmt.Errorf("config path is a directory: %s", path)
+	}
+
 	cfg, err := hocon.ParseResource(path)
 	if err != nil {
-		return fmt.Errorf("parsing config %s: %w", path, err)
+		return DumpConfig{}, fmt.Errorf("parsing config %s: %w", path, err)
 	}
 
-	// Collect flags the user explicitly set on the command line.
-	explicit := make(map[string]bool)
-	flag.Visit(func(f *flag.Flag) {
-		explicit[f.Name] = true
-	})
+	var dc DumpConfig
 
-	for configKey, flagName := range configToFlag {
-		if explicit[flagName] {
-			continue
+	// Parse mdns-timeout (e.g. "5s", "500ms").
+	if v := getString(cfg, "mdns-timeout"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return DumpConfig{}, fmt.Errorf("config mdns-timeout: %w", err)
 		}
-		val := cfg.GetString(configKey)
-		if val == "" {
-			continue
-		}
-		if err := flag.Set(flagName, val); err != nil {
-			return fmt.Errorf("config key %q (flag -%s): %w", configKey, flagName, err)
-		}
+		dc.MDNSTimeout = d
 	}
 
-	// Handle send.rules: supports both string elements (DSL syntax) and
-	// object elements ({ deny, pgn, name }) in the same array.
-	if !explicit["send-rules"] {
-		if arr := cfg.GetArray("send.rules"); len(arr) > 0 {
-			parts := make([]string, 0, len(arr))
-			for i, elem := range arr {
-				switch elem.Type() {
-				case hocon.StringType:
-					parts = append(parts, string(elem.(hocon.String)))
-				case hocon.ObjectType:
-					dsl, err := hoconRuleToDSL(elem.(hocon.Object))
-					if err != nil {
-						return fmt.Errorf("config key send.rules[%d]: %w", i, err)
-					}
-					parts = append(parts, dsl)
-				default:
-					return fmt.Errorf("config key send.rules[%d]: expected string or object, got %v", i, elem.Type())
-				}
+	// Parse global exclude-pgn list.
+	ep, err := getUint32Array(cfg, "exclude-pgn")
+	if err != nil {
+		return DumpConfig{}, fmt.Errorf("config exclude-pgn: %w", err)
+	}
+	dc.ExcludePGNs = ep
+
+	// Parse global exclude-name list.
+	dc.ExcludeNames = getStringArray(cfg, "exclude-name")
+
+	// Parse boats.
+	boatsObj := cfg.GetObject("boats")
+	if boatsObj != nil {
+		dc.Boats = make(map[string]BoatConfig, len(boatsObj))
+		for name := range boatsObj {
+			bc := BoatConfig{Name: name}
+
+			if v := getString(cfg, "boats."+name+".mdns"); v != "" {
+				bc.MDNS = v
 			}
-			if err := flag.Set("send-rules", strings.Join(parts, ";")); err != nil {
-				return fmt.Errorf("config key send.rules: %w", err)
+			if v := getString(cfg, "boats."+name+".cloud"); v != "" {
+				bc.Cloud = v
 			}
+			if bc.MDNS == "" && bc.Cloud == "" {
+				return DumpConfig{}, fmt.Errorf("boat %q must have at least one of mdns or cloud", name)
+			}
+
+			ep, err := getUint32Array(cfg, "boats."+name+".exclude-pgn")
+			if err != nil {
+				return DumpConfig{}, fmt.Errorf("boat %q exclude-pgn: %w", name, err)
+			}
+			bc.ExcludePGNs = ep
+			bc.ExcludeNames = getStringArray(cfg, "boats."+name+".exclude-name")
+
+			dc.Boats[name] = bc
 		}
 	}
 
-	return nil
+	return dc, nil
 }
 
-// hoconRuleToDSL converts a HOCON object rule to a DSL string.
-// Supported fields: deny (bool), pgn (string), name (string or string array).
-func hoconRuleToDSL(obj hocon.Object) (string, error) {
-	var parts []string
+// getString extracts a raw string value from the HOCON config. We can't use
+// cfg.GetString() because hocon.String.String() re-wraps values containing
+// special characters (like :// in URLs) in literal double quotes.
+func getString(cfg *hocon.Config, path string) string {
+	v := cfg.Get(path)
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(hocon.String); ok {
+		return strings.Trim(string(s), `"`)
+	}
+	return v.String()
+}
 
-	if v, ok := obj["deny"]; ok {
-		if bool(v.(hocon.Boolean)) {
-			parts = append(parts, "!")
+// getStringArray extracts a string array from the HOCON config.
+// Supports both array syntax (exclude-name = ["0xABC", "0xDEF"]) and single
+// values (exclude-name = "0xABC"). Returns nil if the path doesn't exist.
+func getStringArray(cfg *hocon.Config, path string) []string {
+	v := cfg.Get(path)
+	if v == nil {
+		return nil
+	}
+	switch v.Type() {
+	case hocon.ArrayType:
+		arr := v.(hocon.Array)
+		result := make([]string, len(arr))
+		for i, elem := range arr {
+			result[i] = strings.Trim(elem.String(), `"`)
 		}
+		return result
+	default:
+		return []string{strings.Trim(v.String(), `"`)}
 	}
+}
 
-	if v, ok := obj["pgn"]; ok {
-		parts = append(parts, "pgn:"+string(v.(hocon.String)))
+// getUint32Array extracts an array of unsigned integers from the HOCON config.
+// Supports both array syntax (exclude-pgn = [60928, 126996]) and single values
+// (exclude-pgn = 60928).
+func getUint32Array(cfg *hocon.Config, path string) ([]uint32, error) {
+	v := cfg.Get(path)
+	if v == nil {
+		return nil, nil
 	}
-
-	if v, ok := obj["name"]; ok {
-		switch v.Type() {
-		case hocon.StringType:
-			parts = append(parts, "name:"+string(v.(hocon.String)))
-		case hocon.ArrayType:
-			arr := v.(hocon.Array)
-			names := make([]string, len(arr))
-			for i, n := range arr {
-				names[i] = string(n.(hocon.String))
+	switch v.Type() {
+	case hocon.ArrayType:
+		arr := v.(hocon.Array)
+		result := make([]uint32, 0, len(arr))
+		for _, elem := range arr {
+			n, err := strconv.ParseUint(strings.TrimSpace(elem.String()), 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("invalid PGN %q: %w", elem.String(), err)
 			}
-			parts = append(parts, "name:"+strings.Join(names, ","))
-		default:
-			return "", fmt.Errorf("name field must be a string or array")
+			result = append(result, uint32(n))
 		}
+		return result, nil
+	case hocon.NumberType, hocon.StringType:
+		n, err := strconv.ParseUint(strings.TrimSpace(v.String()), 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid PGN %q: %w", v.String(), err)
+		}
+		return []uint32{uint32(n)}, nil
+	default:
+		return nil, fmt.Errorf("expected number or array, got %v", v.Type())
+	}
+}
+
+// resolveBoat picks the right boat config. If name is empty and there's exactly
+// one boat defined, it auto-selects it.
+func resolveBoat(name string, boats map[string]BoatConfig) (BoatConfig, error) {
+	if len(boats) == 0 {
+		return BoatConfig{}, fmt.Errorf("no boats configured in config file")
 	}
 
-	if len(parts) == 0 {
-		return "", fmt.Errorf("rule object must have at least one of: deny, pgn, name")
+	if name == "" {
+		if len(boats) == 1 {
+			for _, bc := range boats {
+				return bc, nil
+			}
+		}
+		names := make([]string, 0, len(boats))
+		for n := range boats {
+			names = append(names, n)
+		}
+		return BoatConfig{}, fmt.Errorf("multiple boats configured, specify one with -boat: %v", names)
 	}
 
-	return strings.Join(parts, " "), nil
+	bc, ok := boats[name]
+	if !ok {
+		names := make([]string, 0, len(boats))
+		for n := range boats {
+			names = append(names, n)
+		}
+		return BoatConfig{}, fmt.Errorf("boat %q not found in config, available: %v", name, names)
+	}
+	return bc, nil
 }

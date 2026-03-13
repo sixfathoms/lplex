@@ -9,13 +9,13 @@ lplex has three binaries with different platform support:
 
 | Binary | Linux | macOS | Notes |
 |---|---|---|---|
-| `lplex` (server) | amd64, arm64 | No | Requires SocketCAN |
+| `lplex-server` | amd64, arm64 | No | Requires SocketCAN |
 | `lplex-cloud` | amd64, arm64 | No | Cloud receiver |
-| `lplexdump` (client) | amd64, arm64 | amd64, arm64 | CLI tool only |
+| `lplex` (client) | amd64, arm64 | amd64, arm64 | CLI tool only |
 
 ## Debian/Ubuntu (.deb package)
 
-The `.deb` package bundles `lplex`, `lplex-cloud`, and `lplexdump` with a systemd unit file.
+The `.deb` package bundles `lplex-server`, `lplex-cloud`, and `lplex` with a systemd unit file.
 
 ```bash
 # Download the latest release
@@ -25,11 +25,11 @@ curl -LO https://github.com/sixfathoms/lplex/releases/latest/download/lplex_amd6
 sudo dpkg -i lplex_amd64.deb
 
 # The service is not started automatically. Configure first:
-sudo vim /etc/lplex/lplex.conf
+sudo vim /etc/lplex-server/lplex-server.conf
 
 # Then enable and start
-sudo systemctl enable lplex
-sudo systemctl start lplex
+sudo systemctl enable lplex-server
+sudo systemctl start lplex-server
 ```
 
 For ARM64 (Raspberry Pi, etc.):
@@ -39,24 +39,24 @@ curl -LO https://github.com/sixfathoms/lplex/releases/latest/download/lplex_arm6
 sudo dpkg -i lplex_arm64.deb
 ```
 
-## Homebrew (lplexdump only)
+## Homebrew (lplex only)
 
-The Homebrew formula installs only the `lplexdump` client. Available on macOS and Linux.
+The Homebrew formula installs only the `lplex` client. Available on macOS and Linux.
 
 ```bash
-brew install sixfathoms/tap/lplexdump
+brew install sixfathoms/tap/lplex
 ```
 
 ## Docker
 
-The Docker image runs on Linux (amd64 and arm64). It includes both `lplex` and `lplex-cloud`.
+The Docker image runs on Linux (amd64 and arm64). It includes both `lplex-server` and `lplex-cloud`.
 
 ```bash
-# lplex (boat server)
+# lplex-server (boat server)
 docker run --rm --network=host \
   --device /dev/net/tun \
   ghcr.io/sixfathoms/lplex \
-  lplex -interface can0 -port 8089
+  lplex-server -interface can0 -port 8089
 
 # lplex-cloud
 docker run --rm -p 9443:9443 -p 8080:8080 \
@@ -79,9 +79,9 @@ git clone https://github.com/sixfathoms/lplex.git
 cd lplex
 
 # Build all binaries
-go build -o lplex ./cmd/lplex
+go build -o lplex-server ./cmd/lplex-server
 go build -o lplex-cloud ./cmd/lplex-cloud
-go build -o lplexdump ./cmd/lplexdump
+go build -o lplex ./cmd/lplex
 
 # Run tests
 go test ./... -v -count=1

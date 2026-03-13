@@ -140,9 +140,9 @@ The `HoleTracker` maintains a sorted list of sequence intervals. On reconnect, t
 ## Package dependency graph
 
 ```
-cmd/lplex ──┐
+cmd/lplex-server ──┐
 cmd/lplex-cloud ──┤
-cmd/lplexdump ────┤
+cmd/lplex ────────┤
                   ├──> lplex (root)
                   │      ├──> canbus
                   │      ├──> journal

@@ -28,10 +28,10 @@ journal {
 Or with flags:
 
 ```bash
-lplex -interface can0 -journal-dir /var/log/lplex
+lplex-server -interface can0 -journal-dir /var/log/lplex
 ```
 
-With journaling enabled, lplex creates files like:
+With journaling enabled, lplex-server creates files like:
 
 ```
 /var/log/lplex/nmea2k-20260306T101500Z.lpj
@@ -91,31 +91,31 @@ Set a value to `0` to disable that trigger. At least one should be non-zero.
 
 ## Replaying journals
 
-Use `lplexdump` to replay journal files:
+Use `lplex` to replay journal files:
 
 ```bash
 # Normal speed
-lplexdump -file recording.lpj
+lplex dump --file recording.lpj
 
 # 10x speed
-lplexdump -file recording.lpj -speed 10
+lplex dump --file recording.lpj --speed 10
 
 # As fast as possible
-lplexdump -file recording.lpj -speed 0
+lplex dump --file recording.lpj --speed 0
 
 # With decoding
-lplexdump -file recording.lpj -decode
+lplex dump --file recording.lpj --decode
 
 # Seek to a time
-lplexdump -file recording.lpj -start 2026-03-06T10:30:00Z
+lplex dump --file recording.lpj --start 2026-03-06T10:30:00Z
 ```
 
 ## Inspecting journals
 
-Use `-inspect` to see the structure of a journal file without replaying it:
+Use the `inspect` subcommand to see the structure of a journal file without replaying it:
 
 ```bash
-lplexdump -file recording.lpj -inspect
+lplex inspect recording.lpj
 ```
 
 This shows block boundaries, timestamps, sequence ranges, device tables, compression ratios, and integrity status.

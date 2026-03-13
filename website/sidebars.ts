@@ -16,7 +16,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'User Guide',
       items: [
-        'user-guide/lplexdump',
+        'user-guide/lplex',
         'user-guide/streaming',
         'user-guide/filtering',
         'user-guide/journaling',

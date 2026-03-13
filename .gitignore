@@ -1,7 +1,7 @@
 # Binaries
-/lplex
+/lplex-server
 /lplex-cloud
-/lplexdump
+/lplex
 lplex-linux-*
 *.exe
 

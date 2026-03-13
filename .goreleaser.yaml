@@ -5,9 +5,9 @@ before:
     - go generate ./pgn/...
 
 builds:
-  - id: lplex
-    main: ./cmd/lplex
-    binary: lplex
+  - id: lplex-server
+    main: ./cmd/lplex-server
+    binary: lplex-server
     env:
       - CGO_ENABLED=0
     goos:
@@ -21,9 +21,9 @@ builds:
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
 
-  - id: lplexdump
-    main: ./cmd/lplexdump
-    binary: lplexdump
+  - id: lplex
+    main: ./cmd/lplex
+    binary: lplex
     env:
       - CGO_ENABLED=0
     goos:
@@ -57,13 +57,13 @@ builds:
 archives:
   - id: lplex-server
     ids:
+      - lplex-server
+    name_template: "lplex-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  - id: lplex-client
+    ids:
       - lplex
     name_template: "lplex_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-
-  - id: lplexdump-client
-    ids:
-      - lplexdump
-    name_template: "lplexdump_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
   - id: lplex-cloud-archive
     ids:
@@ -74,8 +74,8 @@ nfpms:
   - id: lplex-deb
     package_name: lplex
     ids:
+      - lplex-server
       - lplex
-      - lplexdump
     vendor: Theo Zourzouvillys
     homepage: https://github.com/sixfathoms/lplex
     maintainer: Theo Zourzouvillys
@@ -84,32 +84,32 @@ nfpms:
     formats:
       - deb
     contents:
-      - src: packaging/lplex.service
-        dst: /lib/systemd/system/lplex.service
-      - src: packaging/lplex.default
-        dst: /etc/default/lplex
+      - src: packaging/lplex-server.service
+        dst: /lib/systemd/system/lplex-server.service
+      - src: packaging/lplex-server.default
+        dst: /etc/default/lplex-server
         type: config
     scripts:
       postinstall: packaging/postinstall.sh
 
 brews:
   - ids:
-      - lplexdump-client
-    name: lplexdump
+      - lplex-client
+    name: lplex
     repository:
       owner: sixfathoms
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: https://github.com/sixfathoms/lplex
-    description: NMEA 2000 CAN bus streaming client
+    description: NMEA 2000 CAN bus multi-tool CLI
     license: MIT
     install: |
-      bin.install "lplexdump"
+      bin.install "lplex"
 
 dockers_v2:
   - ids:
-      - lplex
+      - lplex-server
     images:
       - "ghcr.io/sixfathoms/lplex"
     tags:
