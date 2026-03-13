@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/sixfathoms/lplex/lplexc"
-	"github.com/sixfathoms/lplex/pgn"
 	"github.com/spf13/cobra"
 )
 
@@ -34,20 +33,24 @@ var switchesCmd = &cobra.Command{
 var switchesSetCmd = &cobra.Command{
 	Use:   "set SWITCH=STATE [SWITCH=STATE ...]",
 	Short: "Control binary switches",
-	Long: `Send a Binary Switch Bank Control (PGN 127502) to set switch states.
+	Long: `Send an NMEA Command (PGN 126208) targeting Binary Switch Bank Status
+(PGN 127501) to set switch states. The command is addressed to the device
+that owns the switch bank (auto-detected, or use --dst to specify).
 
 Each argument is a SWITCH=STATE pair where SWITCH is the 1-based switch number
 and STATE is "on" or "off". Switches not specified are left unchanged.
 
 Examples:
   lplex switches set --instance 0 1=on
-  lplex switches set --instance 0 1=on 3=off 5=on`,
+  lplex switches set --instance 0 1=on 3=off 5=on
+  lplex switches set --instance 0 --dst 43 1=on`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runSwitchesSet,
 }
 
 var (
 	switchSetInstance int
+	switchSetDst     int
 	switchSetSrc     uint8
 	switchSetPrio    uint8
 )
@@ -59,6 +62,7 @@ func init() {
 
 	sf := switchesSetCmd.Flags()
 	sf.IntVar(&switchSetInstance, "instance", -1, "switch bank instance (required)")
+	sf.IntVar(&switchSetDst, "dst", -1, "destination device source address (-1 = auto-detect)")
 	sf.Uint8Var(&switchSetSrc, "src", 0, "source address")
 	sf.Uint8Var(&switchSetPrio, "prio", 3, "priority (0-7, default 3)")
 	_ = switchesSetCmd.MarkFlagRequired("instance")
@@ -277,30 +281,56 @@ func runSwitchesSet(_ *cobra.Command, args []string) error {
 		sets = append(sets, switchSet{num: num, state: state})
 	}
 
-	// Build PGN 127502 payload: all indicators set to 3 (no change),
-	// then override the ones the user specified.
-	ctrl := pgn.BinarySwitchBankControl{
-		Instance: uint8(switchSetInstance),
-	}
-	ctrl.Indicators = make(pgn.Uint8s, 28)
-	for i := range ctrl.Indicators {
-		ctrl.Indicators[i] = 3 // no change
-	}
-	for _, s := range sets {
-		ctrl.Indicators[s.num-1] = s.state
-	}
-
-	data := ctrl.Encode()
-
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	client := lplexc.NewClient(serverURL)
 
-	// PGN 127502 is PDU2 (PF >= 240), so destination is always broadcast.
-	// Targeting happens via the instance field in the payload.
-	const controlPGN uint32 = 127502
-	if err := client.Send(ctx, controlPGN, switchSetSrc, 255, switchSetPrio, data); err != nil {
+	// Resolve destination device. PGN 126208 is PDU1, so we address
+	// the command to the specific device that owns this switch bank.
+	var dst uint8
+	if switchSetDst >= 0 {
+		dst = uint8(switchSetDst)
+	} else {
+		resolved, err := resolveSwitchBankDevice(ctx, client, uint8(switchSetInstance))
+		if err != nil {
+			return err
+		}
+		dst = resolved
+		log.Printf("auto-detected switch bank owner: src=%d", dst)
+	}
+
+	// Build PGN 126208 Command targeting PGN 127501 (Binary Switch Bank Status).
+	//
+	//   Byte 0:   0x01 (function code = Command)
+	//   Byte 1-3: PGN 127501 LE
+	//   Byte 4:   0xF8 (priority=8 "don't change" | reserved=0xF0)
+	//   Byte 5:   number of pairs (1 instance + N switches)
+	//   Pairs:    [field_number] [value] for each
+	//
+	// PGN 127501 field numbering:
+	//   Field 1 = instance, Field 2 = indicator_1, ..., Field 29 = indicator_28
+	var commandedPGN uint32 = 127501
+	numPairs := 1 + len(sets)
+	data := make([]byte, 6+2*numPairs)
+	data[0] = 0x01 // function code: Command
+	data[1] = byte(commandedPGN)
+	data[2] = byte(commandedPGN >> 8)
+	data[3] = byte(commandedPGN >> 16)
+	data[4] = 0xF8 // priority=8 (don't change) | reserved=0xF0
+	data[5] = byte(numPairs)
+	off := 6
+	data[off] = 1 // field 1 = instance
+	data[off+1] = uint8(switchSetInstance)
+	off += 2
+	for _, s := range sets {
+		data[off] = byte(s.num + 1) // field (N+1) = indicator_N
+		data[off+1] = s.state
+		off += 2
+	}
+
+	const sendPGN uint32 = 126208
+	if err := client.Send(ctx, sendPGN, switchSetSrc, dst, switchSetPrio, data); err != nil {
 		return fmt.Errorf("send failed: %w", err)
 	}
 
@@ -310,10 +340,59 @@ func runSwitchesSet(_ *cobra.Command, args []string) error {
 		if s.state == 1 {
 			state = "ON"
 		}
-		log.Printf("bank %d switch %d → %s", switchSetInstance, s.num, state)
+		log.Printf("bank %d switch %d → %s (dst=%d)", switchSetInstance, s.num, state, dst)
 	}
 
 	return nil
+}
+
+// resolveSwitchBankDevice queries the values endpoint for PGN 127501 and finds
+// the device that reports the given switch bank instance. Returns an error if
+// no device or multiple devices match.
+func resolveSwitchBankDevice(ctx context.Context, client *lplexc.Client, instance uint8) (uint8, error) {
+	const statusPGN uint32 = 127501
+	values, err := client.Values(ctx, &lplexc.Filter{PGNs: []uint32{statusPGN}})
+	if err != nil {
+		return 0, fmt.Errorf("querying switch banks for auto-detect: %w", err)
+	}
+
+	type match struct {
+		src          uint8
+		manufacturer string
+	}
+	var matches []match
+	for _, dv := range values {
+		for _, pv := range dv.Values {
+			if pv.PGN != statusPGN {
+				continue
+			}
+			data, err := hex.DecodeString(pv.Data)
+			if err != nil || len(data) < 1 {
+				continue
+			}
+			if data[0] == instance {
+				matches = append(matches, match{src: dv.Source, manufacturer: dv.Manufacturer})
+			}
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return 0, fmt.Errorf("no device found reporting switch bank instance %d (use --dst to specify)", instance)
+	case 1:
+		return matches[0].src, nil
+	default:
+		var parts []string
+		for _, m := range matches {
+			label := fmt.Sprintf("src=%d", m.src)
+			if m.manufacturer != "" {
+				label += " (" + m.manufacturer + ")"
+			}
+			parts = append(parts, label)
+		}
+		return 0, fmt.Errorf("multiple devices report switch bank instance %d: %s (use --dst to pick one)",
+			instance, strings.Join(parts, ", "))
+	}
 }
 
 // decodeSwitchBank extracts switch states from PGN 127501 data.
