@@ -83,9 +83,11 @@ func (r *DeviceRegistry) RecordPacket(source uint8, ts time.Time, dataLen int) b
 
 // HandleAddressClaim processes a PGN 60928 ISO Address Claim.
 // Returns the device if this is a new or changed device, nil otherwise.
-func (r *DeviceRegistry) HandleAddressClaim(source uint8, data []byte) *Device {
+// If a different source address previously held the same NAME, that old
+// entry is evicted and its source address is returned in evictedSrc.
+func (r *DeviceRegistry) HandleAddressClaim(source uint8, data []byte) (dev *Device, evictedSrc uint8, evicted bool) {
 	if len(data) < 8 {
-		return nil
+		return nil, 0, false
 	}
 
 	name := binary.LittleEndian.Uint64(data[0:8])
@@ -95,10 +97,21 @@ func (r *DeviceRegistry) HandleAddressClaim(source uint8, data []byte) *Device {
 
 	existing := r.devices[source]
 	if existing != nil && existing.NAME == name {
-		return nil // no change
+		return nil, 0, false // no change
 	}
 
-	dev := decodeNAME(name, source)
+	// Evict any *other* source that claimed this same NAME (device restarted
+	// and grabbed a new address).
+	for src, d := range r.devices {
+		if src != source && d.NAME == name {
+			delete(r.devices, src)
+			evictedSrc = src
+			evicted = true
+			break // at most one prior holder
+		}
+	}
+
+	dev = decodeNAME(name, source)
 
 	// Preserve stats and product info from prior calls.
 	if existing != nil {
@@ -109,7 +122,7 @@ func (r *DeviceRegistry) HandleAddressClaim(source uint8, data []byte) *Device {
 	}
 
 	r.devices[source] = dev
-	return dev
+	return dev, evictedSrc, evicted
 }
 
 // HandleProductInfo processes a PGN 126996 Product Information response.
@@ -160,6 +173,22 @@ func decodeFixedString(data []byte) string {
 		}
 	}
 	return string(data)
+}
+
+// ExpireIdle removes all devices whose LastSeen is before cutoff.
+// Returns the source addresses of evicted entries.
+func (r *DeviceRegistry) ExpireIdle(cutoff time.Time) []uint8 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var evicted []uint8
+	for src, dev := range r.devices {
+		if dev.LastSeen.Before(cutoff) {
+			delete(r.devices, src)
+			evicted = append(evicted, src)
+		}
+	}
+	return evicted
 }
 
 // Get returns a snapshot of the device at the given source address, or nil.

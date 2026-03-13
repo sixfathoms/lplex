@@ -103,6 +103,17 @@ func NewValueStore() *ValueStore {
 	}
 }
 
+// RemoveSource deletes all stored values for the given source address.
+func (vs *ValueStore) RemoveSource(source uint8) {
+	vs.mu.Lock()
+	for k := range vs.values {
+		if k.Source == source {
+			delete(vs.values, k)
+		}
+	}
+	vs.mu.Unlock()
+}
+
 // Record updates the stored value for the given source and PGN.
 // Called by the broker goroutine on every frame.
 func (vs *ValueStore) Record(source uint8, pgn uint32, ts time.Time, data []byte, seq uint64) {

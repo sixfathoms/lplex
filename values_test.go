@@ -424,6 +424,42 @@ func TestValueStoreDecodedSnapshotWithFilter(t *testing.T) {
 	}
 }
 
+func TestValueStoreRemoveSource(t *testing.T) {
+	vs := NewValueStore()
+	reg := NewDeviceRegistry()
+
+	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	vs.Record(1, 129025, ts, []byte{0x01}, 1)
+	vs.Record(1, 129026, ts, []byte{0x02}, 2)
+	vs.Record(5, 129025, ts, []byte{0x03}, 3)
+
+	vs.RemoveSource(1)
+
+	snap := vs.Snapshot(reg, nil)
+	if len(snap) != 1 {
+		t.Fatalf("expected 1 device group after removal, got %d", len(snap))
+	}
+	if snap[0].Source != 5 {
+		t.Errorf("remaining source: got %d, want 5", snap[0].Source)
+	}
+}
+
+func TestValueStoreRemoveSourceNonexistent(t *testing.T) {
+	vs := NewValueStore()
+	reg := NewDeviceRegistry()
+
+	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	vs.Record(1, 129025, ts, []byte{0x01}, 1)
+
+	// Removing a source that doesn't exist should be a no-op.
+	vs.RemoveSource(99)
+
+	snap := vs.Snapshot(reg, nil)
+	if len(snap) != 1 {
+		t.Fatalf("expected 1 device group, got %d", len(snap))
+	}
+}
+
 func TestValueStoreSnapshotFilterMatchesNothing(t *testing.T) {
 	vs := NewValueStore()
 	reg := NewDeviceRegistry()

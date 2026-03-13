@@ -58,6 +58,7 @@ func main() {
 	replRateLimit := flag.Int("replication-rate-limit", lplex.DefaultMaxFrameRate, "Max frames/sec per live stream (0 = unlimited)")
 	replRateBurst := flag.Int("replication-rate-burst", lplex.DefaultRateBurst, "Burst allowance for transient frame rate spikes")
 	replMaxLiveLag := flag.Int("replication-max-live-lag", int(lplex.DefaultMaxLiveLag), "Max frames live stream can lag before closing stream")
+	deviceIdleTimeout := flag.String("device-idle-timeout", "5m", "Remove devices not seen for this duration (0 = disabled)")
 	configFile := flag.String("config", "", "Path to HOCON config file")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
@@ -90,6 +91,19 @@ func main() {
 	if err != nil {
 		logger.Error("failed to initialize instance manager", "error", err)
 		os.Exit(1)
+	}
+
+	// Parse and apply device idle timeout.
+	{
+		devTimeout, err := time.ParseDuration(*deviceIdleTimeout)
+		if err != nil {
+			logger.Error("invalid device-idle-timeout", "value", *deviceIdleTimeout, "error", err)
+			os.Exit(1)
+		}
+		if devTimeout == 0 {
+			devTimeout = -1
+		}
+		im.SetDeviceIdleTimeout(devTimeout)
 	}
 
 	// Parse and apply journal rotation for live writers.

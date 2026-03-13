@@ -245,8 +245,9 @@ type Broker struct {
 	// last-values store (latest frame per source+PGN)
 	values *ValueStore
 
-	journalDir  string
-	replicaMode bool // when true, honor frame.Seq instead of auto-incrementing
+	journalDir        string
+	replicaMode       bool          // when true, honor frame.Seq instead of auto-incrementing
+	deviceIdleTimeout time.Duration // 0 = disabled
 
 	// metrics counters (lock-free)
 	frameCount    atomic.Uint64
@@ -275,6 +276,10 @@ type BrokerConfig struct {
 	// replica broker from persisted state so the ring starts at the right
 	// position. Zero means start at 1 (the default).
 	InitialHead uint64
+
+	// DeviceIdleTimeout removes devices that haven't been seen for this
+	// duration. Zero means use the default (5 minutes). Use -1 to disable.
+	DeviceIdleTimeout time.Duration
 }
 
 // NewBroker creates a new broker with the given config.
@@ -298,6 +303,14 @@ func NewBroker(cfg BrokerConfig) *Broker {
 		head = cfg.InitialHead
 	}
 
+	deviceIdleTimeout := cfg.DeviceIdleTimeout
+	if deviceIdleTimeout == 0 {
+		deviceIdleTimeout = 5 * time.Minute
+	}
+	if deviceIdleTimeout < 0 {
+		deviceIdleTimeout = 0 // disabled
+	}
+
 	return &Broker{
 		rxFrames:          make(chan RxFrame, 256),
 		txFrames:          make(chan TxRequest, 64),
@@ -315,6 +328,7 @@ func NewBroker(cfg BrokerConfig) *Broker {
 		maxBufferDuration: cfg.MaxBufferDuration,
 		journalDir:        cfg.JournalDir,
 		replicaMode:       cfg.ReplicaMode,
+		deviceIdleTimeout: deviceIdleTimeout,
 	}
 }
 
@@ -341,6 +355,7 @@ func (b *Broker) Run() {
 
 		case <-ticker.C:
 			b.expireSessions()
+			b.expireDevices()
 		}
 	}
 }
@@ -391,13 +406,19 @@ func (b *Broker) handleFrame(frame RxFrame) {
 	// CAN bus (not in replica mode).
 	switch frame.Header.PGN {
 	case 60928:
-		if dev := b.devices.HandleAddressClaim(src, frame.Data); dev != nil {
+		if dev, evictedSrc, evicted := b.devices.HandleAddressClaim(src, frame.Data); dev != nil {
 			b.logger.Info("device discovered",
 				"src", dev.Source,
 				"manufacturer", dev.Manufacturer,
 				"function", dev.DeviceFunction,
 				"class", dev.DeviceClass,
 			)
+			if evicted {
+				b.logger.Info("evicted stale device (same NAME, old address)",
+					"old_src", evictedSrc, "new_src", src)
+				b.values.RemoveSource(evictedSrc)
+				b.fanOutDeviceRemoved(evictedSrc)
+			}
 			b.fanOutDevice(dev)
 			if !b.replicaMode {
 				b.sendISORequest(src, 126996)
@@ -575,6 +596,31 @@ func (b *Broker) fanOutDevice(dev *Device) {
 	b.subscriberMu.RUnlock()
 }
 
+// fanOutDeviceRemoved sends a device_removed event to all ephemeral subscribers.
+func (b *Broker) fanOutDeviceRemoved(src uint8) {
+	msg := struct {
+		Type   string `json:"type"`
+		Source uint8  `json:"src"`
+	}{
+		Type:   "device_removed",
+		Source: src,
+	}
+
+	jsonBytes, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+
+	b.subscriberMu.RLock()
+	for sub := range b.subscribers {
+		select {
+		case sub.ch <- jsonBytes:
+		default:
+		}
+	}
+	b.subscriberMu.RUnlock()
+}
+
 // CreateSession creates or retrieves a client session.
 // Returns the session and the current head sequence number.
 //
@@ -643,6 +689,20 @@ func (b *Broker) AckSession(id string, seq uint64) error {
 	s.Cursor = seq
 	s.LastActivity = time.Now()
 	return nil
+}
+
+// expireDevices removes devices that haven't been seen within the idle timeout.
+func (b *Broker) expireDevices() {
+	if b.deviceIdleTimeout == 0 {
+		return
+	}
+	cutoff := time.Now().Add(-b.deviceIdleTimeout)
+	evicted := b.devices.ExpireIdle(cutoff)
+	for _, src := range evicted {
+		b.logger.Info("expired idle device", "src", src)
+		b.values.RemoveSource(src)
+		b.fanOutDeviceRemoved(src)
+	}
 }
 
 // expireSessions removes sessions that have been inactive longer than
