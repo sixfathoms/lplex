@@ -122,10 +122,11 @@ func (c *Client) Send(ctx context.Context, pgn uint32, src, dst, prio uint8, dat
 	if err != nil {
 		return err
 	}
-	_ = resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("POST /send returned %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("POST /send returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
 }
