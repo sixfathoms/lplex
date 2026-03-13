@@ -9,10 +9,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/sixfathoms/lplex/lplexc"
+	"github.com/sixfathoms/lplex/pgn"
 	"github.com/spf13/cobra"
 )
 
@@ -28,10 +31,39 @@ var switchesCmd = &cobra.Command{
 	RunE:  runSwitches,
 }
 
+var switchesSetCmd = &cobra.Command{
+	Use:   "set SWITCH=STATE [SWITCH=STATE ...]",
+	Short: "Control binary switches",
+	Long: `Send a Binary Switch Bank Control (PGN 127502) to set switch states.
+
+Each argument is a SWITCH=STATE pair where SWITCH is the 1-based switch number
+and STATE is "on" or "off". Switches not specified are left unchanged.
+
+Examples:
+  lplex switches set --instance 0 1=on
+  lplex switches set --instance 0 1=on 3=off 5=on`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: runSwitchesSet,
+}
+
+var (
+	switchSetInstance int
+	switchSetSrc     uint8
+	switchSetPrio    uint8
+)
+
 func init() {
 	f := switchesCmd.Flags()
 	f.IntVar(&switchesInstance, "instance", -1, "filter to specific switch bank instance (-1 = all)")
 	f.BoolVar(&switchesWatch, "watch", false, "live-updating switch status")
+
+	sf := switchesSetCmd.Flags()
+	sf.IntVar(&switchSetInstance, "instance", -1, "switch bank instance (required)")
+	sf.Uint8Var(&switchSetSrc, "src", 0, "source address")
+	sf.Uint8Var(&switchSetPrio, "prio", 3, "priority (0-7, default 3)")
+	_ = switchesSetCmd.MarkFlagRequired("instance")
+
+	switchesCmd.AddCommand(switchesSetCmd)
 }
 
 // switchState represents one switch's state from PGN 127501.
@@ -188,6 +220,99 @@ func runSwitches(_ *cobra.Command, _ []string) error {
 	}
 }
 
+// parseSwitchArg parses a "SWITCH=STATE" argument.
+// Returns the 1-based switch number and the desired state (0=off, 1=on).
+func parseSwitchArg(arg string) (int, uint8, error) {
+	parts := strings.SplitN(arg, "=", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid argument %q: expected SWITCH=STATE (e.g. 1=on)", arg)
+	}
+
+	num, err := strconv.Atoi(parts[0])
+	if err != nil || num < 1 || num > 28 {
+		return 0, 0, fmt.Errorf("invalid switch number %q: must be 1-28", parts[0])
+	}
+
+	var state uint8
+	switch strings.ToLower(parts[1]) {
+	case "on", "1":
+		state = 1
+	case "off", "0":
+		state = 0
+	default:
+		return 0, 0, fmt.Errorf("invalid state %q: must be on/off", parts[1])
+	}
+
+	return num, state, nil
+}
+
+func runSwitchesSet(_ *cobra.Command, args []string) error {
+	if flagQuiet {
+		log.SetOutput(io.Discard)
+	} else {
+		log.SetOutput(os.Stderr)
+	}
+	log.SetFlags(log.Ltime)
+
+	serverURL := resolveServerURL(flagServer, nil, 0)
+	if flagBoat != "" || flagConfig != "" {
+		boat, mdnsTimeout, _, _, err := loadBoatConfig(flagBoat, flagConfig, flagBoat != "")
+		if err != nil {
+			return err
+		}
+		serverURL = resolveServerURL(flagServer, boat, mdnsTimeout)
+	}
+
+	// Parse switch=state pairs from args.
+	type switchSet struct {
+		num   int
+		state uint8
+	}
+	var sets []switchSet
+	for _, arg := range args {
+		num, state, err := parseSwitchArg(arg)
+		if err != nil {
+			return err
+		}
+		sets = append(sets, switchSet{num: num, state: state})
+	}
+
+	// Build PGN 127502 payload: all indicators set to 3 (no change),
+	// then override the ones the user specified.
+	ctrl := pgn.BinarySwitchBankControl{
+		Instance: uint8(switchSetInstance),
+	}
+	ctrl.Indicators = make(pgn.Uint8s, 28)
+	for i := range ctrl.Indicators {
+		ctrl.Indicators[i] = 3 // no change
+	}
+	for _, s := range sets {
+		ctrl.Indicators[s.num-1] = s.state
+	}
+
+	data := ctrl.Encode()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	client := lplexc.NewClient(serverURL)
+	const controlPGN uint32 = 127502
+	if err := client.Send(ctx, controlPGN, switchSetSrc, 255, switchSetPrio, data); err != nil {
+		return fmt.Errorf("send failed: %w", err)
+	}
+
+	// Pretty-print what we sent.
+	for _, s := range sets {
+		state := "OFF"
+		if s.state == 1 {
+			state = "ON"
+		}
+		log.Printf("bank %d switch %d → %s", switchSetInstance, s.num, state)
+	}
+
+	return nil
+}
+
 // decodeSwitchBank extracts switch states from PGN 127501 data.
 // Byte 0 is the instance, bytes 1+ contain 2-bit switch states.
 func decodeSwitchBank(data []byte) []switchState {
@@ -201,7 +326,6 @@ func decodeSwitchBank(data []byte) []switchState {
 		for bit := 0; bit < 4; bit++ {
 			st := switchState((b >> (bit * 2)) & 0x03)
 			if st == switchUnavailable {
-				// Trailing unavailable means no more switches.
 				return states
 			}
 			states = append(states, st)

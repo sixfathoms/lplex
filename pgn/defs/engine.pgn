@@ -38,6 +38,13 @@ pgn 127501 "Binary Switch Bank Status" interval=1000ms {
   indicator   uint8   :2  repeat=28
 }
 
+# PGN 127502 — Binary Switch Bank Control
+# Same wire format as 127501. Indicator values: 0=OFF, 1=ON, 2/3=no action.
+pgn 127502 "Binary Switch Bank Control" {
+  instance    uint8   :8
+  indicator   uint8   :2  repeat=28
+}
+
 # PGN 127505 — Fluid Level
 pgn 127505 "Fluid Level" interval=2500ms {
   instance    uint8   :4

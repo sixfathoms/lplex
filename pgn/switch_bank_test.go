@@ -154,6 +154,70 @@ func TestBinarySwitchBankPGN(t *testing.T) {
 	}
 }
 
+func TestBinarySwitchBankControlRoundTrip(t *testing.T) {
+	// Build a control frame: turn switch 1 ON, switch 3 OFF, rest no-change.
+	ctrl := BinarySwitchBankControl{
+		Instance: 0,
+	}
+	ctrl.Indicators = make(Uint8s, 28)
+	for i := range ctrl.Indicators {
+		ctrl.Indicators[i] = 3 // no change
+	}
+	ctrl.Indicators[0] = 1 // switch 1 = ON
+	ctrl.Indicators[2] = 0 // switch 3 = OFF
+
+	data := ctrl.Encode()
+	if len(data) != 8 {
+		t.Fatalf("encoded length = %d, want 8", len(data))
+	}
+
+	// Instance byte.
+	if data[0] != 0 {
+		t.Errorf("instance byte = 0x%02X, want 0x00", data[0])
+	}
+
+	// Byte 1: ind1=1(ON), ind2=3(no-change), ind3=0(OFF), ind4=3(no-change)
+	// = (3<<6)|(0<<4)|(3<<2)|1 = 0xC0|0x00|0x0C|0x01 = 0xCD
+	if data[1] != 0xCD {
+		t.Errorf("byte 1 = 0x%02X, want 0xCD", data[1])
+	}
+
+	// Bytes 2-7: all no-change = 0xFF.
+	for i := 2; i < 8; i++ {
+		if data[i] != 0xFF {
+			t.Errorf("byte %d = 0x%02X, want 0xFF", i, data[i])
+		}
+	}
+
+	// Decode back through the registry.
+	decoded, err := DecodeBinarySwitchBankControl(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Instance != 0 {
+		t.Errorf("instance = %d, want 0", decoded.Instance)
+	}
+	if decoded.Indicators[0] != 1 {
+		t.Errorf("indicator[0] = %d, want 1 (ON)", decoded.Indicators[0])
+	}
+	if decoded.Indicators[1] != 3 {
+		t.Errorf("indicator[1] = %d, want 3 (no change)", decoded.Indicators[1])
+	}
+	if decoded.Indicators[2] != 0 {
+		t.Errorf("indicator[2] = %d, want 0 (OFF)", decoded.Indicators[2])
+	}
+}
+
+func TestBinarySwitchBankControlRegistry(t *testing.T) {
+	info, ok := Registry[127502]
+	if !ok {
+		t.Fatal("PGN 127502 not in registry")
+	}
+	if info.Description != "Binary Switch Bank Control" {
+		t.Errorf("description = %q", info.Description)
+	}
+}
+
 func TestBinarySwitchBankJSON(t *testing.T) {
 	sw := BinarySwitchBankStatus{
 		Instance:   1,
