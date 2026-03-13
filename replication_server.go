@@ -45,10 +45,11 @@ type InstanceState struct {
 	journalWriter  *JournalWriter      // live journal writer (nil when broker not running)
 	journalDone    chan struct{}        // closed when journal writer goroutine exits
 	cancelFunc     context.CancelFunc  // stops the broker's journal writer
-	onRotate       func(RotatedFile)   // optional callback for keeper
-	rotateDuration time.Duration       // journal rotation interval for live writer
-	rotateSize     int64               // journal rotation size cap for live writer
-	logger         *slog.Logger
+	onRotate          func(RotatedFile)   // optional callback for keeper
+	rotateDuration    time.Duration       // journal rotation interval for live writer
+	rotateSize        int64               // journal rotation size cap for live writer
+	deviceIdleTimeout time.Duration       // passed through to broker config
+	logger            *slog.Logger
 }
 
 // instanceStatePersist is the JSON shape written to state.json.
@@ -118,11 +119,12 @@ func (s *InstanceState) ensureBroker() {
 	initialHead := max(s.Cursor+1, 1)
 
 	b := NewBroker(BrokerConfig{
-		RingSize:    65536,
-		ReplicaMode: true,
-		InitialHead: initialHead,
-		JournalDir:  journalDir,
-		Logger:      s.logger.With("instance", s.ID),
+		RingSize:          65536,
+		ReplicaMode:       true,
+		InitialHead:       initialHead,
+		JournalDir:        journalDir,
+		Logger:            s.logger.With("instance", s.ID),
+		DeviceIdleTimeout: s.deviceIdleTimeout,
 	})
 
 	// Set up journal writer for live frames
@@ -209,9 +211,10 @@ type InstanceManager struct {
 	instances       map[string]*InstanceState
 	dataDir         string
 	logger          *slog.Logger
-	onRotate        func(instanceID string, rf RotatedFile) // optional callback for keeper
-	rotateDuration  time.Duration                           // journal rotation interval for live writers
-	rotateSize      int64                                   // journal rotation size cap for live writers
+	onRotate          func(instanceID string, rf RotatedFile) // optional callback for keeper
+	rotateDuration    time.Duration                           // journal rotation interval for live writers
+	rotateSize        int64                                   // journal rotation size cap for live writers
+	deviceIdleTimeout time.Duration                           // passed through to per-instance brokers
 }
 
 // NewInstanceManager creates a new instance manager, loading any persisted state.
@@ -300,6 +303,19 @@ func (im *InstanceManager) SetJournalRotation(duration time.Duration, size int64
 	}
 }
 
+// SetDeviceIdleTimeout configures the device idle timeout for all existing
+// and future instance brokers. Must be called before instances connect.
+func (im *InstanceManager) SetDeviceIdleTimeout(d time.Duration) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	im.deviceIdleTimeout = d
+	for _, s := range im.instances {
+		s.mu.Lock()
+		s.deviceIdleTimeout = d
+		s.mu.Unlock()
+	}
+}
+
 // makeOnRotate returns an instance-scoped OnRotate callback, or nil if no
 // manager-level callback is set. Caller must hold im.mu.
 func (im *InstanceManager) makeOnRotate(id string) func(RotatedFile) {
@@ -346,10 +362,11 @@ func (im *InstanceManager) GetOrCreate(id string) *InstanceState {
 		HoleTracker:    NewHoleTracker(),
 		events:         NewEventLog(),
 		journalDir:     dir,
-		onRotate:       im.makeOnRotate(id),
-		rotateDuration: im.rotateDuration,
-		rotateSize:     im.rotateSize,
-		logger:         im.logger,
+		onRotate:          im.makeOnRotate(id),
+		rotateDuration:    im.rotateDuration,
+		rotateSize:        im.rotateSize,
+		deviceIdleTimeout: im.deviceIdleTimeout,
+		logger:            im.logger,
 	}
 	im.instances[id] = s
 	im.logger.Info("created instance", "id", id)

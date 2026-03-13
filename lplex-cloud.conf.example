@@ -40,6 +40,12 @@ http {
 # Data directory for instance state and journals
 data-dir = "/data/lplex"
 
+# Device idle expiry: remove devices not seen for this duration.
+# Handles devices that restart with a new source address.
+# device {
+#   idle-timeout = 5m   # Go duration format (0 = disabled)
+# }
+
 # Journal rotation and retention (all optional, comment out to disable)
 journal {
 

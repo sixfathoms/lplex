@@ -36,6 +36,11 @@ max-buffer-duration = PT5M
 # Alert after this duration with no CAN frames (ISO 8601)
 bus-silence-timeout = PT30S
 
+device {
+  # Remove devices not seen for this duration (Go duration, 0 = disabled)
+  idle-timeout = 5m
+}
+
 health {
   # Health check reports unhealthy after this silence duration
   bus-silence-threshold = PT30S
@@ -140,6 +145,7 @@ replication {
 | `-max-buffer-duration` | `max-buffer-duration` | `PT5M` | Max buffer timeout for sessions |
 | `-bus-silence-timeout` | `bus-silence-timeout` | `PT30S` | Alert on bus silence |
 | `-bus-silence-threshold` | `health.bus-silence-threshold` | `PT30S` | Health check silence threshold |
+| `-device-idle-timeout` | `device.idle-timeout` | `5m` | Remove devices not seen for this duration (0 = disabled) |
 | `-send-enabled` | `send.enabled` | `false` | Enable /send and /query endpoints |
 | `-send-rules` | `send.rules` | (empty) | Semicolon-separated send rules (HOCON: string or object array) |
 | `-journal-dir` | `journal.dir` | (empty) | Journal directory |
@@ -228,6 +234,7 @@ journal {
 | `-tls-client-ca` | `grpc.tls.client-ca` / `tls.client-ca` | (empty) | Client CA cert |
 | `-data-dir` | `data-dir` | `/data/lplex` | Data directory |
 
+| `-device-idle-timeout` | `device.idle-timeout` | `5m` | Remove devices not seen for this duration (0 = disabled) |
 | `-journal-rotate-duration` | `journal.rotate-duration` | `PT1H` | Rotate live journal files after this duration (ISO 8601) |
 | `-journal-rotate-size` | `journal.rotate-size` | `0` | Rotate live journal files after this many bytes (0 = disabled) |
 

@@ -86,7 +86,7 @@ func TestDeviceRegistryNewDevice(t *testing.T) {
 	name |= uint64(229) << 21 // Garmin
 	binary.LittleEndian.PutUint64(data, name)
 
-	dev := reg.HandleAddressClaim(1, data)
+	dev, _, _ := reg.HandleAddressClaim(1, data)
 	if dev == nil {
 		t.Fatal("expected new device")
 	}
@@ -106,7 +106,7 @@ func TestDeviceRegistryDuplicate(t *testing.T) {
 	reg.HandleAddressClaim(1, data)
 
 	// Same NAME, same source: no change
-	dev := reg.HandleAddressClaim(1, data)
+	dev, _, _ := reg.HandleAddressClaim(1, data)
 	if dev != nil {
 		t.Error("expected nil for duplicate address claim")
 	}
@@ -122,7 +122,7 @@ func TestDeviceRegistryChanged(t *testing.T) {
 	// Different NAME on same source: address change
 	data2 := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data2, uint64(135)<<21)
-	dev := reg.HandleAddressClaim(1, data2)
+	dev, _, _ := reg.HandleAddressClaim(1, data2)
 	if dev == nil {
 		t.Fatal("expected new device for changed NAME")
 	}
@@ -148,7 +148,7 @@ func TestDeviceRegistrySnapshot(t *testing.T) {
 
 func TestDeviceRegistryShortData(t *testing.T) {
 	reg := NewDeviceRegistry()
-	dev := reg.HandleAddressClaim(1, []byte{0x01, 0x02})
+	dev, _, _ := reg.HandleAddressClaim(1, []byte{0x01, 0x02})
 	if dev != nil {
 		t.Error("expected nil for short data")
 	}
@@ -236,7 +236,7 @@ func TestHandleAddressClaimPreservesStats(t *testing.T) {
 	// Now an address claim arrives for the same source.
 	data := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data, uint64(229)<<21) // Garmin
-	dev := reg.HandleAddressClaim(1, data)
+	dev, _, _ := reg.HandleAddressClaim(1, data)
 
 	if dev == nil {
 		t.Fatal("expected new device from address claim")
@@ -498,5 +498,111 @@ func TestDecodeFixedString(t *testing.T) {
 				t.Errorf("decodeFixedString(%v): got %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestHandleAddressClaimEvictsSameNAME(t *testing.T) {
+	reg := NewDeviceRegistry()
+
+	// Device with NAME X claims source 5.
+	nameX := uint64(229)<<21 | uint64(42)
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint64(data, nameX)
+	reg.HandleAddressClaim(5, data)
+
+	// Same NAME now claims source 10 (device restarted, new address).
+	dev, evictedSrc, evicted := reg.HandleAddressClaim(10, data)
+	if dev == nil {
+		t.Fatal("expected new device")
+	}
+	if !evicted {
+		t.Fatal("expected eviction of old source")
+	}
+	if evictedSrc != 5 {
+		t.Errorf("evicted source: got %d, want 5", evictedSrc)
+	}
+	if dev.Source != 10 {
+		t.Errorf("new device source: got %d, want 10", dev.Source)
+	}
+
+	// Old source should be gone.
+	if reg.Get(5) != nil {
+		t.Error("old source 5 should have been evicted")
+	}
+	// New source should be present.
+	if reg.Get(10) == nil {
+		t.Error("new source 10 should exist")
+	}
+}
+
+func TestHandleAddressClaimNoEvictionSameSource(t *testing.T) {
+	reg := NewDeviceRegistry()
+
+	nameX := uint64(229)<<21 | uint64(42)
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint64(data, nameX)
+	reg.HandleAddressClaim(5, data)
+
+	// Different NAME on the same source is not an eviction, just a change.
+	nameY := uint64(135)<<21 | uint64(99)
+	data2 := make([]byte, 8)
+	binary.LittleEndian.PutUint64(data2, nameY)
+	dev, _, evicted := reg.HandleAddressClaim(5, data2)
+	if dev == nil {
+		t.Fatal("expected new device for changed NAME")
+	}
+	if evicted {
+		t.Error("should not evict when source address hasn't changed")
+	}
+}
+
+func TestExpireIdle(t *testing.T) {
+	reg := NewDeviceRegistry()
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	// Source 1: seen recently.
+	reg.RecordPacket(1, base, 8)
+
+	// Source 2: seen a long time ago.
+	reg.RecordPacket(2, base.Add(-10*time.Minute), 8)
+
+	// Source 3: also stale.
+	reg.RecordPacket(3, base.Add(-10*time.Minute), 8)
+
+	// Source 4: with an address claim, but stale.
+	reg.RecordPacket(4, base.Add(-10*time.Minute), 8)
+	claim := make([]byte, 8)
+	binary.LittleEndian.PutUint64(claim, uint64(229)<<21)
+	reg.HandleAddressClaim(4, claim)
+
+	cutoff := base.Add(-5 * time.Minute)
+	evicted := reg.ExpireIdle(cutoff)
+
+	// Sources 2, 3, 4 should be evicted (LastSeen before cutoff).
+	if len(evicted) != 3 {
+		t.Fatalf("expected 3 evictions, got %d: %v", len(evicted), evicted)
+	}
+
+	// Source 1 should survive.
+	if reg.Get(1) == nil {
+		t.Error("source 1 should not be expired")
+	}
+
+	// The evicted ones should be gone.
+	for _, src := range []uint8{2, 3, 4} {
+		if reg.Get(src) != nil {
+			t.Errorf("source %d should have been expired", src)
+		}
+	}
+}
+
+func TestExpireIdleNothingToExpire(t *testing.T) {
+	reg := NewDeviceRegistry()
+	now := time.Now()
+	reg.RecordPacket(1, now, 8)
+
+	evicted := reg.ExpireIdle(now.Add(-time.Hour))
+	if len(evicted) != 0 {
+		t.Errorf("expected no evictions, got %d", len(evicted))
 	}
 }

@@ -19,6 +19,14 @@ lplex automatically discovers and tracks all devices on the NMEA 2000 bus. It bu
 
 This is transparent. You don't need to configure anything.
 
+### NAME-based deduplication
+
+If a device restarts and claims a **new source address** while keeping the same 64-bit NAME, lplex automatically evicts the old entry. This prevents stale phantom devices from accumulating in the registry. The old source's values are also cleaned up, and a `device_removed` event is sent to SSE subscribers.
+
+### Idle expiry
+
+Devices that haven't sent any frames within the idle timeout (default 5 minutes) are automatically removed. This covers both NAME-bearing devices and stats-only entries. Configure with `-device-idle-timeout` (or HOCON `device.idle-timeout`). Set to `0` to disable.
+
 ## Device table fields
 
 | Field | Source | Description |

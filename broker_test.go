@@ -921,3 +921,138 @@ func TestBrokerReplicaModeRingWrap(t *testing.T) {
 		}
 	}
 }
+
+func TestBrokerDeviceEvictionOnAddressChange(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer b.CloseRx()
+	drainTxFrame(b, time.Second)
+
+	sub, cleanup := b.Subscribe(nil)
+	defer cleanup()
+
+	// Device with NAME X claims source 5.
+	var nameX uint64 = 0x00ABCDEF12345600
+	nameBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(nameBytes, nameX)
+	injectFrame(b, 60928, 5, nameBytes)
+	drainTxFrame(b, 100*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+
+	// Send a value frame from source 5 so it ends up in the value store.
+	injectFrame(b, 129025, 5, []byte{0xAA, 0, 0, 0, 0, 0, 0, 0})
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify source 5 has values.
+	snap := b.Values().Snapshot(b.Devices(), nil)
+	found := false
+	for _, dv := range snap {
+		if dv.Source == 5 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected values for source 5")
+	}
+
+	// Same NAME claims source 10 (device restarted).
+	injectFrame(b, 60928, 10, nameBytes)
+	drainTxFrame(b, 100*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+
+	// Source 5 should be gone from devices.
+	if b.Devices().Get(5) != nil {
+		t.Error("old source 5 should have been evicted")
+	}
+	if b.Devices().Get(10) == nil {
+		t.Error("new source 10 should exist")
+	}
+
+	// Source 5 values should be cleaned up.
+	snap = b.Values().Snapshot(b.Devices(), nil)
+	for _, dv := range snap {
+		if dv.Source == 5 {
+			t.Error("values for evicted source 5 should have been removed")
+		}
+	}
+
+	// Subscriber should have received a device_removed event for source 5.
+	gotRemoved := false
+	for {
+		select {
+		case data := <-sub.ch:
+			var raw map[string]any
+			_ = json.Unmarshal(data, &raw)
+			if raw["type"] == "device_removed" {
+				if uint8(raw["src"].(float64)) == 5 {
+					gotRemoved = true
+				}
+			}
+		case <-time.After(100 * time.Millisecond):
+			goto done
+		}
+	}
+done:
+	if !gotRemoved {
+		t.Error("subscriber should receive device_removed event for evicted source")
+	}
+}
+
+func TestBrokerDeviceIdleExpiry(t *testing.T) {
+	b := NewBroker(BrokerConfig{
+		RingSize:          1024,
+		MaxBufferDuration: 5 * time.Minute,
+		DeviceIdleTimeout: 50 * time.Millisecond,
+		Logger:            slog.Default(),
+	})
+	go b.Run()
+	defer b.CloseRx()
+	drainTxFrame(b, time.Second)
+
+	// Register a device at source 5.
+	registerDevice(b, 5, 229, 0)
+
+	// Send a value frame so it's in the value store.
+	injectFrame(b, 129025, 5, []byte{0x01, 0, 0, 0, 0, 0, 0, 0})
+	time.Sleep(50 * time.Millisecond)
+
+	if b.Devices().Get(5) == nil {
+		t.Fatal("device 5 should exist initially")
+	}
+
+	// Wait for the idle timeout to elapse, then call expireDevices directly
+	// (the broker ticker runs every 10s which is too slow for tests).
+	time.Sleep(100 * time.Millisecond)
+	b.expireDevices()
+
+	if b.Devices().Get(5) != nil {
+		t.Error("device 5 should have been expired")
+	}
+
+	snap := b.Values().Snapshot(b.Devices(), nil)
+	for _, dv := range snap {
+		if dv.Source == 5 {
+			t.Error("values for expired source 5 should have been removed")
+		}
+	}
+}
+
+func TestBrokerDeviceIdleExpiryDisabled(t *testing.T) {
+	b := NewBroker(BrokerConfig{
+		RingSize:          1024,
+		MaxBufferDuration: 5 * time.Minute,
+		DeviceIdleTimeout: -1, // disabled
+		Logger:            slog.Default(),
+	})
+	go b.Run()
+	defer b.CloseRx()
+	drainTxFrame(b, time.Second)
+
+	registerDevice(b, 5, 229, 0)
+
+	b.expireDevices()
+
+	if b.Devices().Get(5) == nil {
+		t.Error("device 5 should not be expired when timeout is disabled")
+	}
+}

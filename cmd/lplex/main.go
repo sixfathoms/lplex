@@ -52,6 +52,7 @@ func main() {
 	replMaxLiveLag := flag.Int("replication-max-live-lag", int(lplex.DefaultMaxLiveLag), "Max frames live stream can lag before switching to backfill")
 	replLagCheckInterval := flag.Int("replication-lag-check-interval", lplex.DefaultLagCheckInterval, "Check live lag every N frames sent")
 	replMinLagReconnect := flag.String("replication-min-lag-reconnect-interval", "30s", "Min interval between lag-triggered reconnects (e.g. 30s)")
+	deviceIdleTimeout := flag.String("device-idle-timeout", "5m", "Remove devices not seen for this duration (0 = disabled)")
 	sendEnabled := flag.Bool("send-enabled", false, "Enable the /send and /query HTTP endpoints (default: disabled)")
 	sendRulesStr := flag.String("send-rules", "", "Semicolon-separated send rules (e.g. 'pgn:59904; !pgn:65280-65535')")
 	busSilenceTimeout := flag.String("bus-silence-timeout", "", "Alert when no CAN frames received for this duration (ISO 8601, e.g. PT30S)")
@@ -87,11 +88,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	devIdleTimeout, err := time.ParseDuration(*deviceIdleTimeout)
+	if err != nil {
+		logger.Error("invalid device-idle-timeout", "value", *deviceIdleTimeout, "error", err)
+		os.Exit(1)
+	}
+	// Map 0 → -1 (disabled sentinel for BrokerConfig).
+	if devIdleTimeout == 0 {
+		devIdleTimeout = -1
+	}
+
 	broker := lplex.NewBroker(lplex.BrokerConfig{
 		RingSize:          65536,
 		MaxBufferDuration: bufDuration,
 		JournalDir:        *journalDir,
 		Logger:            logger,
+		DeviceIdleTimeout: devIdleTimeout,
 	})
 
 	sendPolicy, err := parseSendPolicy(*sendEnabled, *sendRulesStr)

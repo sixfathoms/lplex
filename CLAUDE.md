@@ -60,6 +60,7 @@ Broker goroutine (single writer, owns all state)
     |  assigns monotonic sequence numbers
     |  appends pre-serialized JSON to ring buffer (64k entries, power-of-2)
     |  updates device registry (PGN 60928 address claim, PGN 126996 product info)
+    |  evicts stale devices (NAME-based dedup on address change, idle timeout expiry)
     |  fans out to ephemeral subscribers (with per-client filtering)
     |  notifies pull-based consumers (non-blocking send to notify channels)
     |  sends ISO requests to discover new devices on the bus
@@ -157,14 +158,14 @@ lplex-cloud process
 
 | File | Owns |
 |---|---|
-| `broker.go` | `Broker`, `BrokerConfig` (including `ReplicaMode`, `InitialHead`), `ClientSession`, `subscriber`, `EventFilter`, ring buffer, fan-out, session lifecycle, ephemeral subscriptions, consumer registry, journal feed, value store feed |
+| `broker.go` | `Broker`, `BrokerConfig` (including `ReplicaMode`, `InitialHead`, `DeviceIdleTimeout`), `ClientSession`, `subscriber`, `EventFilter`, ring buffer, fan-out, session lifecycle, ephemeral subscriptions, consumer registry, journal feed, value store feed, device idle expiry, `device_removed` events |
 | `consumer.go` | `Consumer`, `Frame`, `ErrFallenBehind`, pull-based tiered reader (journal -> ring -> live), journal fallback with file discovery and seq-based seeking |
 | `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint, on-demand PGN query (`POST /query` via ISO Request PGN 59904) |
 | `send_policy.go` | `SendPolicy`, `SendRule`, `PGNMatcher`, `ParseSendRule`, `ParseSendRules`, rule DSL parser and evaluator for `/send` and `/query` gating |
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
 | `fastpacket.go` | `FastPacketAssembler`, `FragmentFastPacket`, `IsFastPacket` (checks `pgn.Registry` for `FastPacket` flag) |
-| `devices.go` | `DeviceRegistry`, PGN 60928/126996 decoding, manufacturer lookup table |
+| `devices.go` | `DeviceRegistry`, PGN 60928/126996 decoding, manufacturer lookup table, NAME-based eviction (same NAME on new source evicts old), idle expiry (`ExpireIdle`) |
 | `journal_writer.go` | `JournalWriter`, `JournalConfig` (including `OnRotate` callback), block encoding, zstd compression, block index, file rotation, device table tracking (with product info) |
 | `replication.go` | `SeqRange`, `HoleTracker`, `SyncState`, hole tracking algorithm |
 | `replication_client.go` | `ReplicationClient`, `ReplicationClientConfig`, `ReplicationStatus`, live stream + backfill + reconnect loop |
@@ -174,7 +175,7 @@ lplex-cloud process
 | `journal_keeper.go` | `JournalKeeper`, `KeeperConfig`, `KeeperDir`, `RotatedFile`, `ArchiveTrigger`, `OverflowPolicy`, retention algorithm (max-age/min-keep/max-size with soft/hard thresholds and overflow policy), archive script execution (JSONL protocol), marker file tracking, retry with exponential backoff, per-directory pause state |
 | `change_diff.go` | `DiffMethod` interface, `ByteMaskDiff` (byte-level bitmask diff), `FieldToleranceDiff` (field-level tolerance-aware diff using PGN decode + reflection), `SubKeyFunc` for multiplexed PGN sub-keying |
 | `change_tracker.go` | `ChangeTracker`, `ChangeTrackerConfig`, `ChangeEvent`, `ChangeEventType` (Snapshot/Delta/Idle), per-(source, PGN, subkey) state tracking, idle timeout detection, auto-wires `FieldToleranceDiff` from `pgn.Registry` tolerances. `ChangeReplayer` reconstructs full packets from compact deltas. |
-| `values.go` | `ValueStore`, `DeviceValues`, `PGNValue`, last-seen frame tracking per (source, PGN) pair, snapshot with device resolution |
+| `values.go` | `ValueStore`, `DeviceValues`, `PGNValue`, last-seen frame tracking per (source, PGN) pair, snapshot with device resolution, `RemoveSource` for cleanup on device eviction |
 | `doc.go` | Package documentation with embedding example |
 
 ## Client Modes
@@ -272,6 +273,8 @@ lplex supports HOCON config files (`-config path` or auto-discovered from `./lpl
 lplex-cloud uses the same pattern with `lplex-cloud.conf` (auto-discovered from `./lplex-cloud.conf`, `/etc/lplex-cloud/lplex-cloud.conf`). Mapping in `cmd/lplex-cloud/config.go`.
 
 lplex has send policy flags to gate the `/send` and `/query` endpoints: `-send-enabled` (default false) and `-send-rules` (semicolon-separated rule strings). HOCON paths: `send.enabled`, `send.rules` (string or object array). CLI uses DSL syntax: `[!] [pgn:<spec>] [name:<hex>,...]` where `<spec>` supports values, comma-separated lists, and ranges (e.g. `pgn:59904,126208`, `pgn:65280-65535`). `!` prefix = deny. Omit pgn/name for wildcard. HOCON config also supports native object rules: `{ deny = true/false, pgn = "<spec>", name = "<hex>" or ["<hex>", ...] }`. Both string and object forms can be mixed in the same array. Rules are evaluated top-to-bottom, first match wins. No matching rule = deny. Empty rules + enabled = allow all. These do not affect the broker's internal ISO requests for device discovery.
+
+Both binaries support `-device-idle-timeout` (default `5m`, `0` = disabled) to remove devices that haven't been seen within the timeout. HOCON path: `device.idle-timeout`. When a device is evicted (either by idle expiry or by NAME dedup on address change), its ValueStore entries are cleaned up and a `device_removed` event is sent to subscribers.
 
 Both binaries share the same retention/archive flags: `-journal-retention-max-age`, `-journal-retention-min-keep`, `-journal-retention-max-size`, `-journal-retention-soft-pct`, `-journal-retention-overflow-policy`, `-journal-archive-command`, `-journal-archive-trigger`. HOCON paths: `journal.retention.max-age`, `journal.retention.min-keep`, `journal.retention.max-size`, `journal.retention.soft-pct`, `journal.retention.overflow-policy`, `journal.archive.command`, `journal.archive.trigger`. See [`lplex.conf.example`](lplex.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example).
 
