@@ -5,7 +5,7 @@ title: Best Practices
 
 # Best Practices
 
-Production deployment tips for running lplex on a boat.
+Production deployment tips for running lplex-server on a boat.
 
 ## CAN interface setup
 
@@ -91,7 +91,7 @@ journal {
 
 ## Monitoring bus silence
 
-lplex alerts when no CAN frames are received for a configurable duration. This catches cable disconnects, interface failures, or power issues.
+lplex-server alerts when no CAN frames are received for a configurable duration. This catches cable disconnects, interface failures, or power issues.
 
 ```hocon
 bus-silence-timeout = PT30S
@@ -125,9 +125,9 @@ MemoryMax=256M
 
 ## Multiple CAN interfaces
 
-lplex currently supports a single CAN interface per process. If you have multiple buses, run multiple instances on different ports:
+lplex-server currently supports a single CAN interface per process. If you have multiple buses, run multiple instances on different ports:
 
 ```bash
-lplex -interface can0 -port 8089 -journal-dir /var/log/lplex/can0
-lplex -interface can1 -port 8090 -journal-dir /var/log/lplex/can1
+lplex-server -interface can0 -port 8089 -journal-dir /var/log/lplex/can0
+lplex-server -interface can1 -port 8090 -journal-dir /var/log/lplex/can1
 ```

@@ -1,6 +1,6 @@
-# lplex configuration
+# lplex-server configuration
 #
-# Copy to ./lplex.conf or /etc/lplex/lplex.conf
+# Copy to ./lplex-server.conf or /etc/lplex/lplex-server.conf
 # CLI flags override values set here.
 
 # SocketCAN interface name

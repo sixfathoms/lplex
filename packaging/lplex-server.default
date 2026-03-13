@@ -1,0 +1,3 @@
+# /etc/default/lplex-server
+# Arguments passed to the lplex-server binary.
+LPLEX_ARGS="-interface can0 -port 8089"

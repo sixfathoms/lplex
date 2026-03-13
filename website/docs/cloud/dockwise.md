@@ -17,16 +17,16 @@ title: Dockwise Cloud
 
 ## Connecting your boat
 
-Dockwise provides a provisioning flow that generates boat certificates and configuration. Once provisioned, configure your boat's lplex:
+Dockwise provides a provisioning flow that generates boat certificates and configuration. Once provisioned, configure your boat's lplex-server:
 
 ```hocon
 replication {
   target = "lplex.dockwise.app:443"
   instance-id = "your-boat-id"
   tls {
-    cert = "/etc/lplex/dockwise.crt"
-    key = "/etc/lplex/dockwise.key"
-    ca = "/etc/lplex/dockwise-ca.crt"
+    cert = "/etc/lplex-server/dockwise.crt"
+    key = "/etc/lplex-server/dockwise.key"
+    ca = "/etc/lplex-server/dockwise-ca.crt"
   }
 }
 ```

@@ -1,67 +1,73 @@
 ---
 sidebar_position: 1
-title: lplexdump
+title: lplex
 ---
 
-# lplexdump
+# lplex
 
-`lplexdump` is the CLI client for lplex. It connects to a running server (or reads journal files) and displays NMEA 2000 frames with optional PGN decoding.
+`lplex` is the CLI client for lplex. It connects to a running server (or reads journal files) and displays NMEA 2000 frames with optional PGN decoding.
 
 ## Basic usage
 
 ```bash
 # Auto-discover server via mDNS
-lplexdump
+lplex dump
 
 # Connect to a named boat (mDNS first, cloud fallback)
-lplexdump -boat sv-dockwise
+lplex dump --boat sv-dockwise
 
 # Specify server directly
-lplexdump -server http://inuc1.local:8089
+lplex dump --server http://inuc1.local:8089
 
 # With PGN decoding
-lplexdump -server http://inuc1.local:8089 -decode
+lplex dump --server http://inuc1.local:8089 --decode
 ```
 
 ## CLI flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `-server` | (mDNS) | Server URL |
-| `-boat` | (empty) | Connect to a named boat (mDNS first, cloud fallback) |
-| `-config` | `~/.config/lplex/lplexdump.conf` | Path to config file |
-| `-client-id` | hostname | Session ID for buffered mode |
-| `-buffer-timeout` | (empty) | Enable buffered mode with this timeout (ISO 8601) |
-| `-reconnect` | `true` | Auto-reconnect on disconnect |
-| `-reconnect-delay` | `2s` | Delay between reconnect attempts |
-| `-ack-interval` | `5s` | How often to ACK in buffered mode |
-| `-quiet` | `false` | Suppress stderr status messages |
-| `-json` | `false` | Force JSON output (auto-enabled when piped) |
-| `-decode` | `false` | Decode known PGNs into field values |
-| `-where` | (empty) | Display filter expression on decoded fields (auto-enables `-decode`) |
-| `-changes` | `false` | Only show frames with changed data (suppress duplicates within tolerance) |
-| `-file` | (empty) | Replay a `.lpj` journal file instead of connecting |
-| `-inspect` | `false` | Inspect journal file structure and exit |
-| `-speed` | `1.0` | Playback speed for journal replay (0 = max speed) |
-| `-start` | (empty) | Seek to this time (RFC 3339) before playing |
-| `-pgn` | (all) | Filter by PGN number (repeatable) |
-| `-exclude-pgn` | (none) | Exclude specific PGN from output (repeatable) |
-| `-exclude-name` | (none) | Exclude device by 64-bit CAN NAME hex (repeatable) |
-| `-manufacturer` | (all) | Filter by manufacturer name (repeatable) |
-| `-instance` | (all) | Filter by device instance (repeatable) |
-| `-name` | (all) | Filter by 64-bit CAN NAME hex (repeatable) |
+| `--server` | (mDNS) | Server URL |
+| `--boat` | (empty) | Connect to a named boat (mDNS first, cloud fallback) |
+| `--config` | `~/.config/lplex/lplex.conf` | Path to config file |
+| `--client-id` | hostname | Session ID for buffered mode |
+| `--buffer-timeout` | (empty) | Enable buffered mode with this timeout (ISO 8601) |
+| `--reconnect` | `true` | Auto-reconnect on disconnect |
+| `--reconnect-delay` | `2s` | Delay between reconnect attempts |
+| `--ack-interval` | `5s` | How often to ACK in buffered mode |
+| `--quiet` | `false` | Suppress stderr status messages |
+| `--json` | `false` | Force JSON output (auto-enabled when piped) |
+| `--decode` | `false` | Decode known PGNs into field values |
+| `--where` | (empty) | Display filter expression on decoded fields (auto-enables `--decode`) |
+| `--changes` | `false` | Only show frames with changed data (suppress duplicates within tolerance) |
+| `--file` | (empty) | Replay a `.lpj` journal file instead of connecting |
+| `--speed` | `1.0` | Playback speed for journal replay (0 = max speed) |
+| `--start` | (empty) | Seek to this time (RFC 3339) before playing |
+| `--pgn` | (all) | Filter by PGN number (repeatable) |
+| `--exclude-pgn` | (none) | Exclude specific PGN from output (repeatable) |
+| `--exclude-name` | (none) | Exclude device by 64-bit CAN NAME hex (repeatable) |
+| `--manufacturer` | (all) | Filter by manufacturer name (repeatable) |
+| `--instance` | (all) | Filter by device instance (repeatable) |
+| `--name` | (all) | Filter by 64-bit CAN NAME hex (repeatable) |
+
+The `inspect` subcommand has its own entry point:
+
+```bash
+# Inspect journal file structure and exit
+lplex inspect recording.lpj
+```
 
 ## Output modes
 
 ### Terminal mode (default)
 
-When stdout is a TTY, lplexdump shows a compact human-readable format:
+When stdout is a TTY, lplex shows a compact human-readable format:
 
 ```
 2026-03-06T10:15:32.123Z  seq=1234  prio=2  pgn=129025  src=10  dst=255  [8] 5A1F2B3C4D5E6F70
 ```
 
-With `-decode`, decoded fields appear on the next line:
+With `--decode`, decoded fields appear on the next line:
 
 ```
 2026-03-06T10:15:32.145Z  seq=1235  prio=3  pgn=130306  src=22  dst=255  [8] 01A4060000030000
@@ -70,13 +76,13 @@ With `-decode`, decoded fields appear on the next line:
 
 ### JSON mode
 
-When stdout is piped (or `-json` is set), each frame is a JSON object per line:
+When stdout is piped (or `--json` is set), each frame is a JSON object per line:
 
 ```json
 {"seq":1235,"ts":"2026-03-06T10:15:32.145Z","prio":3,"pgn":130306,"src":22,"dst":255,"data":"01A4060000030000","decoded":{"sid":1,"wind_speed":1.7,"wind_angle":0.0,"wind_reference":"apparent"}}
 ```
 
-The `decoded` field is only present when `-decode` is enabled and the PGN is known.
+The `decoded` field is only present when `--decode` is enabled and the PGN is known.
 
 Enum fields serialize as strings for known values and as numbers for unknown values (e.g., `"wind_reference": "apparent"` or `"wind_reference": 99`).
 
@@ -90,11 +96,11 @@ Unknown lookup values omit the `name` field: `{"register": {"id": 769}}`.
 
 ## Boat discovery
 
-The `-boat` flag automates server discovery with local-first, cloud-fallback behavior. Define named boats in a config file, then connect by name without worrying about whether you're on the boat's local network or remote.
+The `--boat` flag automates server discovery with local-first, cloud-fallback behavior. Define named boats in a config file, then connect by name without worrying about whether you're on the boat's local network or remote.
 
 ### Config file
 
-Create `~/.config/lplex/lplexdump.conf` (HOCON format):
+Create `~/.config/lplex/lplex.conf` (HOCON format):
 
 ```hocon
 # How long to wait for mDNS discovery before giving up (default: 3s)
@@ -108,7 +114,7 @@ exclude-name = ["00A1B2C3D4E5F600"]
 
 boats {
   sv-dockwise {
-    # mDNS instance name (matches the hostname lplex registers)
+    # mDNS instance name (matches the hostname lplex-server registers)
     mdns = "inuc1"
     # cloud fallback URL (used when mDNS fails)
     cloud = "https://lplex.dockwise.app/instances/sv-dockwise"
@@ -130,35 +136,35 @@ boats {
 | `mdns-timeout` | `3s` | How long to wait for mDNS discovery before falling back to cloud |
 | `exclude-pgn` | | PGNs to exclude globally, applies to all boats. Array or single value. |
 | `exclude-name` | | CAN NAMEs (hex) to exclude globally, applies to all boats. Array or single value. |
-| `boats.<name>.mdns` | | mDNS instance name to look for (matches the hostname lplex registers) |
+| `boats.<name>.mdns` | | mDNS instance name to look for (matches the hostname lplex-server registers) |
 | `boats.<name>.cloud` | | Cloud fallback URL (full base URL including instance path) |
 | `boats.<name>.exclude-pgn` | | PGNs to exclude for this boat, additive with the global list. Array or single value. |
 | `boats.<name>.exclude-name` | | CAN NAMEs (hex) to exclude for this boat, additive with the global list. Array or single value. |
 
-Global, per-boat, and CLI exclusion flags (`-exclude-pgn`, `-exclude-name`) are all additive. For example, with the config above, connecting to `sv-dockwise` would exclude PGNs 60928, 126996, and 129029, plus CAN NAMEs `00A1B2C3D4E5F600` and `00DEADBEEFCAFE00`. Adding `-exclude-pgn 130312` on the command line would also exclude that PGN.
+Global, per-boat, and CLI exclusion flags (`--exclude-pgn`, `--exclude-name`) are all additive. For example, with the config above, connecting to `sv-dockwise` would exclude PGNs 60928, 126996, and 129029, plus CAN NAMEs `00A1B2C3D4E5F600` and `00DEADBEEFCAFE00`. Adding `--exclude-pgn 130312` on the command line would also exclude that PGN.
 
 ### Connection flow
 
-When you run `lplexdump -boat sv-dockwise`:
+When you run `lplex dump --boat sv-dockwise`:
 
 1. Try mDNS discovery for the configured instance name (configurable timeout, default 3s)
 2. If found, connect directly over the local network
 3. If mDNS fails, fall back to the configured cloud URL
 
-On reconnect (with `-reconnect`, which is on by default), the mDNS-then-cloud resolution runs again. So if you sail into WiFi range, lplexdump automatically switches back to the local connection.
+On reconnect (with `--reconnect`, which is on by default), the mDNS-then-cloud resolution runs again. So if you sail into WiFi range, lplex automatically switches back to the local connection.
 
 ### Auto-select
 
 If only one boat is defined in the config, you can pass an empty name and it auto-selects:
 
 ```bash
-lplexdump -boat ""
+lplex dump --boat ""
 ```
 
 With multiple boats, the name is required.
 
 :::note
-`-boat` is mutually exclusive with `-server` and `-file`. Either the `-boat` flag handles discovery or you specify a server directly.
+`--boat` is mutually exclusive with `--server` and `--file`. Either the `--boat` flag handles discovery or you specify a server directly.
 :::
 
 ## Journal replay
@@ -167,26 +173,26 @@ Replay a recorded journal file instead of connecting to a live server:
 
 ```bash
 # Normal speed playback
-lplexdump -file recording.lpj
+lplex dump --file recording.lpj
 
 # Fast-forward at 10x
-lplexdump -file recording.lpj -speed 10
+lplex dump --file recording.lpj --speed 10
 
 # As fast as possible (0 is a special value; default is 1.0 = real-time)
-lplexdump -file recording.lpj -speed 0
+lplex dump --file recording.lpj --speed 0
 
 # Seek to a specific time
-lplexdump -file recording.lpj -start 2026-03-06T10:00:00Z
+lplex dump --file recording.lpj --start 2026-03-06T10:00:00Z
 
 # Decode during replay
-lplexdump -file recording.lpj -decode
+lplex dump --file recording.lpj --decode
 
 # Inspect journal structure (block layout, device table, compression)
-lplexdump -file recording.lpj -inspect
+lplex inspect recording.lpj
 ```
 
 :::note
-`-file`, `-server`, and `-boat` are mutually exclusive. Journal replay does not require a running lplex server.
+`--file`, `--server`, and `--boat` are mutually exclusive. Journal replay does not require a running lplex-server instance.
 :::
 
 ## Filtering
@@ -195,27 +201,27 @@ Filters can be combined. Multiple values for the same filter type are OR'd toget
 
 ```bash
 # GPS position and SOG/COG from Garmin devices
-lplexdump -pgn 129025 -pgn 129026 -manufacturer Garmin
+lplex dump --pgn 129025 --pgn 129026 --manufacturer Garmin
 ```
 
 See [Filtering](/user-guide/filtering) for details.
 
 ## Display filter expressions
 
-The `-where` flag evaluates expressions against decoded PGN fields, letting you filter on actual data values rather than just PGN numbers or source addresses. It automatically enables `-decode` when the expression references decoded fields.
+The `--where` flag evaluates expressions against decoded PGN fields, letting you filter on actual data values rather than just PGN numbers or source addresses. It automatically enables `--decode` when the expression references decoded fields.
 
 ```bash
 # Water temperature below 280K (~7C)
-lplexdump -where "pgn == 130310 && water_temperature < 280"
+lplex dump --where "pgn == 130310 && water_temperature < 280"
 
 # Victron register by numeric ID
-lplexdump -where "pgn == 61184 && register == 60813"
+lplex dump --where "pgn == 61184 && register == 60813"
 
 # Victron register by human-readable lookup name
-lplexdump -where 'register.name == "State of Charge"'
+lplex dump --where 'register.name == "State of Charge"'
 
 # Combine with journal replay
-lplexdump -file recording.lpj -where "pgn == 130306 && wind_speed > 15"
+lplex dump --file recording.lpj --where "pgn == 130306 && wind_speed > 15"
 ```
 
 ### Expression syntax
@@ -231,11 +237,11 @@ Expressions support comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`), boo
 
 ### Interaction with other filters
 
-`-where` runs after PGN/manufacturer/instance filters. Use the existing flags for coarse filtering and `-where` for fine-grained field-value selection. If a frame's PGN has no decoder or the referenced field doesn't exist, the comparison evaluates to false (the frame is excluded).
+`--where` runs after PGN/manufacturer/instance filters. Use the existing flags for coarse filtering and `--where` for fine-grained field-value selection. If a frame's PGN has no decoder or the referenced field doesn't exist, the comparison evaluates to false (the frame is excluded).
 
 ## Change tracking
 
-Use `-changes` to suppress duplicate frames and only show meaningful state changes. Each output frame is tagged with an event type:
+Use `--changes` to suppress duplicate frames and only show meaningful state changes. Each output frame is tagged with an event type:
 
 - **`[snapshot]`** (green): first observation for this source+PGN pair
 - **`[delta N/MB]`** (yellow): significant change detected (N = diff bytes, M = full packet bytes)
@@ -243,13 +249,13 @@ Use `-changes` to suppress duplicate frames and only show meaningful state chang
 
 ```bash
 # Live stream, only significant changes
-lplexdump -server http://inuc1.local:8089 -changes -decode
+lplex dump --server http://inuc1.local:8089 --changes --decode
 
 # Journal replay with change tracking
-lplexdump -file recording.lpj -changes -decode
+lplex dump --file recording.lpj --changes --decode
 
 # JSON output includes "change" field
-lplexdump -changes -decode -json
+lplex dump --changes --decode --json
 ```
 
 "Significant" is determined by field-level tolerances declared in the PGN DSL (`tolerance=` attribute). For example, PGN 127257 (Attitude) declares `tolerance=0.005` on pitch/roll, so sub-0.005 rad sensor jitter is suppressed. PGNs without tolerances use byte-level comparison (any change is significant).
@@ -258,15 +264,15 @@ When tolerances are declared on a PGN, only the tolerance-bearing fields are che
 
 ## Piping and scripting
 
-lplexdump is designed to work well in Unix pipelines:
+lplex is designed to work well in Unix pipelines:
 
 ```bash
 # Extract just PGN numbers
-lplexdump -server http://inuc1.local:8089 | jq -r .pgn
+lplex dump --server http://inuc1.local:8089 | jq -r .pgn
 
 # Count frames per PGN over 10 seconds
-timeout 10 lplexdump -server http://inuc1.local:8089 -json | jq .pgn | sort | uniq -c | sort -rn
+timeout 10 lplex dump --server http://inuc1.local:8089 --json | jq .pgn | sort | uniq -c | sort -rn
 
 # Record decoded data to file
-lplexdump -server http://inuc1.local:8089 -decode > data.jsonl
+lplex dump --server http://inuc1.local:8089 --decode > data.jsonl
 ```

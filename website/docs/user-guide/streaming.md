@@ -12,7 +12,7 @@ lplex supports two streaming modes for receiving NMEA 2000 frames. Choose based 
 The simplest way to receive frames. Connect, get data, disconnect. No state is kept server-side.
 
 ```
-Client                          lplex
+Client                          lplex-server
   |                               |
   |--- GET /events -------------->|
   |<-- SSE: frame 1 -------------|
@@ -34,7 +34,7 @@ Client                          lplex
 
 ```bash
 # CLI
-lplexdump -server http://inuc1.local:8089
+lplex dump --server http://inuc1.local:8089
 
 # curl
 curl -N http://inuc1.local:8089/events
@@ -45,7 +45,7 @@ curl -N http://inuc1.local:8089/events
 For reliable delivery with replay. The server keeps a cursor for your session and replays missed frames on reconnect.
 
 ```
-Client                          lplex
+Client                          lplex-server
   |                               |
   |--- PUT /clients/myapp ------->|  Create session (buffer_timeout=PT5M)
   |<-- 200 {cursor: 0} ----------|
@@ -74,7 +74,7 @@ Client                          lplex
 
 ```bash
 # CLI (creates session automatically)
-lplexdump -server http://inuc1.local:8089 -buffer-timeout PT5M
+lplex dump --server http://inuc1.local:8089 --buffer-timeout PT5M
 
 # API
 curl -X PUT http://inuc1.local:8089/clients/myapp \
@@ -91,7 +91,7 @@ curl -X PUT http://inuc1.local:8089/clients/myapp/ack \
   -d '{"seq": 1500}'
 ```
 
-`lplexdump` handles ACKs automatically (every 5 seconds by default, configurable with `-ack-interval`).
+`lplex` handles ACKs automatically (every 5 seconds by default, configurable with `--ack-interval`).
 
 ### Session expiry
 

@@ -6,9 +6,9 @@ CAN bus HTTP bridge for NMEA 2000. Reads raw CAN frames from a SocketCAN interfa
 
 ```bash
 go build ./...                  # build all
-go build -o lplex ./cmd/lplex   # build server
+go build -o lplex-server ./cmd/lplex-server   # build server
 go build -o lplex-cloud ./cmd/lplex-cloud  # build cloud server
-go build -o lplexdump ./cmd/lplexdump
+go build -o lplex ./cmd/lplex
 go test ./... -v -count=1       # run tests
 golangci-lint run               # lint (must pass before pushing)
 make proto                      # regenerate protobuf (requires protoc + plugins)
@@ -24,12 +24,12 @@ git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
 ```
 
 **Release artifacts**:
-- `lplex` server: Linux amd64/arm64 only (no macOS, needs SocketCAN)
+- `lplex-server` server: Linux amd64/arm64 only (no macOS, needs SocketCAN)
 - `lplex-cloud` cloud server: Linux amd64/arm64
-- `lplexdump` client: Linux + macOS (amd64/arm64)
+- `lplex` client: Linux + macOS (amd64/arm64)
 - `.deb` package: bundles both binaries + systemd unit
 - Docker: `ghcr.io/sixfathoms/lplex` (linux/amd64 + linux/arm64)
-- Homebrew: `sixfathoms/tap/lplexdump` (client only, pushed to `sixfathoms/homebrew-tap`)
+- Homebrew: `sixfathoms/tap/lplex` (client only, pushed to `sixfathoms/homebrew-tap`)
 
 **Secrets**: `HOMEBREW_TAP_TOKEN` (fine-grained PAT with Contents read/write on `sixfathoms/homebrew-tap`)
 
@@ -37,8 +37,8 @@ git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
 
 - **Host**: `inuc1.local` (Linux x86_64)
 - **Install**: `.deb` package from GitHub Releases
-- **Service**: `lplex.service` (systemd)
-- **Config**: `/etc/lplex/lplex.conf` (HOCON) or `/etc/default/lplex` (`LPLEX_ARGS="-interface can0 -port 8089"`)
+- **Service**: `lplex-server.service` (systemd)
+- **Config**: `/etc/lplex/lplex-server.conf` (HOCON) or `/etc/default/lplex-server` (`LPLEX_ARGS="-interface can0 -port 8089"`)
 - **CAN interface**: `can0`
 - **HTTP port**: 8089
 
@@ -141,15 +141,15 @@ lplex-cloud process
 | Package | Owns |
 |---|---|
 | `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANReader`, `CANWriter`, `JournalWriter`, `JournalKeeper`, `DeviceRegistry`, `ValueStore`, `FastPacketAssembler`, `ChangeTracker`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, `EventLog`, filters, ring buffer. Embeddable by external Go services. |
-| `cmd/lplex/` | Boat server: flag parsing, HOCON config, signal handling, mDNS registration, wires broker + CAN I/O + HTTP + optional replication |
+| `cmd/lplex-server/` | Boat server: flag parsing, HOCON config, signal handling, mDNS registration, wires broker + CAN I/O + HTTP + optional replication |
 | `cmd/lplex-cloud/` | Cloud server: gRPC + HTTP servers, InstanceManager, mTLS, HOCON config |
-| `cmd/lplexdump/` | CLI client: SSE consumer with pretty-print, device table, PGN decoding (`-decode`), change tracking (`-changes`), display filter expressions (`-where`), auto-reconnect |
+| `cmd/lplex/` | Multi-subcommand CLI: `dump` (streaming/replay), `inspect` (journal inspection), `devices`, `values`, `send`, `request`, `switches`. Uses cobra. Pretty-print, device table, PGN decoding (`--decode`), change tracking (`--changes`), display filter expressions (`--where`), auto-reconnect. |
 | `cmd/pgngen/` | Code generator: reads `.pgn` DSL files, outputs Go structs/decoders/encoders, Protobuf, JSON Schema |
 | `lplexc/` | Public Go client library: Subscribe, Devices, Send, Session, mDNS discovery |
-| `filter/` | BPF-inspired display filter expressions for `lplexdump -where`. Lexer, recursive-descent parser, AST, and evaluator with reflection-based field access on decoded PGN structs. Supports header fields (`pgn`, `src`, `dst`, `prio`), decoded struct fields by JSON tag, and lookup sub-accessors (`register.name`). |
+| `filter/` | BPF-inspired display filter expressions for `lplex dump --where`. Lexer, recursive-descent parser, AST, and evaluator with reflection-based field access on decoded PGN structs. Supports header fields (`pgn`, `src`, `dst`, `prio`), decoded struct fields by JSON tag, and lookup sub-accessors (`register.name`). |
 | `canbus/` | Public CAN ID parsing (`CANHeader`, `ParseCANID`, `BuildCANID`) and ISO NAME decoding |
 | `journal/` | Public journal format: `Device`, `Reader`, `CompressionType`, block constants, length-prefixed string helpers |
-| `pgn/` | Generated Go types for NMEA 2000 PGNs: structs, `Decode*`/`Encode` methods, `Registry` map (~123 entries, includes `PGNInfo` with `FastPacket`, `Interval`, `OnDemand`, `Draft`, `Tolerances` metadata). Name-only PGNs have `Decode: nil` but still carry description and metadata. Generated from `pgn/defs/*.pgn` via `go generate`. Generated output files (`pgn_gen.go`, `helpers_gen.go`, `proto/pgn.proto`, `schema.json`) are gitignored and must be regenerated after DSL changes. Hand-written helpers live alongside generated code (e.g. `victron.go` for register name lookup, `gnss_sats.go` for variable-length PGN 129540). AIS PGNs with field definitions: 129038 (Class A Position), 129039 (Class B Position), 129041 (AtoN), 129793 (UTC/Date), 129809 (Static Part A), 129810 (Static Part B). Table-driven packet tests in `packets_test.go` verify decode/encode against reference hex data (capture from `lplexdump -decode -json`). |
+| `pgn/` | Generated Go types for NMEA 2000 PGNs: structs, `Decode*`/`Encode` methods, `Registry` map (~123 entries, includes `PGNInfo` with `FastPacket`, `Interval`, `OnDemand`, `Draft`, `Tolerances` metadata). Name-only PGNs have `Decode: nil` but still carry description and metadata. Generated from `pgn/defs/*.pgn` via `go generate`. Generated output files (`pgn_gen.go`, `helpers_gen.go`, `proto/pgn.proto`, `schema.json`) are gitignored and must be regenerated after DSL changes. Hand-written helpers live alongside generated code (e.g. `victron.go` for register name lookup, `gnss_sats.go` for variable-length PGN 129540). AIS PGNs with field definitions: 129038 (Class A Position), 129039 (Class B Position), 129041 (AtoN), 129793 (UTC/Date), 129809 (Static Part A), 129810 (Static Part B). Table-driven packet tests in `packets_test.go` verify decode/encode against reference hex data (capture from `lplex dump --decode --json`). |
 | `pgngen/` | PGN DSL parser and code generators (Go, Protobuf, JSON Schema). AST, bit-level field layout, scaling, enums, lookup tables, value-based dispatch for proprietary PGNs, `repeat=N` for repeated fields (generates slices or maps), field-level tolerances for change tracking (`tolerance=`), PGN-level metadata (`fast_packet`, `interval=`, `on_demand`, `draft`). Supports name-only PGNs (no braces = no field layout, `Decode: nil`) and unknown fields (`?` marker for observed but undocumented data). |
 | `proto/replication/v1/` | Protobuf + gRPC definitions for replication protocol |
 | `website/` | Docusaurus docs site, deployed to GitHub Pages. See [`website/CLAUDE.md`](website/CLAUDE.md) for structure and sync rules. |
@@ -187,7 +187,7 @@ Two connection modes, ephemeral is the default:
 `GET /events` with optional query param filters (`?pgn=129025&manufacturer=Garmin`). No session, no replay, no ACK.
 
 ```
-lplexdump -server http://inuc1.local:8089
+lplex dump --server http://inuc1.local:8089
 ```
 
 ### Buffered
@@ -195,16 +195,16 @@ lplexdump -server http://inuc1.local:8089
 `PUT /clients/{id}` with `buffer_timeout`, then `GET /clients/{id}/events`, and periodic `PUT /clients/{id}/ack`.
 
 ```
-lplexdump -server http://inuc1.local:8089 -buffer-timeout PT5M
+lplex dump --server http://inuc1.local:8089 --buffer-timeout PT5M
 ```
 
 ### PGN Decoding
 
-`-decode` uses the `pgn.Registry` to decode known PGNs into human-readable field values. In terminal mode, decoded JSON appears on a continuation line below each frame. In JSON mode (`-json` or piped stdout), a `"decoded"` object is added to each frame. Works in all modes (ephemeral, buffered, journal replay).
+`--decode` uses the `pgn.Registry` to decode known PGNs into human-readable field values. In terminal mode, decoded JSON appears on a continuation line below each frame. In JSON mode (`--json` or piped stdout), a `"decoded"` object is added to each frame. Works in all modes (ephemeral, buffered, journal replay).
 
 ```
-lplexdump -decode
-lplexdump -file recording.lpj -decode
+lplex dump --decode
+lplex dump --file recording.lpj --decode
 ```
 
 ## Cloud Replication
@@ -220,7 +220,7 @@ Key design decisions:
 
 ## Journal Retention and Archival
 
-Both `lplex` and `lplex-cloud` support automatic journal cleanup and archival via `JournalKeeper`. Configured with `-journal-retention-*` and `-journal-archive-*` flags (or HOCON under `journal.retention.*` / `journal.archive.*`).
+Both `lplex-server` and `lplex-cloud` support automatic journal cleanup and archival via `JournalKeeper`. Configured with `-journal-retention-*` and `-journal-archive-*` flags (or HOCON under `journal.retention.*` / `journal.archive.*`).
 
 **Retention**: three knobs (max-age, min-keep, max-size) evaluated per directory. Priority: max-size overrides min-keep overrides max-age. Files sorted oldest-first; once a file is kept, all younger files are kept too. When `max-size` and archival are both configured, a soft/hard threshold system applies:
 
@@ -264,19 +264,19 @@ The documentation site lives in `website/` (Docusaurus). See [`website/CLAUDE.md
 - AIS string fields use `@` (0x40) or space (0x20) padding per the ITU spec; use the `trim="@ "` DSL attribute to right-trim these at decode time (see `pgn/defs/ais.pgn`)
 - Sequence numbers start at 1 (0 means "never ACK'd")
 - Protobuf regeneration: `make proto` (requires `protoc`, `protoc-gen-go`, `protoc-gen-go-grpc`)
-- PGN packet tests: add reference test vectors to `pgn/packets_test.go` (hex from `lplexdump -decode -json` → expected struct). Framework auto-verifies decode and encode round-trip.
+- PGN packet tests: add reference test vectors to `pgn/packets_test.go` (hex from `lplex dump --decode --json` → expected struct). Framework auto-verifies decode and encode round-trip.
 
 ## Configuration
 
-lplex supports HOCON config files (`-config path` or auto-discovered from `./lplex.conf`, `/etc/lplex/lplex.conf`). CLI flags always override config file values (detected via `flag.Visit()`). Config values are applied through `flag.Set()` so they share the same parsing path as CLI flags. The mapping from HOCON paths to flag names lives in `configToFlag` in `cmd/lplex/config.go`.
+lplex-server supports HOCON config files (`-config path` or auto-discovered from `./lplex-server.conf`, `/etc/lplex/lplex-server.conf`, with backward-compat fallback to `./lplex.conf`, `/etc/lplex/lplex.conf`). CLI flags always override config file values (detected via `flag.Visit()`). Config values are applied through `flag.Set()` so they share the same parsing path as CLI flags. The mapping from HOCON paths to flag names lives in `configToFlag` in `cmd/lplex-server/config.go`.
 
 lplex-cloud uses the same pattern with `lplex-cloud.conf` (auto-discovered from `./lplex-cloud.conf`, `/etc/lplex-cloud/lplex-cloud.conf`). Mapping in `cmd/lplex-cloud/config.go`.
 
-lplex has send policy flags to gate the `/send` and `/query` endpoints: `-send-enabled` (default false) and `-send-rules` (semicolon-separated rule strings). HOCON paths: `send.enabled`, `send.rules` (string or object array). CLI uses DSL syntax: `[!] [pgn:<spec>] [name:<hex>,...]` where `<spec>` supports values, comma-separated lists, and ranges (e.g. `pgn:59904,126208`, `pgn:65280-65535`). `!` prefix = deny. Omit pgn/name for wildcard. HOCON config also supports native object rules: `{ deny = true/false, pgn = "<spec>", name = "<hex>" or ["<hex>", ...] }`. Both string and object forms can be mixed in the same array. Rules are evaluated top-to-bottom, first match wins. No matching rule = deny. Empty rules + enabled = allow all. These do not affect the broker's internal ISO requests for device discovery.
+lplex-server has send policy flags to gate the `/send` and `/query` endpoints: `-send-enabled` (default false) and `-send-rules` (semicolon-separated rule strings). HOCON paths: `send.enabled`, `send.rules` (string or object array). CLI uses DSL syntax: `[!] [pgn:<spec>] [name:<hex>,...]` where `<spec>` supports values, comma-separated lists, and ranges (e.g. `pgn:59904,126208`, `pgn:65280-65535`). `!` prefix = deny. Omit pgn/name for wildcard. HOCON config also supports native object rules: `{ deny = true/false, pgn = "<spec>", name = "<hex>" or ["<hex>", ...] }`. Both string and object forms can be mixed in the same array. Rules are evaluated top-to-bottom, first match wins. No matching rule = deny. Empty rules + enabled = allow all. These do not affect the broker's internal ISO requests for device discovery.
 
 Both binaries support `-device-idle-timeout` (default `5m`, `0` = disabled) to remove devices that haven't been seen within the timeout. HOCON path: `device.idle-timeout`. When a device is evicted (either by idle expiry or by NAME dedup on address change), its ValueStore entries are cleaned up and a `device_removed` event is sent to subscribers.
 
-Both binaries share the same retention/archive flags: `-journal-retention-max-age`, `-journal-retention-min-keep`, `-journal-retention-max-size`, `-journal-retention-soft-pct`, `-journal-retention-overflow-policy`, `-journal-archive-command`, `-journal-archive-trigger`. HOCON paths: `journal.retention.max-age`, `journal.retention.min-keep`, `journal.retention.max-size`, `journal.retention.soft-pct`, `journal.retention.overflow-policy`, `journal.archive.command`, `journal.archive.trigger`. See [`lplex.conf.example`](lplex.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example).
+Both binaries share the same retention/archive flags: `-journal-retention-max-age`, `-journal-retention-min-keep`, `-journal-retention-max-size`, `-journal-retention-soft-pct`, `-journal-retention-overflow-policy`, `-journal-archive-command`, `-journal-archive-trigger`. HOCON paths: `journal.retention.max-age`, `journal.retention.min-keep`, `journal.retention.max-size`, `journal.retention.soft-pct`, `journal.retention.overflow-policy`, `journal.archive.command`, `journal.archive.trigger`. See [`lplex-server.conf.example`](lplex-server.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example).
 
 ## Dependencies
 
@@ -286,3 +286,4 @@ Both binaries share the same retention/archive flags: `-journal-retention-max-ag
 - `github.com/gurkankaymak/hocon` - HOCON config file parser
 - `google.golang.org/grpc` - gRPC framework for replication protocol
 - `google.golang.org/protobuf` - Protocol Buffers runtime
+- `github.com/spf13/cobra` - CLI framework for lplex subcommands

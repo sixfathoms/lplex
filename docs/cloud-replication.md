@@ -7,7 +7,7 @@ lplex supports replicating CAN bus data from a boat to a cloud instance over gRP
 ```
 BOAT                                         CLOUD (lplex-cloud)
 
-lplex server                                 gRPC server (:9443, mTLS)
+lplex-server                                 gRPC server (:9443, mTLS)
   Broker ─── Consumer                          ReplicationServer
        |         |                               |
        |    ReplicationClient ──── gRPC ────── Handshake (unary)
@@ -26,7 +26,7 @@ lplex server                                 gRPC server (:9443, mTLS)
 ```
 
 Two binaries:
-- **`lplex`** (boat): runs `ReplicationClient` alongside the existing broker when replication is configured
+- **`lplex-server`** (boat): runs `ReplicationClient` alongside the existing broker when replication is configured
 - **`lplex-cloud`** (cloud): runs `ReplicationServer` (gRPC) + HTTP API for web clients
 
 ## Protocol
@@ -188,7 +188,7 @@ Uses `lastLiveSeq` (not `inst.Cursor`) because the cursor only advances on conti
 
 ### Configuration
 
-**Boat (`lplex`):**
+**Boat (`lplex-server`):**
 
 | Flag | HOCON | Default | Description |
 |---|---|---|---|
@@ -206,7 +206,7 @@ Uses `lastLiveSeq` (not `inst.Cursor`) because the cursor only advances on conti
 
 ## Configuration
 
-### Boat (`lplex`)
+### Boat (`lplex-server`)
 
 CLI flags:
 | Flag | Description |
@@ -293,7 +293,7 @@ data-dir = "/data/lplex"
 
 ### Boat Status Endpoint
 
-When replication is enabled, `lplex` exposes `GET /replication/status`:
+When replication is enabled, `lplex-server` exposes `GET /replication/status`:
 
 ```json
 {

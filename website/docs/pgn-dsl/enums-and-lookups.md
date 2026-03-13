@@ -130,7 +130,7 @@ pgn 61184 "Victron Battery Register" {
 
 The Go struct field stays `uint16` (no new type), but gains a `RegisterName() string` helper method and a `LookupFields()` method for display code.
 
-Display tools like `lplexdump` use `LookupFields()` to wrap lookup fields as `{"id": <raw>, "name": "..."}` objects in JSON output. Unknown values omit the `name` field.
+Display tools like `lplex` use `LookupFields()` to wrap lookup fields as `{"id": <raw>, "name": "..."}` objects in JSON output. Unknown values omit the `name` field.
 
 ### When to use lookups
 

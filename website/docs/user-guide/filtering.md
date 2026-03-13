@@ -5,7 +5,7 @@ title: Filtering
 
 # Filtering
 
-lplex supports filtering frames by PGN, manufacturer, device instance, and CAN NAME. Filters can be applied at the API level (query parameters), in buffered sessions, and in lplexdump.
+lplex supports filtering frames by PGN, manufacturer, device instance, and CAN NAME. Filters can be applied at the API level (query parameters), in buffered sessions, and in the lplex CLI.
 
 ## Filter types
 
@@ -20,35 +20,35 @@ lplex supports filtering frames by PGN, manufacturer, device instance, and CAN N
 
 ## Filter logic
 
-- **Multiple values of the same type** are OR'd: `-pgn 129025 -pgn 129026` matches either PGN.
-- **Different filter types** are AND'd: `-pgn 129025 -manufacturer Garmin` matches PGN 129025 frames only from Garmin devices.
+- **Multiple values of the same type** are OR'd: `--pgn 129025 --pgn 129026` matches either PGN.
+- **Different filter types** are AND'd: `--pgn 129025 --manufacturer Garmin` matches PGN 129025 frames only from Garmin devices.
 
 ```
 (pgn=129025 OR pgn=129026) AND (manufacturer=Garmin)
 ```
 
-## lplexdump filters
+## lplex filters
 
 Use repeatable flags:
 
 ```bash
 # Wind and position data from Garmin
-lplexdump -pgn 129025 -pgn 130306 -manufacturer Garmin
+lplex dump --pgn 129025 --pgn 130306 --manufacturer Garmin
 
 # Everything except address claims and product info
-lplexdump -exclude-pgn 60928 -exclude-pgn 126996
+lplex dump --exclude-pgn 60928 --exclude-pgn 126996
 
 # All data from device instance 0
-lplexdump -instance 0
+lplex dump --instance 0
 
 # Specific device by NAME
-lplexdump -name 0x00A1B2C3D4E5F600
+lplex dump --name 0x00A1B2C3D4E5F600
 
 # Exclude a specific device by NAME
-lplexdump -exclude-name 00A1B2C3D4E5F600
+lplex dump --exclude-name 00A1B2C3D4E5F600
 ```
 
-Exclude filters (`-exclude-pgn`, `-exclude-name`) can also be set in the [config file](./lplexdump#config-file) at both the global and per-boat level. Config, per-boat, and CLI exclusions are all additive.
+Exclude filters (`--exclude-pgn`, `--exclude-name`) can also be set in the [config file](./lplex#config-file) at both the global and per-boat level. Config, per-boat, and CLI exclusions are all additive.
 
 ## HTTP API filters
 
@@ -117,20 +117,20 @@ All fields are optional. An empty filter (or no filter) matches all frames. `pgn
 
 ## Display filter expressions
 
-For field-level filtering on decoded PGN values, use lplexdump's `-where` flag:
+For field-level filtering on decoded PGN values, use lplex's `--where` flag:
 
 ```bash
 # Only frames where water temperature is below 280K
-lplexdump -where "pgn == 130310 && water_temperature < 280"
+lplex dump --where "pgn == 130310 && water_temperature < 280"
 
 # Filter by lookup name
-lplexdump -where 'register.name == "State of Charge"'
+lplex dump --where 'register.name == "State of Charge"'
 ```
 
-`-where` is a client-side display filter that evaluates after all other filters (PGN, manufacturer, etc.) have been applied. It automatically enables `-decode`. See [lplexdump: Display filter expressions](/user-guide/lplexdump#display-filter-expressions) for the full syntax.
+`--where` is a client-side display filter that evaluates after all other filters (PGN, manufacturer, etc.) have been applied. It automatically enables `--decode`. See [lplex: Display filter expressions](/user-guide/lplex#display-filter-expressions) for the full syntax.
 
 ## Where filtering happens
 
 - **Server-side**: filters are applied on the server (query params for ephemeral, session filter for buffered). This reduces bandwidth since excluded frames are never sent.
-- **Client-side**: lplexdump also applies PGN include/exclude filters locally before displaying frames. This acts as a safety net when the server is an older version that doesn't support all filter parameters. The `-where` display filter runs after client-side PGN filters.
+- **Client-side**: lplex also applies PGN include/exclude filters locally before displaying frames. This acts as a safety net when the server is an older version that doesn't support all filter parameters. The `--where` display filter runs after client-side PGN filters.
 - **Journal replay**: all filtering is client-side since there is no server involved.

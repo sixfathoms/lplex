@@ -110,7 +110,7 @@
  - finalize: write block index after last block flush (compressed mode only)
  - Track file byte offset for block index
 
- 5. cmd/lplex/main.go
+ 5. cmd/lplex-server/main.go
 
  - Add -journal-compression flag (string: "none", "zstd"; default "zstd")
 
@@ -143,6 +143,6 @@
  ls -la /datalog/lplex/journal/
 
  # replay compressed file
- lplexdump -file /datalog/lplex/journal/<new-file>.lpj
+ lplex dump --file /datalog/lplex/journal/<new-file>.lpj
 
  Verify: device table populates, frames decode correctly, seeking works.

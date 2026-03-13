@@ -93,12 +93,12 @@ The `scale=` attribute turns `int16` fields into `float64` in the struct.
 
 Add a test entry to the `packetTests` table in `pgn/packets_test.go`. This is the standard way to verify PGN decode/encode — each entry specifies hex input, expected decoded values, and gets automatic round-trip verification.
 
-### From lplexdump output (recommended)
+### From lplex output (recommended)
 
-The easiest way to create a test case is to capture real data from `lplexdump -decode -json`:
+The easiest way to create a test case is to capture real data from `lplex dump --decode --json`:
 
 ```bash
-lplexdump -server http://inuc1.local:8089 -pgn 127245 -decode -json
+lplex dump --server http://inuc1.local:8089 --pgn 127245 --decode --json
 ```
 
 ```json
@@ -110,7 +110,7 @@ Copy the `data` field as your `hex`, and use the `decoded` fields to build your 
 ```go
 // in pgn/packets_test.go, add to packetTests slice:
 {
-    desc: "rudder 10° starboard from lplexdump",
+    desc: "rudder 10° starboard from lplex",
     pgn:  127245,
     hex:  "0001c50600000000",
     want: Rudder{
@@ -156,12 +156,12 @@ Set `noRoundTrip: true` for PGNs where encoding is lossy or not implemented.
 go test ./pgn/... -v -count=1 -run TestPacket
 ```
 
-## 7. Verify lplexdump decoding
+## 7. Verify lplex decoding
 
-With the new PGN registered, `lplexdump -decode` will automatically decode PGN 127245:
+With the new PGN registered, `lplex dump --decode` will automatically decode PGN 127245:
 
 ```bash
-lplexdump -server http://inuc1.local:8089 -pgn 127245 -decode
+lplex dump --server http://inuc1.local:8089 --pgn 127245 --decode
 ```
 
 ```
@@ -176,7 +176,7 @@ lplexdump -server http://inuc1.local:8089 -pgn 127245 -decode
 - [ ] Run `go generate ./pgn/...`
 - [ ] Verify generated struct and decode function
 - [ ] Verify `PGNInfo` metadata in registry (check `FastPacket`, `Interval`, `OnDemand`)
-- [ ] Add packet test entry to `pgn/packets_test.go` (capture hex from `lplexdump -decode -json`)
+- [ ] Add packet test entry to `pgn/packets_test.go` (capture hex from `lplex dump --decode --json`)
 - [ ] Run tests
 - [ ] Run `golangci-lint run`
-- [ ] Test with `lplexdump -decode` against real or simulated data
+- [ ] Test with `lplex dump --decode` against real or simulated data

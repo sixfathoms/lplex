@@ -10,7 +10,7 @@ lplex replicates data from boat to cloud over gRPC with mTLS authentication. The
 ## Connection flow
 
 ```
-Boat (lplex)                              Cloud (lplex-cloud)
+Boat (lplex-server)                       Cloud (lplex-cloud)
      |                                           |
      |--- Handshake (instance_id, head_seq) ---->|  Verify cert CN matches instance_id
      |<-- HandshakeResponse (cursor, holes) -----|  Load/create InstanceState
@@ -82,16 +82,16 @@ When all holes are filled, backfill completes and the stream closes gracefully.
 
 ## Boat-side configuration
 
-Add to your `lplex.conf`:
+Add to your `lplex-server.conf`:
 
 ```hocon
 replication {
   target = "lplex.example.com:9443"
   instance-id = "boat-001"
   tls {
-    cert = "/etc/lplex/boat-001.crt"
-    key = "/etc/lplex/boat-001.key"
-    ca = "/etc/lplex/ca.crt"
+    cert = "/etc/lplex-server/boat-001.crt"
+    key = "/etc/lplex-server/boat-001.key"
+    ca = "/etc/lplex-server/ca.crt"
   }
 }
 ```
@@ -99,12 +99,12 @@ replication {
 Or via CLI flags:
 
 ```bash
-lplex -interface can0 \
+lplex-server -interface can0 \
   -replication-target lplex.example.com:9443 \
   -replication-instance-id boat-001 \
-  -replication-tls-cert /etc/lplex/boat-001.crt \
-  -replication-tls-key /etc/lplex/boat-001.key \
-  -replication-tls-ca /etc/lplex/ca.crt
+  -replication-tls-cert /etc/lplex-server/boat-001.crt \
+  -replication-tls-key /etc/lplex-server/boat-001.key \
+  -replication-tls-ca /etc/lplex-server/ca.crt
 ```
 
 ## Monitoring replication
@@ -177,7 +177,7 @@ The cloud cursor only advances on *continuous* frames and stays stuck when backf
 
 ### Tuning
 
-**Boat-side** (`lplex`):
+**Boat-side** (`lplex-server`):
 
 | Flag | HOCON | Default | Description |
 |---|---|---|---|

@@ -275,7 +275,7 @@ These are per-field attributes (placed after the `:bits` specifier). For PGN-lev
 
 ### Tolerance for change tracking
 
-The `tolerance=` attribute sets a threshold for the `ChangeTracker` (used by `lplexdump -changes`). When a PGN has any fields with tolerances, only those fields are checked for significance. All other fields (SID counters, padding, etc.) are ignored. A field change that stays within its tolerance is suppressed; one that exceeds it triggers a delta event.
+The `tolerance=` attribute sets a threshold for the `ChangeTracker` (used by `lplex dump --changes`). When a PGN has any fields with tolerances, only those fields are checked for significance. All other fields (SID counters, padding, etc.) are ignored. A field change that stays within its tolerance is suppressed; one that exceeds it triggers a delta event.
 
 ```
 pgn 127257 "Attitude" interval=1000ms {

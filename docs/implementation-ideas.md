@@ -66,13 +66,13 @@ A curated list of potential features and improvements for lplex, organized by ca
 
 ## Developer Experience
 
-25. **Journal inspection CLI** (`lplexjournal`) — Standalone tool to inspect `.lpj` files: dump block metadata, list devices, search for specific PGNs/sequences, verify CRC integrity, show compression stats. (lplexdump has `-inspect` mode, but a dedicated tool could do more.)
+25. **Journal inspection CLI** (`lplexjournal`) — Standalone tool to inspect `.lpj` files: dump block metadata, list devices, search for specific PGNs/sequences, verify CRC integrity, show compression stats. (lplex has `inspect` subcommand, but a dedicated tool could do more.)
 
-26. **Replay mode** — `lplex --replay journal.lpj` to replay a journal file through the broker at real-time or accelerated speed, re-serving it to SSE clients. Great for demos and debugging.
+26. **Replay mode** — `lplex-server --replay journal.lpj` to replay a journal file through the broker at real-time or accelerated speed, re-serving it to SSE clients. Great for demos and debugging.
 
 27. **Go client library improvements** — Add auto-reconnect, connection pooling, and a higher-level `Watch(pgn)` API to the `lplexc` package that returns a channel of typed values.
 
-28. **Integration test harness** — End-to-end test that spins up boat `lplex` + cloud `lplex-cloud`, replicates data, and verifies round-trip through SSE on the cloud side.
+28. **Integration test harness** — End-to-end test that spins up boat `lplex-server` + cloud `lplex-cloud`, replicates data, and verifies round-trip through SSE on the cloud side.
 
 ## API Enhancements
 

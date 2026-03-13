@@ -1,3 +1,3 @@
 #!/bin/sh
 systemctl daemon-reload
-systemctl enable lplex || true
+systemctl enable lplex-server || true

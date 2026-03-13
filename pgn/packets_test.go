@@ -15,7 +15,7 @@ import (
 // Fields:
 //   - desc:    human-readable description (shown on failure)
 //   - pgn:     the PGN number
-//   - hex:     the raw packet data as a hex string (as output by lplexdump)
+//   - hex:     the raw packet data as a hex string (as output by lplex)
 //   - want:    the expected decoded struct value
 //   - epsilon: tolerance for floating-point comparisons (0 means use default 1e-6)
 //   - noRoundTrip: set true to skip encode-back-to-hex verification
@@ -34,7 +34,7 @@ type packetTest struct {
 // hand-crafted packet with known expected values.
 //
 // Adding new entries:
-//  1. Capture hex data from lplexdump (the "data" field in JSON output)
+//  1. Capture hex data from lplex (the "data" field in JSON output)
 //  2. Create the expected struct with the decoded values
 //  3. Add a descriptive string explaining what the packet represents
 var packetTests = []packetTest{

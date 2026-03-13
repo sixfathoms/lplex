@@ -9,21 +9,21 @@ This guide gets you from zero to seeing live NMEA 2000 data in a few minutes.
 
 ## Prerequisites
 
-- A running `lplex` server connected to a CAN bus (see [Installation](/getting-started/installation))
-- `lplexdump` installed on your machine
+- A running `lplex-server` connected to a CAN bus (see [Installation](/getting-started/installation))
+- `lplex` installed on your machine
 
 ## 1. Connect and stream
 
-If lplex is running on your local network with mDNS enabled, lplexdump will discover it automatically:
+If lplex is running on your local network with mDNS enabled, lplex will discover it automatically:
 
 ```bash
-lplexdump
+lplex dump
 ```
 
 Or specify the server address directly:
 
 ```bash
-lplexdump -server http://inuc1.local:8089
+lplex dump --server http://inuc1.local:8089
 ```
 
 You should see frames scrolling:
@@ -38,15 +38,15 @@ You should see frames scrolling:
 Only see position reports (PGN 129025) and wind data (PGN 130306):
 
 ```bash
-lplexdump -server http://inuc1.local:8089 -pgn 129025 -pgn 130306
+lplex dump --server http://inuc1.local:8089 --pgn 129025 --pgn 130306
 ```
 
 ## 3. Decode PGN fields
 
-Add `-decode` to see human-readable field values:
+Add `--decode` to see human-readable field values:
 
 ```bash
-lplexdump -server http://inuc1.local:8089 -decode
+lplex dump --server http://inuc1.local:8089 --decode
 ```
 
 Output now includes decoded fields below each frame:
@@ -96,23 +96,23 @@ curl http://inuc1.local:8089/values/decoded | jq
 For reliable delivery with replay on reconnect:
 
 ```bash
-lplexdump -server http://inuc1.local:8089 -buffer-timeout PT5M
+lplex dump --server http://inuc1.local:8089 --buffer-timeout PT5M
 ```
 
-This creates a server-side session that buffers up to 5 minutes of data. If lplexdump disconnects and reconnects within that window, it replays missed frames.
+This creates a server-side session that buffers up to 5 minutes of data. If lplex disconnects and reconnects within that window, it replays missed frames.
 
 ## 7. JSON output
 
 Pipe to other tools with JSON output (auto-enabled when stdout is not a terminal):
 
 ```bash
-lplexdump -server http://inuc1.local:8089 -decode | jq .pgn
+lplex dump --server http://inuc1.local:8089 --decode | jq .pgn
 ```
 
 Or force JSON mode explicitly:
 
 ```bash
-lplexdump -server http://inuc1.local:8089 -json -decode
+lplex dump --server http://inuc1.local:8089 --json --decode
 ```
 
 ## What's next

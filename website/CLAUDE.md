@@ -19,7 +19,7 @@ Docs live in `website/docs/` as Markdown. Sidebar order is defined in `sidebars.
 |---|---|---|
 | Intro | `docs/intro.md` | What lplex is, high-level overview |
 | Getting Started | `docs/getting-started/` | Installation, configuration, quick start |
-| User Guide | `docs/user-guide/` | lplexdump, streaming, filtering, journaling, retention, devices, best practices |
+| User Guide | `docs/user-guide/` | lplex CLI, streaming, filtering, journaling, retention, devices, best practices |
 | Integration | `docs/integration/` | HTTP API, Go client, TypeScript client, embedding |
 | Cloud | `docs/cloud/` | Cloud overview, self-hosted, replication protocol, Dockwise |
 | PGN DSL | `docs/pgn-dsl/` | DSL overview, syntax, enums/lookups, dispatch, repeated fields, tutorial |
@@ -36,7 +36,7 @@ Docs live in `website/docs/` as Markdown. Sidebar order is defined in `sidebars.
 - **Go client library (`lplexc/`) changes**: update `docs/integration/go-client.md`
 - **PGN DSL syntax changes** (new attributes, changed parsing): update the relevant file in `docs/pgn-dsl/`
 - **Journal format changes**: update `docs/contributing/journal-format.md`
-- **New features in lplexdump**: update `docs/user-guide/lplexdump.md`
+- **New features in lplex CLI**: update `docs/user-guide/lplex.md`
 - **Streaming/filtering behavior changes**: update `docs/user-guide/streaming.md` or `docs/user-guide/filtering.md`
 - **Journaling or retention changes**: update `docs/user-guide/journaling.md` or `docs/user-guide/retention.md`
 - **Device discovery changes**: update `docs/user-guide/devices.md`

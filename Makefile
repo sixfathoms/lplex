@@ -11,9 +11,9 @@ generate:
 	go generate ./pgn/...
 
 build: generate
-	go build -o lplex ./cmd/lplex
+	go build -o lplex-server ./cmd/lplex-server
 	go build -o lplex-cloud ./cmd/lplex-cloud
-	go build -o lplexdump ./cmd/lplexdump
+	go build -o lplex ./cmd/lplex
 
 test: generate
 	go test ./... -v -count=1
@@ -22,6 +22,6 @@ lint: generate
 	golangci-lint run
 
 clean:
-	rm -f lplex lplex-cloud lplexdump
+	rm -f lplex-server lplex-cloud lplex
 	rm -f pgn/pgn_gen.go pgn/helpers_gen.go pgn/schema.json
 	rm -rf pgn/proto/

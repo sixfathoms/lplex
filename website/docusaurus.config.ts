@@ -85,7 +85,7 @@ const config: Config = {
           items: [
             {label: 'Introduction', to: '/'},
             {label: 'Getting Started', to: '/getting-started/installation'},
-            {label: 'User Guide', to: '/user-guide/lplexdump'},
+            {label: 'User Guide', to: '/user-guide/lplex'},
           ],
         },
         {

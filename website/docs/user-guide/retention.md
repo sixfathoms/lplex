@@ -5,7 +5,7 @@ title: Retention & Archival
 
 # Retention & Archival
 
-The `JournalKeeper` manages automatic cleanup and archival of journal files. It runs as a background goroutine in both `lplex` and `lplex-cloud`.
+The `JournalKeeper` manages automatic cleanup and archival of journal files. It runs as a background goroutine in both `lplex-server` and `lplex-cloud`.
 
 ## Retention policy
 

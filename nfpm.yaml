@@ -9,14 +9,14 @@ homepage: https://github.com/sixfathoms/lplex
 license: MIT
 
 contents:
+  - src: dist/lplex-server
+    dst: /usr/bin/lplex-server
   - src: dist/lplex
     dst: /usr/bin/lplex
-  - src: dist/lplexdump
-    dst: /usr/bin/lplexdump
-  - src: packaging/lplex.service
-    dst: /lib/systemd/system/lplex.service
-  - src: packaging/lplex.default
-    dst: /etc/default/lplex
+  - src: packaging/lplex-server.service
+    dst: /lib/systemd/system/lplex-server.service
+  - src: packaging/lplex-server.default
+    dst: /etc/default/lplex-server
     type: config
 
 scripts:
