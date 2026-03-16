@@ -2,6 +2,21 @@
 
 CAN bus HTTP bridge for NMEA 2000. Reads raw CAN frames from a SocketCAN interface, reassembles fast-packets, tracks device discovery, and streams frames to clients over SSE with session management, filtering, and replay. Supports cloud replication over gRPC for remote access to boat data.
 
+## Prerequisites
+
+Requires Go 1.25+.
+
+```bash
+# macOS
+brew install go
+
+# Linux (Debian/Ubuntu) — check that the repo version is 1.25+, otherwise use https://go.dev/dl/
+sudo apt install -y golang-go
+
+# Other / manual
+# Download from https://go.dev/dl/
+```
+
 ## Build & Test
 
 ```bash
