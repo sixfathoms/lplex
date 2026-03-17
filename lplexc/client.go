@@ -2,6 +2,7 @@ package lplexc
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -209,7 +210,7 @@ func (c *Client) RequestPGN(ctx context.Context, pgn uint32, dst uint8) (*Frame,
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/query", strings.NewReader(string(jsonBody)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/query", bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, err
 	}
