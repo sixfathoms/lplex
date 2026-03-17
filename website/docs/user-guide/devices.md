@@ -49,7 +49,7 @@ virtual-device {
 The virtual device:
 
 - **Auto-selects** a source address (starting at 252, counting down to avoid real hardware)
-- **Claims** the address via PGN 60928, with a 250ms holdoff per the NMEA 2000 spec
+- **Claims** the address via PGN 60928, waiting at least 250ms (minimum holdoff required by the NMEA 2000 / ISO 11783-5 spec) before using the claimed address
 - **Resolves conflicts** automatically (lower NAME wins; if we lose, we pick a new address)
 - **Responds** to ISO requests for address claim (PGN 60928) and product info (PGN 126996)
 - **Heartbeats** periodically, re-broadcasting address claims (default every 60s) and product info (default every 5m) to keep the bus aware of our presence
