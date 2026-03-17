@@ -113,7 +113,7 @@ func (c *Client) Send(ctx context.Context, pgn uint32, src, dst, prio uint8, dat
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/send", strings.NewReader(string(jsonBody)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/send", bytes.NewReader(jsonBody))
 	if err != nil {
 		return err
 	}
