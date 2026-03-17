@@ -52,7 +52,7 @@ var (
 	switchSetInstance int
 	switchSetDst     int
 	switchSetSrc     uint8
-	switchSetPrio    uint8
+	switchSetPriority    uint8
 )
 
 func init() {
@@ -64,7 +64,7 @@ func init() {
 	sf.IntVar(&switchSetInstance, "instance", -1, "switch bank instance (required)")
 	sf.IntVar(&switchSetDst, "dst", -1, "destination device source address (-1 = auto-detect)")
 	sf.Uint8Var(&switchSetSrc, "src", 0, "source address")
-	sf.Uint8Var(&switchSetPrio, "prio", 3, "priority (0-7, default 3)")
+	sf.Uint8Var(&switchSetPriority, "prio", 3, "priority (0-7, default 3)")
 	_ = switchesSetCmd.MarkFlagRequired("instance")
 
 	switchesCmd.AddCommand(switchesSetCmd)
