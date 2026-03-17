@@ -21,7 +21,7 @@ This is transparent. You don't need to configure anything.
 
 ### NAME-based deduplication
 
-If a device restarts and claims a **new source address** while keeping the same 64-bit NAME, lplex automatically evicts the old entry. This prevents stale phantom devices from accumulating in the registry. The old source's values are also cleaned up, and a `device_removed` event is sent to SSE subscribers.
+If a device restarts and claims a **new source address** while keeping the same 64-bit NAME, lplex automatically evicts the old entry. This prevents stale phantom devices from accumulating in the registry, and the old source's values are also cleaned up.
 
 ### Idle expiry
 
