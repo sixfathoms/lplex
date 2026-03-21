@@ -21,8 +21,8 @@ const acPowerOffset = 2000000000
 
 // UtilityACPower represents PGNs 65009/65010/65013/65016 — AC Power.
 type UtilityACPower struct {
-	RealPower     float64 `json:"real_power"`     // W
-	ApparentPower float64 `json:"apparent_power"` // VA
+	RealPower     *float64 `json:"real_power"`     // W
+	ApparentPower *float64 `json:"apparent_power"` // VA
 }
 
 func decodeACPower(data []byte) (UtilityACPower, error) {
@@ -35,17 +35,23 @@ func decodeACPower(data []byte) (UtilityACPower, error) {
 		data = padded
 	}
 	var m UtilityACPower
-	m.RealPower = float64(binary.LittleEndian.Uint32(data[0:4])) - acPowerOffset
-	m.ApparentPower = float64(binary.LittleEndian.Uint32(data[4:8])) - acPowerOffset
+	if v := binary.LittleEndian.Uint32(data[0:4]); v != 0xFFFFFFFF {
+		f := float64(v) - acPowerOffset
+		m.RealPower = &f
+	}
+	if v := binary.LittleEndian.Uint32(data[4:8]); v != 0xFFFFFFFF {
+		f := float64(v) - acPowerOffset
+		m.ApparentPower = &f
+	}
 	return m, nil
 }
 
 // UtilityACBasicQuantities represents PGNs 65011/65014 — Basic AC Quantities.
 type UtilityACBasicQuantities struct {
-	LineLineVoltage    float64 `json:"line_line_voltage"`    // V
-	LineNeutralVoltage float64 `json:"line_neutral_voltage"` // V
-	ACFrequency        float64 `json:"ac_frequency"`         // Hz
-	ACRMSCurrent       float64 `json:"ac_rms_current"`       // A
+	LineLineVoltage    *float64 `json:"line_line_voltage"`    // V
+	LineNeutralVoltage *float64 `json:"line_neutral_voltage"` // V
+	ACFrequency        *float64 `json:"ac_frequency"`         // Hz
+	ACRMSCurrent       *float64 `json:"ac_rms_current"`       // A
 }
 
 func decodeACBasicQuantities(data []byte) (UtilityACBasicQuantities, error) {
@@ -58,10 +64,22 @@ func decodeACBasicQuantities(data []byte) (UtilityACBasicQuantities, error) {
 		data = padded
 	}
 	var m UtilityACBasicQuantities
-	m.LineLineVoltage = float64(binary.LittleEndian.Uint16(data[0:2]))
-	m.LineNeutralVoltage = float64(binary.LittleEndian.Uint16(data[2:4]))
-	m.ACFrequency = float64(binary.LittleEndian.Uint16(data[4:6])) / 128.0
-	m.ACRMSCurrent = float64(binary.LittleEndian.Uint16(data[6:8]))
+	if v := binary.LittleEndian.Uint16(data[0:2]); v != 0xFFFF {
+		f := float64(v)
+		m.LineLineVoltage = &f
+	}
+	if v := binary.LittleEndian.Uint16(data[2:4]); v != 0xFFFF {
+		f := float64(v)
+		m.LineNeutralVoltage = &f
+	}
+	if v := binary.LittleEndian.Uint16(data[4:6]); v != 0xFFFF {
+		f := float64(v) / 128.0
+		m.ACFrequency = &f
+	}
+	if v := binary.LittleEndian.Uint16(data[6:8]); v != 0xFFFF {
+		f := float64(v)
+		m.ACRMSCurrent = &f
+	}
 	return m, nil
 }
 

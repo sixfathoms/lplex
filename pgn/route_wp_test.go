@@ -50,11 +50,11 @@ func TestDecodeNavigationRouteWPInformation(t *testing.T) {
 		t.Errorf("wp[0].Name = %q, want empty", wp1.Name)
 	}
 	// 0x7FFFFFFF * 1e-7 = 214.7483647 (NMEA "not available" for signed int32).
-	if math.Abs(wp1.Latitude-214.7483647) > 1e-6 {
-		t.Errorf("wp[0].Latitude = %f, want ~214.7483647", wp1.Latitude)
+	if wp1.Latitude == nil || math.Abs(*wp1.Latitude-214.7483647) > 1e-6 {
+		t.Errorf("wp[0].Latitude = %v, want ~214.7483647", wp1.Latitude)
 	}
-	if math.Abs(wp1.Longitude-214.7483647) > 1e-6 {
-		t.Errorf("wp[0].Longitude = %f, want ~214.7483647", wp1.Longitude)
+	if wp1.Longitude == nil || math.Abs(*wp1.Longitude-214.7483647) > 1e-6 {
+		t.Errorf("wp[0].Longitude = %v, want ~214.7483647", wp1.Longitude)
 	}
 
 	// WP2: destination "End" near San Juan Islands.
@@ -65,11 +65,11 @@ func TestDecodeNavigationRouteWPInformation(t *testing.T) {
 	if wp2.Name != "End" {
 		t.Errorf("wp[1].Name = %q, want %q", wp2.Name, "End")
 	}
-	if math.Abs(wp2.Latitude-48.1050143) > 1e-6 {
-		t.Errorf("wp[1].Latitude = %f, want ~48.1050143", wp2.Latitude)
+	if wp2.Latitude == nil || math.Abs(*wp2.Latitude-48.1050143) > 1e-6 {
+		t.Errorf("wp[1].Latitude = %v, want ~48.1050143", wp2.Latitude)
 	}
-	if math.Abs(wp2.Longitude-(-122.6383227)) > 1e-6 {
-		t.Errorf("wp[1].Longitude = %f, want ~-122.6383227", wp2.Longitude)
+	if wp2.Longitude == nil || math.Abs(*wp2.Longitude-(-122.6383227)) > 1e-6 {
+		t.Errorf("wp[1].Longitude = %v, want ~-122.6383227", wp2.Longitude)
 	}
 }
 

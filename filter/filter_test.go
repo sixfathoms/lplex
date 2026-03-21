@@ -6,6 +6,8 @@ import (
 	"github.com/sixfathoms/lplex/pgn"
 )
 
+func ptr[T any](v T) *T { return &v }
+
 // --- Lexer tests ---
 
 func TestLex(t *testing.T) {
@@ -172,9 +174,9 @@ func TestNeedsDecode(t *testing.T) {
 func TestDecodedFieldsEnvironmentalParams(t *testing.T) {
 	decoded := pgn.EnvironmentalParametersOutside{
 		Sid:                 1,
-		WaterTemperature:    280.15, // ~7C
-		OutsideTemperature:  293.15, // ~20C
-		AtmosphericPressure: 101300,
+		WaterTemperature:    ptr(280.15), // ~7C
+		OutsideTemperature:  ptr(293.15), // ~20C
+		AtmosphericPressure: ptr(101300.0),
 	}
 
 	tests := []struct {
@@ -208,7 +210,7 @@ func TestDecodedFieldsEnvironmentalParams(t *testing.T) {
 
 func TestDecodedFieldsWithPointer(t *testing.T) {
 	decoded := &pgn.EnvironmentalParametersOutside{
-		WaterTemperature: 280.15,
+		WaterTemperature: ptr(280.15),
 	}
 	f, err := Compile("water_temperature < 290")
 	if err != nil {
@@ -269,7 +271,7 @@ func TestNilDecoded(t *testing.T) {
 }
 
 func TestMissingField(t *testing.T) {
-	decoded := pgn.EnvironmentalParametersOutside{WaterTemperature: 280}
+	decoded := pgn.EnvironmentalParametersOutside{WaterTemperature: ptr(280.0)}
 	f, err := Compile("nonexistent_field == 1")
 	if err != nil {
 		t.Fatal(err)
@@ -353,7 +355,7 @@ func TestPrecedence(t *testing.T) {
 
 func TestCombinedHeaderAndDecoded(t *testing.T) {
 	decoded := pgn.EnvironmentalParametersOutside{
-		WaterTemperature: 280.15,
+		WaterTemperature: ptr(280.15),
 	}
 	f, err := Compile("pgn == 130310 && water_temperature < 290")
 	if err != nil {

@@ -8,6 +8,8 @@ import (
 	"github.com/sixfathoms/lplex/pgn"
 )
 
+func ptr[T any](v T) *T { return &v }
+
 func TestByteMaskDiff_Identical(t *testing.T) {
 	d := ByteMaskDiff{}
 	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
@@ -172,8 +174,8 @@ func TestByteMaskDiff_LengthMismatch(t *testing.T) {
 
 func TestFieldToleranceDiff_WithinTolerance(t *testing.T) {
 	// Build two wind data packets with a tiny heading change within tolerance.
-	w1 := &pgn.WindData{WindSpeed: 5.0, WindAngle: 1.0000, WindReference: pgn.WindReferenceApparent}
-	w2 := &pgn.WindData{WindSpeed: 5.0, WindAngle: 1.0001, WindReference: pgn.WindReferenceApparent}
+	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0000), WindReference: pgn.WindReferenceApparent}
+	w2 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0001), WindReference: pgn.WindReferenceApparent}
 
 	d := &FieldToleranceDiff{
 		PGN: 130306,
@@ -193,8 +195,8 @@ func TestFieldToleranceDiff_WithinTolerance(t *testing.T) {
 }
 
 func TestFieldToleranceDiff_ExceedsTolerance(t *testing.T) {
-	w1 := &pgn.WindData{WindSpeed: 5.0, WindAngle: 1.0, WindReference: pgn.WindReferenceApparent}
-	w2 := &pgn.WindData{WindSpeed: 5.0, WindAngle: 1.5, WindReference: pgn.WindReferenceApparent}
+	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: pgn.WindReferenceApparent}
+	w2 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.5), WindReference: pgn.WindReferenceApparent}
 
 	d := &FieldToleranceDiff{
 		PGN: 130306,
@@ -220,8 +222,8 @@ func TestFieldToleranceDiff_ExceedsTolerance(t *testing.T) {
 
 func TestFieldToleranceDiff_MixedFields(t *testing.T) {
 	// WindSpeed changes significantly, WindAngle within tolerance.
-	w1 := &pgn.WindData{WindSpeed: 5.0, WindAngle: 1.0, WindReference: pgn.WindReferenceApparent}
-	w2 := &pgn.WindData{WindSpeed: 10.0, WindAngle: 1.0001, WindReference: pgn.WindReferenceApparent}
+	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: pgn.WindReferenceApparent}
+	w2 := &pgn.WindData{WindSpeed: ptr(10.0), WindAngle: ptr(1.0001), WindReference: pgn.WindReferenceApparent}
 
 	d := &FieldToleranceDiff{
 		PGN: 130306,
@@ -264,8 +266,8 @@ func TestFieldToleranceDiff_NoDecodeFunc(t *testing.T) {
 
 func TestFieldToleranceDiff_NonNumericFieldChange(t *testing.T) {
 	// WindReference is an enum. With tolerance=0, any change is significant.
-	w1 := &pgn.WindData{WindSpeed: 5.0, WindAngle: 1.0, WindReference: pgn.WindReferenceApparent}
-	w2 := &pgn.WindData{WindSpeed: 5.0, WindAngle: 1.0, WindReference: pgn.WindReferenceTrueNorth}
+	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: pgn.WindReferenceApparent}
+	w2 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: pgn.WindReferenceTrueNorth}
 
 	d := &FieldToleranceDiff{
 		PGN: 130306,
@@ -317,8 +319,8 @@ func TestFieldToleranceDiff_DataLengthChange(t *testing.T) {
 
 func TestFieldToleranceDiff_VesselHeading(t *testing.T) {
 	// Use VesselHeading to verify tolerance works with float64 heading in radians.
-	h1 := &pgn.VesselHeading{Heading: math.Pi, Deviation: 0, Variation: 0}
-	h2 := &pgn.VesselHeading{Heading: math.Pi + 0.0001, Deviation: 0, Variation: 0}
+	h1 := &pgn.VesselHeading{Heading: ptr(math.Pi), Deviation: ptr(0.0), Variation: ptr(0.0)}
+	h2 := &pgn.VesselHeading{Heading: ptr(math.Pi + 0.0001), Deviation: ptr(0.0), Variation: ptr(0.0)}
 
 	d := &FieldToleranceDiff{
 		PGN: 127250,
@@ -336,7 +338,7 @@ func TestFieldToleranceDiff_VesselHeading(t *testing.T) {
 	}
 
 	// Now exceed the tolerance.
-	h3 := &pgn.VesselHeading{Heading: math.Pi + 0.05, Deviation: 0, Variation: 0}
+	h3 := &pgn.VesselHeading{Heading: ptr(math.Pi + 0.05), Deviation: ptr(0.0), Variation: ptr(0.0)}
 	sig, _ = d.Diff(h1.Encode(), h3.Encode())
 	if !sig {
 		t.Fatal("0.05 rad change should exceed 0.01 tolerance")

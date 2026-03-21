@@ -345,9 +345,11 @@ func runSwitchesSet(_ *cobra.Command, args []string) error {
 
 // buildLoadControllerCommand builds a PGN 126208 Command payload targeting
 // PGN 127500 (Load Controller Connection State/Control) for a single connection.
+// All 8 fields are included. The Mastervolt CLMD12 ignores 0xFF sentinel values
+// and requires explicit values for all fields.
 func buildLoadControllerCommand(connectionID, state uint8) []byte {
 	var commandedPGN uint32 = 127500
-	data := make([]byte, 22) // 6 header + 8*2 field/value pairs
+	data := make([]byte, 23) // 6 header + 8 pairs (7x2 + 1x3 for 16-bit status)
 	data[0] = 0x01           // function code: Command
 	data[1] = byte(commandedPGN)
 	data[2] = byte(commandedPGN >> 8)
@@ -360,16 +362,17 @@ func buildLoadControllerCommand(connectionID, state uint8) []byte {
 	data[9] = connectionID
 	data[10] = 3 // field 3: state
 	data[11] = state
-	data[12] = 4 // field 4: status
-	data[13] = 0
-	data[14] = 5 // field 5: operational_status_control
-	data[15] = 0
-	data[16] = 6   // field 6: pwm_duty_cycle
-	data[17] = 100 // 100%
-	data[18] = 7   // field 7: time_on
-	data[19] = 100
-	data[20] = 8 // field 8: time_off
-	data[21] = 100
+	data[12] = 4 // field 4: status (16-bit)
+	data[13] = 0 // normal
+	data[14] = 0
+	data[15] = 5 // field 5: operational_status_control
+	data[16] = 0
+	data[17] = 6   // field 6: pwm_duty_cycle
+	data[18] = 100 // 100%
+	data[19] = 7   // field 7: time_on
+	data[20] = 100
+	data[21] = 8 // field 8: time_off
+	data[22] = 100
 	return data
 }
 // resolveSwitchBankDevice queries the values endpoint for PGN 127501 and finds

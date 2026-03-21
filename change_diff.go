@@ -227,7 +227,14 @@ func (f *FieldToleranceDiff) Apply(prev, diff []byte) []byte {
 }
 
 // toFloat64 converts a reflected value to float64 if it's a numeric type.
+// Dereferences pointers (e.g. *float64 from nullable scaled fields).
 func toFloat64(v reflect.Value) (float64, bool) {
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return 0, false
+		}
+		v = v.Elem()
+	}
 	switch v.Kind() {
 	case reflect.Float32, reflect.Float64:
 		return v.Float(), true

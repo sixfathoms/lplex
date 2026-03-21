@@ -228,7 +228,7 @@ func TestChangeTracker_IdleTimeoutFromRegistry(t *testing.T) {
 		DefaultIdleTimeout: 10 * time.Second,
 	})
 	ts := time.Now()
-	data := (&pgn.VesselHeading{Heading: 1.0}).Encode()
+	data := (&pgn.VesselHeading{Heading: ptr(1.0)}).Encode()
 
 	ct.Process(ts, 10, 127250, data, 1)
 
@@ -253,7 +253,7 @@ func TestChangeTracker_IdleTimeoutOverride(t *testing.T) {
 		},
 	})
 	ts := time.Now()
-	data := (&pgn.VesselHeading{Heading: 1.0}).Encode()
+	data := (&pgn.VesselHeading{Heading: ptr(1.0)}).Encode()
 
 	ct.Process(ts, 10, 127250, data, 1)
 
@@ -324,9 +324,9 @@ func TestChangeTracker_CustomDiffMethod(t *testing.T) {
 	})
 
 	ts := time.Now()
-	h1 := (&pgn.VesselHeading{Heading: 1.0}).Encode()
-	h2 := (&pgn.VesselHeading{Heading: 1.001}).Encode() // Within tolerance.
-	h3 := (&pgn.VesselHeading{Heading: 1.5}).Encode()   // Exceeds tolerance.
+	h1 := (&pgn.VesselHeading{Heading: ptr(1.0)}).Encode()
+	h2 := (&pgn.VesselHeading{Heading: ptr(1.001)}).Encode() // Within tolerance.
+	h3 := (&pgn.VesselHeading{Heading: ptr(1.5)}).Encode()   // Exceeds tolerance.
 
 	ct.Process(ts, 10, 127250, h1, 1)
 
@@ -417,12 +417,12 @@ func TestChangeTracker_EndToEnd_RoundTrip(t *testing.T) {
 		data []byte
 		seq  uint64
 	}{
-		{(&pgn.VesselHeading{Heading: 1.0}).Encode(), 1},
-		{(&pgn.VesselHeading{Heading: 1.0}).Encode(), 2},   // No change.
-		{(&pgn.VesselHeading{Heading: 1.5}).Encode(), 3},   // Delta.
-		{(&pgn.VesselHeading{Heading: 2.0}).Encode(), 4},   // Delta.
-		{(&pgn.VesselHeading{Heading: 2.0}).Encode(), 5},   // No change.
-		{(&pgn.VesselHeading{Heading: 3.14}).Encode(), 6},  // Delta.
+		{(&pgn.VesselHeading{Heading: ptr(1.0)}).Encode(), 1},
+		{(&pgn.VesselHeading{Heading: ptr(1.0)}).Encode(), 2},   // No change.
+		{(&pgn.VesselHeading{Heading: ptr(1.5)}).Encode(), 3},   // Delta.
+		{(&pgn.VesselHeading{Heading: ptr(2.0)}).Encode(), 4},   // Delta.
+		{(&pgn.VesselHeading{Heading: ptr(2.0)}).Encode(), 5},   // No change.
+		{(&pgn.VesselHeading{Heading: ptr(3.14)}).Encode(), 6},  // Delta.
 	}
 
 	ts := time.Now()

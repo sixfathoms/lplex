@@ -1352,8 +1352,8 @@ pgn 129540 "GNSS Sats in View" fast_packet {
 	if !strings.Contains(code, `Prn uint8 `+"`"+`json:"prn"`+"`") {
 		t.Error("missing Prn field in SatelliteInView")
 	}
-	if !strings.Contains(code, "Elevation float64") {
-		t.Error("missing Elevation float64 in SatelliteInView (has scale)")
+	if !strings.Contains(code, "Elevation *float64") {
+		t.Error("missing Elevation *float64 in SatelliteInView (has scale)")
 	}
 
 	// PGN struct should reference the sub-struct as a slice.

@@ -9,8 +9,8 @@ import (
 func TestPositionRapidUpdateRoundTrip(t *testing.T) {
 	// Encode known position: 47.6062° N, -122.3321° W (Seattle)
 	orig := PositionRapidUpdate{
-		Latitude:  47.6062,
-		Longitude: -122.3321,
+		Latitude:  ptr(47.6062),
+		Longitude: ptr(-122.3321),
 	}
 	data := orig.Encode()
 	if len(data) != 8 {
@@ -22,11 +22,11 @@ func TestPositionRapidUpdateRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if math.Abs(decoded.Latitude-orig.Latitude) > 1e-6 {
-		t.Errorf("latitude = %f, want ~%f", decoded.Latitude, orig.Latitude)
+	if decoded.Latitude == nil || math.Abs(*decoded.Latitude-*orig.Latitude) > 1e-6 {
+		t.Errorf("latitude = %v, want ~%v", decoded.Latitude, orig.Latitude)
 	}
-	if math.Abs(decoded.Longitude-orig.Longitude) > 1e-6 {
-		t.Errorf("longitude = %f, want ~%f", decoded.Longitude, orig.Longitude)
+	if decoded.Longitude == nil || math.Abs(*decoded.Longitude-*orig.Longitude) > 1e-6 {
+		t.Errorf("longitude = %v, want ~%v", decoded.Longitude, orig.Longitude)
 	}
 }
 
@@ -41,19 +41,19 @@ func TestPositionRapidUpdateDecodeKnown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(pos.Latitude-47.6062) > 1e-6 {
-		t.Errorf("latitude = %f, want 47.6062", pos.Latitude)
+	if pos.Latitude == nil || math.Abs(*pos.Latitude-47.6062) > 1e-6 {
+		t.Errorf("latitude = %v, want 47.6062", pos.Latitude)
 	}
-	if math.Abs(pos.Longitude-(-122.3321)) > 1e-6 {
-		t.Errorf("longitude = %f, want -122.3321", pos.Longitude)
+	if pos.Longitude == nil || math.Abs(*pos.Longitude-(-122.3321)) > 1e-6 {
+		t.Errorf("longitude = %v, want -122.3321", pos.Longitude)
 	}
 }
 
 func TestWindDataRoundTrip(t *testing.T) {
 	orig := WindData{
 		Sid:           1,
-		WindSpeed:     5.5,
-		WindAngle:     1.2345,
+		WindSpeed:     ptr(5.5),
+		WindAngle:     ptr(1.2345),
 		WindReference: WindReferenceApparent,
 	}
 	data := orig.Encode()
@@ -65,11 +65,11 @@ func TestWindDataRoundTrip(t *testing.T) {
 	if decoded.Sid != 1 {
 		t.Errorf("sid = %d, want 1", decoded.Sid)
 	}
-	if math.Abs(decoded.WindSpeed-5.5) > 0.01 {
-		t.Errorf("wind_speed = %f, want ~5.5", decoded.WindSpeed)
+	if decoded.WindSpeed == nil || math.Abs(*decoded.WindSpeed-5.5) > 0.01 {
+		t.Errorf("wind_speed = %v, want ~5.5", decoded.WindSpeed)
 	}
-	if math.Abs(decoded.WindAngle-1.2345) > 0.0001 {
-		t.Errorf("wind_angle = %f, want ~1.2345", decoded.WindAngle)
+	if decoded.WindAngle == nil || math.Abs(*decoded.WindAngle-1.2345) > 0.0001 {
+		t.Errorf("wind_angle = %v, want ~1.2345", decoded.WindAngle)
 	}
 	if decoded.WindReference != WindReferenceApparent {
 		t.Errorf("wind_reference = %d, want Apparent (%d)", decoded.WindReference, WindReferenceApparent)
@@ -79,9 +79,9 @@ func TestWindDataRoundTrip(t *testing.T) {
 func TestBatteryStatusRoundTrip(t *testing.T) {
 	orig := BatteryStatus{
 		Instance:    0,
-		Voltage:     12.85,
-		Current:     -5.3,
-		Temperature: 293.15,
+		Voltage:     ptr(12.85),
+		Current:     ptr(-5.3),
+		Temperature: ptr(293.15),
 		Sid:         42,
 	}
 	data := orig.Encode()
@@ -93,14 +93,14 @@ func TestBatteryStatusRoundTrip(t *testing.T) {
 	if decoded.Instance != 0 {
 		t.Errorf("instance = %d, want 0", decoded.Instance)
 	}
-	if math.Abs(decoded.Voltage-12.85) > 0.01 {
-		t.Errorf("voltage = %f, want ~12.85", decoded.Voltage)
+	if decoded.Voltage == nil || math.Abs(*decoded.Voltage-12.85) > 0.01 {
+		t.Errorf("voltage = %v, want ~12.85", decoded.Voltage)
 	}
-	if math.Abs(decoded.Current-(-5.3)) > 0.1 {
-		t.Errorf("current = %f, want ~-5.3", decoded.Current)
+	if decoded.Current == nil || math.Abs(*decoded.Current-(-5.3)) > 0.1 {
+		t.Errorf("current = %v, want ~-5.3", decoded.Current)
 	}
-	if math.Abs(decoded.Temperature-293.15) > 0.01 {
-		t.Errorf("temperature = %f, want ~293.15", decoded.Temperature)
+	if decoded.Temperature == nil || math.Abs(*decoded.Temperature-293.15) > 0.01 {
+		t.Errorf("temperature = %v, want ~293.15", decoded.Temperature)
 	}
 	if decoded.Sid != 42 {
 		t.Errorf("sid = %d, want 42", decoded.Sid)
@@ -110,9 +110,9 @@ func TestBatteryStatusRoundTrip(t *testing.T) {
 func TestVesselHeadingRoundTrip(t *testing.T) {
 	orig := VesselHeading{
 		Sid:               0,
-		Heading:           3.14,
-		Deviation:         -0.05,
-		Variation:         0.1,
+		Heading:           ptr(3.14),
+		Deviation:         ptr(-0.05),
+		Variation:         ptr(0.1),
 		HeadingReference:  HeadingReferenceMagnetic,
 	}
 	data := orig.Encode()
@@ -120,11 +120,11 @@ func TestVesselHeadingRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(decoded.Heading-3.14) > 0.0001 {
-		t.Errorf("heading = %f, want ~3.14", decoded.Heading)
+	if decoded.Heading == nil || math.Abs(*decoded.Heading-3.14) > 0.0001 {
+		t.Errorf("heading = %v, want ~3.14", decoded.Heading)
 	}
-	if math.Abs(decoded.Deviation-(-0.05)) > 0.0001 {
-		t.Errorf("deviation = %f, want ~-0.05", decoded.Deviation)
+	if decoded.Deviation == nil || math.Abs(*decoded.Deviation-(-0.05)) > 0.0001 {
+		t.Errorf("deviation = %v, want ~-0.05", decoded.Deviation)
 	}
 	if decoded.HeadingReference != HeadingReferenceMagnetic {
 		t.Errorf("heading_reference = %d, want Magnetic", decoded.HeadingReference)
@@ -134,9 +134,9 @@ func TestVesselHeadingRoundTrip(t *testing.T) {
 func TestWaterDepthRoundTrip(t *testing.T) {
 	orig := WaterDepth{
 		Sid:    0,
-		Depth:  15.25,
-		Offset: -0.5,
-		Range:  100.0,
+		Depth:  ptr(15.25),
+		Offset: ptr(-0.5),
+		Range:  ptr(100.0),
 	}
 	data := orig.Encode()
 	if len(data) != 8 {
@@ -146,14 +146,14 @@ func TestWaterDepthRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(decoded.Depth-15.25) > 0.01 {
-		t.Errorf("depth = %f, want ~15.25", decoded.Depth)
+	if decoded.Depth == nil || math.Abs(*decoded.Depth-15.25) > 0.01 {
+		t.Errorf("depth = %v, want ~15.25", decoded.Depth)
 	}
-	if math.Abs(decoded.Offset-(-0.5)) > 0.001 {
-		t.Errorf("offset = %f, want ~-0.5", decoded.Offset)
+	if decoded.Offset == nil || math.Abs(*decoded.Offset-(-0.5)) > 0.001 {
+		t.Errorf("offset = %v, want ~-0.5", decoded.Offset)
 	}
-	if math.Abs(decoded.Range-100.0) > 10 {
-		t.Errorf("range = %f, want ~100.0", decoded.Range)
+	if decoded.Range == nil || math.Abs(*decoded.Range-100.0) > 10 {
+		t.Errorf("range = %v, want ~100.0", decoded.Range)
 	}
 }
 
@@ -169,16 +169,16 @@ func TestWaterDepthDecodeAirmarFrame(t *testing.T) {
 		t.Errorf("sid = %d, want 255", decoded.Sid)
 	}
 	// depth = 0x0000023d = 573 -> 573 * 0.01 = 5.73m
-	if math.Abs(decoded.Depth-5.73) > 0.01 {
-		t.Errorf("depth = %f, want ~5.73", decoded.Depth)
+	if decoded.Depth == nil || math.Abs(*decoded.Depth-5.73) > 0.01 {
+		t.Errorf("depth = %v, want ~5.73", decoded.Depth)
 	}
 	// offset = 0xfaa5 as int16 = -1371 -> -1371 * 0.001 = -1.371m
-	if math.Abs(decoded.Offset-(-1.371)) > 0.001 {
-		t.Errorf("offset = %f, want ~-1.371", decoded.Offset)
+	if decoded.Offset == nil || math.Abs(*decoded.Offset-(-1.371)) > 0.001 {
+		t.Errorf("offset = %v, want ~-1.371", decoded.Offset)
 	}
 	// range = 0x0e = 14 -> 14 * 10 = 140m
-	if math.Abs(decoded.Range-140.0) > 0.01 {
-		t.Errorf("range = %f, want 140.0", decoded.Range)
+	if decoded.Range == nil || math.Abs(*decoded.Range-140.0) > 0.01 {
+		t.Errorf("range = %v, want 140.0", decoded.Range)
 	}
 }
 
@@ -219,11 +219,9 @@ func TestDecodeShortDataPadded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Remaining bytes were padded with 0xFF, so longitude should be the
-	// "not available" sentinel (all bits set = -1 as int32).
-	wantLon := float64(int32(-1)) * 1e-7
-	if m.Longitude != wantLon {
-		t.Errorf("longitude = %v, want %v (not-available sentinel)", m.Longitude, wantLon)
+	// Remaining bytes were padded with 0xFF (sentinel), so longitude should be nil.
+	if m.Longitude != nil {
+		t.Errorf("longitude = %v, want nil (not-available sentinel)", m.Longitude)
 	}
 }
 
@@ -250,8 +248,8 @@ func TestRegistry(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected PositionRapidUpdate, got %T", v)
 	}
-	if math.Abs(pos.Latitude-10.0) > 1e-6 {
-		t.Errorf("latitude = %f, want 10.0", pos.Latitude)
+	if pos.Latitude == nil || math.Abs(*pos.Latitude-10.0) > 1e-6 {
+		t.Errorf("latitude = %v, want 10.0", pos.Latitude)
 	}
 }
 
@@ -280,8 +278,8 @@ func TestFluidLevelBitFields(t *testing.T) {
 	orig := FluidLevel{
 		Instance:  3,
 		FluidType: 5,
-		Level:     75.0,
-		Capacity:  200.0,
+		Level:     ptr(75.0),
+		Capacity:  ptr(200.0),
 	}
 	data := orig.Encode()
 	decoded, err := DecodeFluidLevel(data)
@@ -294,7 +292,7 @@ func TestFluidLevelBitFields(t *testing.T) {
 	if decoded.FluidType != 5 {
 		t.Errorf("fluid_type = %d, want 5", decoded.FluidType)
 	}
-	if math.Abs(decoded.Level-75.0) > 0.01 {
-		t.Errorf("level = %f, want ~75.0", decoded.Level)
+	if decoded.Level == nil || math.Abs(*decoded.Level-75.0) > 0.01 {
+		t.Errorf("level = %v, want ~75.0", decoded.Level)
 	}
 }

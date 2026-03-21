@@ -9,6 +9,8 @@ import (
 	"testing"
 )
 
+func ptr[T any](v T) *T { return &v }
+
 // packetTest defines a single PGN packet test vector.
 //
 // To add a new test: append an entry to the packetTests slice below.
@@ -55,7 +57,7 @@ var packetTests = []packetTest{
 			Sid:           0xff,
 			TimeSource:    0,
 			DaysSince1970: 20000,
-			SecondsToday:  0,
+			SecondsToday:  ptr(0.0),
 		},
 	},
 
@@ -67,9 +69,9 @@ var packetTests = []packetTest{
 		// heading = 0x7B10 = 31504 * 0.0001 = 3.1504 rad
 		want: VesselHeading{
 			Sid:              0xff,
-			Heading:          3.1504,
-			Deviation:        0,
-			Variation:        0,
+			Heading:          ptr(3.1504),
+			Deviation:        ptr(0.0),
+			Variation:        ptr(0.0),
 			HeadingReference: HeadingReferenceTrue,
 		},
 	},
@@ -83,9 +85,9 @@ var packetTests = []packetTest{
 		// heading_reference = 1 (magnetic)
 		want: VesselHeading{
 			Sid:              0,
-			Heading:          0.7854,
-			Deviation:        -0.001,
-			Variation:        0.001,
+			Heading:          ptr(0.7854),
+			Deviation:        ptr(-0.001),
+			Variation:        ptr(0.001),
 			HeadingReference: HeadingReferenceMagnetic,
 		},
 		epsilon: 1e-4,
@@ -98,7 +100,7 @@ var packetTests = []packetTest{
 		hex:  "ff00000000ffffff",
 		want: RateOfTurn{
 			Sid:  0xff,
-			Rate: 0,
+			Rate: ptr(0.0),
 		},
 	},
 
@@ -109,9 +111,9 @@ var packetTests = []packetTest{
 		hex:  "0000000000000000",
 		want: Attitude{
 			Sid:   0,
-			Yaw:   0,
-			Pitch: 0,
-			Roll:  0,
+			Yaw:   ptr(0.0),
+			Pitch: ptr(0.0),
+			Roll:  ptr(0.0),
 		},
 	},
 	{
@@ -123,9 +125,9 @@ var packetTests = []packetTest{
 		// roll = 0x000a = 10 -> 0.001 rad
 		want: Attitude{
 			Sid:   0xff,
-			Yaw:   0,
-			Pitch: 0.1,
-			Roll:  0.001,
+			Yaw:   ptr(0.0),
+			Pitch: ptr(0.1),
+			Roll:  ptr(0.001),
 		},
 		epsilon: 1e-4,
 	},
@@ -140,7 +142,7 @@ var packetTests = []packetTest{
 			Sid:           0xff,
 			Source:        HeadingReferenceMagnetic,
 			DaysSince1970: 20000,
-			Variation:     -0.01,
+			Variation:     ptr(-0.01),
 		},
 		epsilon: 1e-4,
 	},
@@ -155,8 +157,8 @@ var packetTests = []packetTest{
 		// speed_type = 0 (paddle_wheel)
 		want: SpeedWaterReferenced{
 			Sid:         0,
-			SpeedWater:  3.5,
-			SpeedGround: 4.0,
+			SpeedWater:  ptr(3.5),
+			SpeedGround: ptr(4.0),
 			SpeedType:   SpeedTypePaddleWheel,
 		},
 	},
@@ -168,21 +170,21 @@ var packetTests = []packetTest{
 		hex:  "ff3d020000a5fa0e",
 		want: WaterDepth{
 			Sid:    0xff,
-			Depth:  5.73,
-			Offset: -1.371,
-			Range:  140.0,
+			Depth:  ptr(5.73),
+			Offset: ptr(-1.371),
+			Range:  ptr(140.0),
 		},
 	},
 	{
 		desc: "shallow water 1.5m, no offset",
 		pgn:  128267,
 		hex:  "00960000000000ff",
-		// depth = 150 -> 1.50 m, offset = 0, range = 0xff = 255 * 10 = 2550
+		// depth = 150 -> 1.50 m, offset = 0, range = 0xff = not available
 		want: WaterDepth{
 			Sid:    0,
-			Depth:  1.50,
-			Offset: 0,
-			Range:  2550.0,
+			Depth:  ptr(1.50),
+			Offset: ptr(0.0),
+			Range:  nil,
 		},
 	},
 
@@ -197,8 +199,8 @@ var packetTests = []packetTest{
 		want: FluidLevel{
 			Instance:  5,
 			FluidType: 0,
-			Level:     75.0,
-			Capacity:  200.0,
+			Level:     ptr(75.0),
+			Capacity:  ptr(200.0),
 		},
 		epsilon: 0.01,
 	},
@@ -213,9 +215,9 @@ var packetTests = []packetTest{
 		// temperature = 0x05fa = 1530 * 0.01 = 15.30K
 		want: BatteryStatus{
 			Instance:    0,
-			Voltage:     202.12,
-			Current:     -45.6,
-			Temperature: 15.30,
+			Voltage:     ptr(202.12),
+			Current:     ptr(-45.6),
+			Temperature: ptr(15.30),
 			Sid:         0,
 		},
 		epsilon: 0.1,
@@ -229,8 +231,8 @@ var packetTests = []packetTest{
 		// lat = 476062000 * 1e-7 = 47.6062
 		// lon = -1223321000 * 1e-7 = -122.3321
 		want: PositionRapidUpdate{
-			Latitude:  47.6062,
-			Longitude: -122.3321,
+			Latitude:  ptr(47.6062),
+			Longitude: ptr(-122.3321),
 		},
 		epsilon: 1e-4,
 	},
@@ -239,8 +241,8 @@ var packetTests = []packetTest{
 		pgn:  129025,
 		hex:  "0000000000000000",
 		want: PositionRapidUpdate{
-			Latitude:  0,
-			Longitude: 0,
+			Latitude:  ptr(0.0),
+			Longitude: ptr(0.0),
 		},
 	},
 	{
@@ -250,8 +252,8 @@ var packetTests = []packetTest{
 		// lat = -338688000 * 1e-7 = -33.8688
 		// lon = 1512093000 * 1e-7 = 151.2093
 		want: PositionRapidUpdate{
-			Latitude:  -33.8688,
-			Longitude: 151.2093,
+			Latitude:  ptr(-33.8688),
+			Longitude: ptr(151.2093),
 		},
 		epsilon: 1e-4,
 	},
@@ -267,8 +269,8 @@ var packetTests = []packetTest{
 		want: COGSOGRapidUpdate{
 			Sid:          0xff,
 			CogReference: HeadingReferenceTrue,
-			Cog:          1.5708,
-			Sog:          5.0,
+			Cog:          ptr(1.5708),
+			Sog:          ptr(5.0),
 		},
 		epsilon: 0.001,
 	},
@@ -283,8 +285,8 @@ var packetTests = []packetTest{
 		// wind_reference = 2 (apparent)
 		want: WindData{
 			Sid:           1,
-			WindSpeed:     5.50,
-			WindAngle:     1.2345,
+			WindSpeed:     ptr(5.50),
+			WindAngle:     ptr(1.2345),
 			WindReference: WindReferenceApparent,
 		},
 	},
@@ -297,8 +299,8 @@ var packetTests = []packetTest{
 		// reference = 0 (true_north)
 		want: WindData{
 			Sid:           0,
-			WindSpeed:     10.0,
-			WindAngle:     0,
+			WindSpeed:     ptr(10.0),
+			WindAngle:     ptr(0.0),
 			WindReference: WindReferenceTrueNorth,
 		},
 	},
@@ -316,13 +318,13 @@ var packetTests = []packetTest{
 			Callsign:             "WDN2478",
 			Name:                 "CONTINUUM",
 			ShipType:             37,
-			ShipLength:           20.0,
-			ShipBeam:             5.0,
-			PositionRefStarboard: 2.0,
-			PositionRefBow:       12.0,
+			ShipLength:           ptr(20.0),
+			ShipBeam:             ptr(5.0),
+			PositionRefStarboard: ptr(2.0),
+			PositionRefBow:       ptr(12.0),
 			EtaDate:              0xFFFF,
-			EtaTime:              429496.7295,
-			Draught:              1.40,
+			EtaTime:              nil, // 0xFFFFFFFF = not available
+			Draught:              ptr(1.40),
 			Destination:          "EVERETT",
 			AisVersionIndicator:  1,
 			GnssType:             PositionFixTypeUndefined,
@@ -344,8 +346,8 @@ var packetTests = []packetTest{
 			Sid:               0xff,
 			Instance:          0,
 			TemperatureSource: 2,
-			ActualTemperature: 293.15,
-			SetTemperature:    0,
+			ActualTemperature: ptr(293.15),
+			SetTemperature:    ptr(0.0),
 		},
 		epsilon: 0.01,
 	},
@@ -384,8 +386,8 @@ var packetTests = []packetTest{
 		want: DCVoltageCurrent{
 			Sid:              0xff,
 			ConnectionNumber: 0,
-			DcVoltage:        0,
-			DcCurrent:        0,
+			DcVoltage:        ptr(0.0),
+			DcCurrent:        ptr(0.0),
 		},
 	},
 
