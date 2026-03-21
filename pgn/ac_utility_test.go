@@ -13,10 +13,10 @@ func TestDecodeUtilityPhaseAACPower(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if m.RealPower != 889 {
+	if m.RealPower == nil || *m.RealPower != 889 {
 		t.Errorf("RealPower = %v, want 889", m.RealPower)
 	}
-	if m.ApparentPower != 902 {
+	if m.ApparentPower == nil || *m.ApparentPower != 902 {
 		t.Errorf("ApparentPower = %v, want 902", m.ApparentPower)
 	}
 }
@@ -28,10 +28,10 @@ func TestDecodeUtilityPhaseBACPower(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if m.RealPower != 0 {
+	if m.RealPower == nil || *m.RealPower != 0 {
 		t.Errorf("RealPower = %v, want 0", m.RealPower)
 	}
-	if m.ApparentPower != 0 {
+	if m.ApparentPower == nil || *m.ApparentPower != 0 {
 		t.Errorf("ApparentPower = %v, want 0", m.ApparentPower)
 	}
 }
@@ -43,17 +43,17 @@ func TestDecodeUtilityPhaseABasicACQuantities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if m.LineLineVoltage != 65535 { // 0xFFFF = not available
-		t.Errorf("LineLineVoltage = %v, want 65535", m.LineLineVoltage)
+	if m.LineLineVoltage != nil { // 0xFFFF = not available → nil
+		t.Errorf("LineLineVoltage = %v, want nil (not available)", m.LineLineVoltage)
 	}
-	if m.LineNeutralVoltage != 125 {
+	if m.LineNeutralVoltage == nil || *m.LineNeutralVoltage != 125 {
 		t.Errorf("LineNeutralVoltage = %v, want 125", m.LineNeutralVoltage)
 	}
 	wantFreq := float64(0x1e0b) / 128.0
-	if math.Abs(m.ACFrequency-wantFreq) > 0.001 {
+	if m.ACFrequency == nil || math.Abs(*m.ACFrequency-wantFreq) > 0.001 {
 		t.Errorf("ACFrequency = %v, want ~%v", m.ACFrequency, wantFreq)
 	}
-	if m.ACRMSCurrent != 7 {
+	if m.ACRMSCurrent == nil || *m.ACRMSCurrent != 7 {
 		t.Errorf("ACRMSCurrent = %v, want 7", m.ACRMSCurrent)
 	}
 }
@@ -65,11 +65,11 @@ func TestDecodeUtilityPhaseBBasicACQuantities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if m.LineNeutralVoltage != 125 {
+	if m.LineNeutralVoltage == nil || *m.LineNeutralVoltage != 125 {
 		t.Errorf("LineNeutralVoltage = %v, want 125", m.LineNeutralVoltage)
 	}
-	if m.ACRMSCurrent != 65535 { // 0xFFFF = not available
-		t.Errorf("ACRMSCurrent = %v, want 65535 (not available)", m.ACRMSCurrent)
+	if m.ACRMSCurrent != nil { // 0xFFFF = not available → nil
+		t.Errorf("ACRMSCurrent = %v, want nil (not available)", m.ACRMSCurrent)
 	}
 }
 

@@ -33,17 +33,18 @@ var switchesCmd = &cobra.Command{
 var switchesSetCmd = &cobra.Command{
 	Use:   "set SWITCH=STATE [SWITCH=STATE ...]",
 	Short: "Control binary switches",
-	Long: `Send an NMEA Command (PGN 126208) targeting Binary Switch Bank Status
-(PGN 127501) to set switch states. The command is addressed to the device
-that owns the switch bank (auto-detected, or use --dst to specify).
+	Long: `Send NMEA Command (PGN 126208) targeting Load Controller Connection
+State/Control (PGN 127500) to set switch states. Each switch is commanded
+individually by connection ID. The command is addressed to the device that
+owns the switch bank (auto-detected from PGN 127501, or use --dst).
 
 Each argument is a SWITCH=STATE pair where SWITCH is the 1-based switch number
-and STATE is "on" or "off". Switches not specified are left unchanged.
+and STATE is "on" or "off".
 
 Examples:
   lplex switches set --instance 0 1=on
   lplex switches set --instance 0 1=on 3=off 5=on
-  lplex switches set --instance 0 --dst 43 1=on`,
+  lplex switches set --dst 144 1=on`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runSwitchesSet,
 }
@@ -61,11 +62,10 @@ func init() {
 	f.BoolVar(&switchesWatch, "watch", false, "live-updating switch status")
 
 	sf := switchesSetCmd.Flags()
-	sf.IntVar(&switchSetInstance, "instance", -1, "switch bank instance (required)")
-	sf.IntVar(&switchSetDst, "dst", -1, "destination device source address (-1 = auto-detect)")
+	sf.IntVar(&switchSetInstance, "instance", -1, "switch bank instance (for auto-detecting destination device)")
+	sf.IntVar(&switchSetDst, "dst", -1, "destination device source address (-1 = auto-detect from --instance)")
 	sf.Uint8Var(&switchSetSrc, "src", 0, "source address")
 	sf.Uint8Var(&switchSetPrio, "prio", 3, "priority (0-7, default 3)")
-	_ = switchesSetCmd.MarkFlagRequired("instance")
 
 	switchesCmd.AddCommand(switchesSetCmd)
 }
@@ -292,6 +292,9 @@ func runSwitchesSet(_ *cobra.Command, args []string) error {
 	if switchSetDst >= 0 {
 		dst = uint8(switchSetDst)
 	} else {
+		if switchSetInstance < 0 {
+			return fmt.Errorf("--instance is required for auto-detection (or use --dst)")
+		}
 		resolved, err := resolveSwitchBankDevice(ctx, client, uint8(switchSetInstance))
 		if err != nil {
 			return err
@@ -300,52 +303,78 @@ func runSwitchesSet(_ *cobra.Command, args []string) error {
 		log.Printf("auto-detected switch bank owner: src=%d", dst)
 	}
 
-	// Build PGN 126208 Command targeting PGN 127501 (Binary Switch Bank Status).
+	// Send one PGN 126208 Command per switch, targeting PGN 127500
+	// (Load Controller Connection State/Control). This matches the
+	// protocol used by Maretron N2KAnalyzer.
 	//
-	//   Byte 0:   0x01 (function code = Command)
-	//   Byte 1-3: PGN 127501 LE
-	//   Byte 4:   0xF8 (priority=8 "don't change" | reserved=0xF0)
-	//   Byte 5:   number of pairs (1 instance + N switches)
-	//   Pairs:    [field_number] [value] for each
+	// Payload (22 bytes):
+	//   Byte 0:    0x01 (function code = Command)
+	//   Byte 1-3:  PGN 127500 LE
+	//   Byte 4:    0xF8 (priority=8 "don't change" | reserved=0xF0)
+	//   Byte 5:    0x08 (8 parameter pairs, all fields of PGN 127500)
+	//   Pairs:     [field_number] [value] x 8
 	//
-	// PGN 127501 field numbering:
-	//   Field 1 = instance, Field 2 = indicator_1, ..., Field 29 = indicator_28
-	var commandedPGN uint32 = 127501
-	numPairs := 1 + len(sets)
-	data := make([]byte, 6+2*numPairs)
-	data[0] = 0x01 // function code: Command
-	data[1] = byte(commandedPGN)
-	data[2] = byte(commandedPGN >> 8)
-	data[3] = byte(commandedPGN >> 16)
-	data[4] = 0xF8 // priority=8 (don't change) | reserved=0xF0
-	data[5] = byte(numPairs)
-	off := 6
-	data[off] = 1 // field 1 = instance
-	data[off+1] = uint8(switchSetInstance)
-	off += 2
-	for _, s := range sets {
-		data[off] = byte(s.num + 1) // field (N+1) = indicator_N
-		data[off+1] = s.state
-		off += 2
-	}
-
+	// PGN 127500 fields:
+	//   1=sid, 2=connection_id, 3=state, 4=status,
+	//   5=operational_status_control, 6=pwm_duty_cycle,
+	//   7=time_on, 8=time_off
+	//
+	// State values: 0=off, 2=on.
 	const sendPGN uint32 = 126208
-	if err := client.Send(ctx, sendPGN, switchSetSrc, dst, switchSetPrio, data); err != nil {
-		return fmt.Errorf("send failed: %w", err)
-	}
-
-	// Pretty-print what we sent.
 	for _, s := range sets {
+		// Map user state (0=off, 1=on) to PGN 127500 state (0=off, 2=on).
+		var pgnState uint8
+		if s.state == 1 {
+			pgnState = 2
+		}
+
+		data := buildLoadControllerCommand(uint8(s.num-1), pgnState)
+		if err := client.Send(ctx, sendPGN, switchSetSrc, dst, switchSetPrio, data); err != nil {
+			return fmt.Errorf("send failed (switch %d): %w", s.num, err)
+		}
+
 		state := "OFF"
 		if s.state == 1 {
 			state = "ON"
 		}
-		log.Printf("bank %d switch %d → %s (dst=%d)", switchSetInstance, s.num, state, dst)
+		log.Printf("switch %d → %s (dst=%d, connection=%d)", s.num, state, dst, s.num-1)
 	}
 
 	return nil
 }
 
+// buildLoadControllerCommand builds a PGN 126208 Command payload targeting
+// PGN 127500 (Load Controller Connection State/Control) for a single connection.
+// All 8 fields are included. The Mastervolt CLMD12 ignores 0xFF sentinel values
+// and requires explicit values for all fields.
+func buildLoadControllerCommand(connectionID, state uint8) []byte {
+	var commandedPGN uint32 = 127500
+	data := make([]byte, 23) // 6 header + 8 pairs (7x2 + 1x3 for 16-bit status)
+	data[0] = 0x01           // function code: Command
+	data[1] = byte(commandedPGN)
+	data[2] = byte(commandedPGN >> 8)
+	data[3] = byte(commandedPGN >> 16)
+	data[4] = 0xF8 // priority=8 (don't change) | reserved=0xF0
+	data[5] = 8    // all 8 fields of PGN 127500
+	data[6] = 1    // field 1: sid
+	data[7] = 0xFF // sid = don't care
+	data[8] = 2    // field 2: connection_id
+	data[9] = connectionID
+	data[10] = 3 // field 3: state
+	data[11] = state
+	data[12] = 4 // field 4: status (16-bit)
+	data[13] = 0 // normal
+	data[14] = 0
+	data[15] = 5 // field 5: operational_status_control
+	data[16] = 0
+	data[17] = 6   // field 6: pwm_duty_cycle
+	data[18] = 100 // 100%
+	data[19] = 7   // field 7: time_on
+	data[20] = 100
+	data[21] = 8 // field 8: time_off
+	data[22] = 100
+	return data
+}
 // resolveSwitchBankDevice queries the values endpoint for PGN 127501 and finds
 // the device that reports the given switch bank instance. Returns an error if
 // no device or multiple devices match.

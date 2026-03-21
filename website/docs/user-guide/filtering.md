@@ -133,7 +133,7 @@ lplex dump --where 'dst.manufacturer == "Garmin"'
 lplex dump --where 'src.model_id == "GPS 19x NMEA 2000"'
 ```
 
-`--where` is a client-side display filter that evaluates after all other filters (PGN, manufacturer, etc.) have been applied. It automatically enables `--decode`. Device sub-accessors (`src.manufacturer`, `dst.manufacturer`, `src.model_id`, `dst.model_id`) resolve the frame's source/destination address against the device registry. See [lplex: Display filter expressions](/user-guide/lplex#display-filter-expressions) for the full syntax.
+`--where` is a client-side display filter that evaluates after all other filters (PGN, manufacturer, etc.) have been applied. It automatically enables `--decode`. Device sub-accessors (`src.manufacturer`, `dst.manufacturer`, `src.model_id`, `dst.model_id`) resolve the frame's source/destination address against the device registry. Numeric comparisons against nullable fields (scaled `*float64` values) that are `nil` (data not available) evaluate to false, so frames with missing sensor data are naturally excluded. See [lplex: Display filter expressions](/user-guide/lplex#display-filter-expressions) for the full syntax.
 
 ## Where filtering happens
 

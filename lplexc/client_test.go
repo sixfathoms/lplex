@@ -225,11 +225,11 @@ func TestWatch(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected PositionRapidUpdate, got %T", wv.Value)
 	}
-	if pos.Latitude < 47.0 || pos.Latitude > 48.0 {
-		t.Errorf("latitude = %f, want ~47.6", pos.Latitude)
+	if pos.Latitude == nil || *pos.Latitude < 47.0 || *pos.Latitude > 48.0 {
+		t.Errorf("latitude = %v, want ~47.6", pos.Latitude)
 	}
-	if pos.Longitude > -122.0 || pos.Longitude < -123.0 {
-		t.Errorf("longitude = %f, want ~-122.3", pos.Longitude)
+	if pos.Longitude == nil || *pos.Longitude > -122.0 || *pos.Longitude < -123.0 {
+		t.Errorf("longitude = %v, want ~-122.3", pos.Longitude)
 	}
 }
 

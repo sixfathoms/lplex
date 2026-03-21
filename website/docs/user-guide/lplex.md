@@ -84,6 +84,12 @@ When stdout is piped (or `--json` is set), each frame is a JSON object per line:
 
 The `decoded` field is only present when `--decode` is enabled and the PGN is known.
 
+Scaled numeric fields (those with `scale=` in the PGN DSL) are nullable: they appear as `null` in JSON when the sensor reports "data not available" (the NMEA 2000 all-bits-set sentinel). For example, a GPS that hasn't acquired a fix sends `null` for latitude/longitude:
+
+```json
+{"decoded":{"latitude":47.6062,"longitude":null}}
+```
+
 Enum fields serialize as strings for known values and as numbers for unknown values (e.g., `"wind_reference": "apparent"` or `"wind_reference": 99`).
 
 Fields with `lookup=` attributes in the PGN DSL are displayed as structured objects instead of flat integers:

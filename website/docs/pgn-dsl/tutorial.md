@@ -74,20 +74,20 @@ Check that the generated struct looks right:
 type Rudder struct {
     Instance       uint8
     DirectionOrder uint8
-    AngleOrder     float64
-    Position       float64
+    AngleOrder     *float64
+    Position       *float64
 }
 
 func DecodeRudder(data []byte) (Rudder, error) {
-    // ... bit extraction, scaling, null detection
+    // ... bit extraction, sentinel check, scaling, pointer assignment
 }
 
 func (r Rudder) Encode() []byte {
-    // ... reverse process
+    // ... reverse process (nil fields stay as 0xFF sentinel)
 }
 ```
 
-The `scale=` attribute turns `int16` fields into `float64` in the struct.
+The `scale=` attribute turns `int16` fields into `*float64` in the struct. The pointer is `nil` when the raw value is the NMEA 2000 "not available" sentinel (all bits set). See [Null detection](/pgn-dsl/syntax#null-detection) for details.
 
 ## 5. Add a packet test
 
@@ -105,9 +105,11 @@ lplex dump --server http://inuc1.local:8089 --pgn 127245 --decode --json
 {"seq":1234,"ts":"2026-03-06T10:15:32.123Z","prio":2,"pgn":127245,"src":15,"dst":255,"data":"0001c50600000000","decoded":{"instance":0,"direction_order":1,"angle_order":0.1733,"position":0.0}}
 ```
 
-Copy the `data` field as your `hex`, and use the `decoded` fields to build your `want` struct:
+Copy the `data` field as your `hex`, and use the `decoded` fields to build your `want` struct. Scaled fields are `*float64`, so use a `ptr()` helper:
 
 ```go
+func ptr[T any](v T) *T { return &v }
+
 // in pgn/packets_test.go, add to packetTests slice:
 {
     desc: "rudder 10° starboard from lplex",
@@ -116,8 +118,25 @@ Copy the `data` field as your `hex`, and use the `decoded` fields to build your 
     want: Rudder{
         Instance:       0,
         DirectionOrder: 1,
-        AngleOrder:     0.1733,
-        Position:       0,
+        AngleOrder:     ptr(0.1733),
+        Position:       ptr(0.0),
+    },
+    epsilon: 1e-4,
+},
+```
+
+Fields with the "not available" sentinel (all bits set) decode as `nil`. Use `nil` in the `want` struct for those:
+
+```go
+{
+    desc: "rudder position not available",
+    pgn:  127245,
+    hex:  "0001c506ffff0000",
+    want: Rudder{
+        Instance:       0,
+        DirectionOrder: 1,
+        AngleOrder:     ptr(0.1733),
+        Position:       nil, // 0xFFFF = not available
     },
     epsilon: 1e-4,
 },
@@ -137,8 +156,8 @@ You can also construct hex bytes manually when you want to test specific edge ca
     want: Rudder{
         Instance:       0,
         DirectionOrder: 1,
-        AngleOrder:     0.5957,
-        Position:       -0.0621,
+        AngleOrder:     ptr(0.5957),
+        Position:       ptr(-0.0621),
     },
     epsilon: 1e-4,
 },

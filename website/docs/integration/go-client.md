@@ -135,7 +135,10 @@ if err != nil {
 
 for wv := range ch {
     pos := wv.Value.(pgn.PositionRapidUpdate)
-    fmt.Printf("lat=%.6f lon=%.6f\n", pos.Latitude, pos.Longitude)
+    // Scaled fields are *float64 (nil = data not available from sensor)
+    if pos.Latitude != nil && pos.Longitude != nil {
+        fmt.Printf("lat=%.6f lon=%.6f\n", *pos.Latitude, *pos.Longitude)
+    }
 }
 ```
 

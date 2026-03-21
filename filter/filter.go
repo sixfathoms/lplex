@@ -254,7 +254,14 @@ func compareReflectValue(fv reflect.Value, op compOp, lit literal) bool {
 }
 
 // toFloat64 extracts a float64 from a reflect.Value for numeric comparison.
+// Dereferences pointers (e.g. *float64 from nullable scaled fields).
 func toFloat64(v reflect.Value) (float64, bool) {
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return 0, false
+		}
+		v = v.Elem()
+	}
 	switch v.Kind() {
 	case reflect.Float32, reflect.Float64:
 		return v.Float(), true

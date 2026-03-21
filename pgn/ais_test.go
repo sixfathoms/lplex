@@ -33,11 +33,11 @@ func TestAISClassAPositionReportDecode(t *testing.T) {
 	if m.UserId != 367608860 {
 		t.Errorf("user_id = %d, want 367608860", m.UserId)
 	}
-	if math.Abs(m.Longitude-(-122.3042)) > 0.001 {
-		t.Errorf("longitude = %f, want ~-122.3042", m.Longitude)
+	if m.Longitude == nil || math.Abs(*m.Longitude-(-122.3042)) > 0.001 {
+		t.Errorf("longitude = %v, want ~-122.3042", m.Longitude)
 	}
-	if math.Abs(m.Latitude-47.9586) > 0.001 {
-		t.Errorf("latitude = %f, want ~47.9586", m.Latitude)
+	if m.Latitude == nil || math.Abs(*m.Latitude-47.9586) > 0.001 {
+		t.Errorf("latitude = %v, want ~47.9586", m.Latitude)
 	}
 	if m.PositionAccuracy != 1 {
 		t.Errorf("position_accuracy = %d, want 1", m.PositionAccuracy)
@@ -48,11 +48,11 @@ func TestAISClassAPositionReportDecode(t *testing.T) {
 	if m.TimeStamp != 23 {
 		t.Errorf("time_stamp = %d, want 23", m.TimeStamp)
 	}
-	if math.Abs(m.Cog-2.2702) > 0.001 {
-		t.Errorf("cog = %f, want ~2.2702", m.Cog)
+	if m.Cog == nil || math.Abs(*m.Cog-2.2702) > 0.001 {
+		t.Errorf("cog = %v, want ~2.2702", m.Cog)
 	}
-	if math.Abs(m.Sog-8.33) > 0.01 {
-		t.Errorf("sog = %f, want ~8.33", m.Sog)
+	if m.Sog == nil || math.Abs(*m.Sog-8.33) > 0.01 {
+		t.Errorf("sog = %v, want ~8.33", m.Sog)
 	}
 	if m.NavStatus != NavStatusUnderWayUsingEngine {
 		t.Errorf("nav_status = %d, want %d (under_way_using_engine)", m.NavStatus, NavStatusUnderWayUsingEngine)
@@ -66,12 +66,12 @@ func TestAISClassAPositionReportRoundTrip(t *testing.T) {
 	orig := AISClassAPositionReport{
 		MessageId:          1,
 		UserId:             366468000,
-		Longitude:          -122.1864,
-		Latitude:           48.0348,
+		Longitude:          ptr(-122.1864),
+		Latitude:           ptr(48.0348),
 		PositionAccuracy:   1,
 		TimeStamp:          22,
-		Cog:                2.9158,
-		Heading:            4.4148,
+		Cog:                ptr(2.9158),
+		Heading:            ptr(4.4148),
 		AisTransceiverInfo: AISTransceiverChannelBVdl,
 		NavStatus:          NavStatusUnderWayUsingEngine,
 		Sid:                0xfe,
@@ -87,17 +87,17 @@ func TestAISClassAPositionReportRoundTrip(t *testing.T) {
 	if decoded.UserId != 366468000 {
 		t.Errorf("user_id = %d, want 366468000", decoded.UserId)
 	}
-	if math.Abs(decoded.Longitude-orig.Longitude) > 1e-6 {
-		t.Errorf("longitude = %f, want ~%f", decoded.Longitude, orig.Longitude)
+	if decoded.Longitude == nil || math.Abs(*decoded.Longitude-*orig.Longitude) > 1e-6 {
+		t.Errorf("longitude = %v, want ~%v", decoded.Longitude, orig.Longitude)
 	}
-	if math.Abs(decoded.Latitude-orig.Latitude) > 1e-6 {
-		t.Errorf("latitude = %f, want ~%f", decoded.Latitude, orig.Latitude)
+	if decoded.Latitude == nil || math.Abs(*decoded.Latitude-*orig.Latitude) > 1e-6 {
+		t.Errorf("latitude = %v, want ~%v", decoded.Latitude, orig.Latitude)
 	}
-	if math.Abs(decoded.Cog-orig.Cog) > 0.001 {
-		t.Errorf("cog = %f, want ~%f", decoded.Cog, orig.Cog)
+	if decoded.Cog == nil || math.Abs(*decoded.Cog-*orig.Cog) > 0.001 {
+		t.Errorf("cog = %v, want ~%v", decoded.Cog, orig.Cog)
 	}
-	if math.Abs(decoded.Heading-orig.Heading) > 0.001 {
-		t.Errorf("heading = %f, want ~%f", decoded.Heading, orig.Heading)
+	if decoded.Heading == nil || math.Abs(*decoded.Heading-*orig.Heading) > 0.001 {
+		t.Errorf("heading = %v, want ~%v", decoded.Heading, orig.Heading)
 	}
 	if decoded.NavStatus != NavStatusUnderWayUsingEngine {
 		t.Errorf("nav_status = %d, want 0", decoded.NavStatus)
@@ -119,20 +119,20 @@ func TestAISClassBPositionReportDecode(t *testing.T) {
 	if m.UserId != 338165266 {
 		t.Errorf("user_id = %d, want 338165266", m.UserId)
 	}
-	if math.Abs(m.Longitude-(-122.2233)) > 0.001 {
-		t.Errorf("longitude = %f, want ~-122.2233", m.Longitude)
+	if m.Longitude == nil || math.Abs(*m.Longitude-(-122.2233)) > 0.001 {
+		t.Errorf("longitude = %v, want ~-122.2233", m.Longitude)
 	}
-	if math.Abs(m.Latitude-47.9959) > 0.001 {
-		t.Errorf("latitude = %f, want ~47.9959", m.Latitude)
+	if m.Latitude == nil || math.Abs(*m.Latitude-47.9959) > 0.001 {
+		t.Errorf("latitude = %v, want ~47.9959", m.Latitude)
 	}
 	if m.TimeStamp != 23 {
 		t.Errorf("time_stamp = %d, want 23", m.TimeStamp)
 	}
-	if math.Abs(m.Cog-0.7381) > 0.001 {
-		t.Errorf("cog = %f, want ~0.7381", m.Cog)
+	if m.Cog == nil || math.Abs(*m.Cog-0.7381) > 0.001 {
+		t.Errorf("cog = %v, want ~0.7381", m.Cog)
 	}
-	if math.Abs(m.Sog) > 0.01 {
-		t.Errorf("sog = %f, want ~0", m.Sog)
+	if m.Sog == nil || math.Abs(*m.Sog) > 0.01 {
+		t.Errorf("sog = %v, want ~0", m.Sog)
 	}
 }
 
@@ -140,10 +140,10 @@ func TestAISClassBPositionReportRoundTrip(t *testing.T) {
 	orig := AISClassBPositionReport{
 		MessageId:          18,
 		UserId:             338165266,
-		Longitude:          -122.2233,
-		Latitude:           47.9959,
+		Longitude:          ptr(-122.2233),
+		Latitude:           ptr(47.9959),
 		TimeStamp:          23,
-		Cog:                0.7381,
+		Cog:                ptr(0.7381),
 		AisTransceiverInfo: AISTransceiverChannelBVdl,
 	}
 	data := orig.Encode()
@@ -157,8 +157,8 @@ func TestAISClassBPositionReportRoundTrip(t *testing.T) {
 	if decoded.UserId != 338165266 {
 		t.Errorf("user_id = %d, want 338165266", decoded.UserId)
 	}
-	if math.Abs(decoded.Longitude-orig.Longitude) > 1e-6 {
-		t.Errorf("longitude = %f, want ~%f", decoded.Longitude, orig.Longitude)
+	if decoded.Longitude == nil || math.Abs(*decoded.Longitude-*orig.Longitude) > 1e-6 {
+		t.Errorf("longitude = %v, want ~%v", decoded.Longitude, orig.Longitude)
 	}
 }
 
@@ -180,11 +180,11 @@ func TestAISAidsToNavigationReportDecode(t *testing.T) {
 	if m.UserId != 993692022 {
 		t.Errorf("user_id = %d, want 993692022", m.UserId)
 	}
-	if math.Abs(m.Longitude-(-122.6613)) > 0.001 {
-		t.Errorf("longitude = %f, want ~-122.6613", m.Longitude)
+	if m.Longitude == nil || math.Abs(*m.Longitude-(-122.6613)) > 0.001 {
+		t.Errorf("longitude = %v, want ~-122.6613", m.Longitude)
 	}
-	if math.Abs(m.Latitude-48.1131) > 0.001 {
-		t.Errorf("latitude = %f, want ~48.1131", m.Latitude)
+	if m.Latitude == nil || math.Abs(*m.Latitude-48.1131) > 0.001 {
+		t.Errorf("latitude = %v, want ~48.1131", m.Latitude)
 	}
 	if m.TimeStamp != 61 {
 		t.Errorf("time_stamp = %d, want 61", m.TimeStamp)
@@ -215,11 +215,11 @@ func TestAISUTCAndDateReportDecode(t *testing.T) {
 	if m.UserId != 3669153 {
 		t.Errorf("user_id = %d, want 3669153", m.UserId)
 	}
-	if math.Abs(m.Longitude-(-122.6262)) > 0.001 {
-		t.Errorf("longitude = %f, want ~-122.6262", m.Longitude)
+	if m.Longitude == nil || math.Abs(*m.Longitude-(-122.6262)) > 0.001 {
+		t.Errorf("longitude = %v, want ~-122.6262", m.Longitude)
 	}
-	if math.Abs(m.Latitude-48.4539) > 0.001 {
-		t.Errorf("latitude = %f, want ~48.4539", m.Latitude)
+	if m.Latitude == nil || math.Abs(*m.Latitude-48.4539) > 0.001 {
+		t.Errorf("latitude = %v, want ~48.4539", m.Latitude)
 	}
 	if m.PositionAccuracy != 1 {
 		t.Errorf("position_accuracy = %d, want 1", m.PositionAccuracy)
@@ -228,8 +228,8 @@ func TestAISUTCAndDateReportDecode(t *testing.T) {
 		t.Errorf("raim = %d, want 1", m.Raim)
 	}
 	// position_time: 0x010513f0 = 17110000 * 0.0001 = 1711.0 seconds
-	if math.Abs(m.PositionTime-1711.0) > 0.1 {
-		t.Errorf("position_time = %f, want ~1711.0", m.PositionTime)
+	if m.PositionTime == nil || math.Abs(*m.PositionTime-1711.0) > 0.1 {
+		t.Errorf("position_time = %v, want ~1711.0", m.PositionTime)
 	}
 	// position_date: days since 1970-01-01 = 20491 = 2026-02-07
 	if m.PositionDate != 20491 {
@@ -277,20 +277,20 @@ func TestAISClassBStaticDataPartBDecode(t *testing.T) {
 		t.Errorf("ship_type = %d, want 37", m.ShipType)
 	}
 	// ship_length: 90 * 0.1 = 9.0m
-	if math.Abs(m.ShipLength-9.0) > 0.1 {
-		t.Errorf("ship_length = %f, want 9.0", m.ShipLength)
+	if m.ShipLength == nil || math.Abs(*m.ShipLength-9.0) > 0.1 {
+		t.Errorf("ship_length = %v, want 9.0", m.ShipLength)
 	}
 	// ship_beam: 20 * 0.1 = 2.0m
-	if math.Abs(m.ShipBeam-2.0) > 0.1 {
-		t.Errorf("ship_beam = %f, want 2.0", m.ShipBeam)
+	if m.ShipBeam == nil || math.Abs(*m.ShipBeam-2.0) > 0.1 {
+		t.Errorf("ship_beam = %v, want 2.0", m.ShipBeam)
 	}
 	// position_ref_starboard: 10 * 0.1 = 1.0m
-	if math.Abs(m.PositionRefStarboard-1.0) > 0.1 {
-		t.Errorf("position_ref_starboard = %f, want 1.0", m.PositionRefStarboard)
+	if m.PositionRefStarboard == nil || math.Abs(*m.PositionRefStarboard-1.0) > 0.1 {
+		t.Errorf("position_ref_starboard = %v, want 1.0", m.PositionRefStarboard)
 	}
 	// position_ref_bow: 30 * 0.1 = 3.0m
-	if math.Abs(m.PositionRefBow-3.0) > 0.1 {
-		t.Errorf("position_ref_bow = %f, want 3.0", m.PositionRefBow)
+	if m.PositionRefBow == nil || math.Abs(*m.PositionRefBow-3.0) > 0.1 {
+		t.Errorf("position_ref_bow = %v, want 3.0", m.PositionRefBow)
 	}
 	// mothership_mmsi: 0xFFFFFFFF = not available
 	if m.MothershipMmsi != 0xFFFFFFFF {
