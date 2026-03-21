@@ -260,7 +260,7 @@ These are per-field attributes (placed after the `:bits` specifier). For PGN-lev
 
 | Attribute | Value | Description |
 |---|---|---|
-| `scale=N` | float | Multiply raw integer by this factor. Changes Go field to `float64`. |
+| `scale=N` | float | Multiply raw integer by this factor. Changes Go field to `*float64` (nullable, see [Null detection](#null-detection)). |
 | `offset=N` | float | Add to scaled value: `decoded = raw * scale + offset`. |
 | `unit="..."` | string | Unit annotation (informational, included in generated comments) |
 | `trim="..."` | string | Right-trim these characters from decoded string (e.g. `"@ "` for AIS padding). Only valid on `string` fields. |
@@ -305,14 +305,85 @@ Byte        0    1    2    3               4    5    6    7
 
 ## Null detection
 
-NMEA 2000 uses all-bits-set as a null/unavailable sentinel. The generated decoder checks for this and uses Go zero values (or NaN for scaled floats) when the raw value indicates null.
+NMEA 2000 uses all-bits-set as a "data not available" sentinel. A sensor that hasn't acquired a fix, a field the device doesn't support, or a value that simply isn't ready yet will transmit the sentinel instead of real data.
 
-| Type | Null value |
-|---|---|
-| `uint8 :8` | 0xFF |
-| `uint16 :16` | 0xFFFF |
-| `int16 :16` | 0x7FFF |
-| Scaled float | All-bits-set in raw value |
+### Scaled fields are nullable (`*float64`)
+
+Scaled fields (any field with `scale=` or `offset=`) generate as `*float64` in Go. When the raw bits are the sentinel (all bits set for the field's width), the decoder leaves the pointer `nil` instead of scaling garbage into a meaningless number.
+
+```
+# DSL definition
+pgn 129025 "Position Rapid Update" interval=100ms {
+  latitude   int32  :32  scale=1e-7 unit="deg"
+  longitude  int32  :32  scale=1e-7 unit="deg"
+}
+```
+
+```go
+// Generated Go struct
+type PositionRapidUpdate struct {
+    Latitude  *float64 `json:"latitude"`   // nil when 0x7FFFFFFF (not available)
+    Longitude *float64 `json:"longitude"`  // nil when 0x7FFFFFFF (not available)
+}
+```
+
+**Why pointers?** Without sentinel detection, a 16-bit field with `scale=0.01` and all-bits-set decodes as `float64(0xFFFF) * 0.01 = 655.35`, which looks like a real value but is nonsense. With nullable fields, the same data decodes as `nil`, which JSON-serializes as `null`.
+
+```json
+{"latitude": 47.6062, "longitude": null}
+```
+
+### Sentinel values by bit width
+
+The sentinel is always the unsigned all-bits-set pattern for the field's declared width:
+
+| Bit width | Sentinel (hex) | Sentinel (decimal) |
+|---|---|---|
+| 8 | `0xFF` | 255 |
+| 16 | `0xFFFF` | 65,535 |
+| 24 | `0xFFFFFF` | 16,777,215 |
+| 32 | `0xFFFFFFFF` | 4,294,967,295 |
+
+For signed fields, the raw value is read as **unsigned** for the sentinel check, then cast to signed only if it passes. This avoids the ambiguity where `0xFFFF` as `int16` is `-1` (a valid value for some fields).
+
+### Which fields are nullable
+
+A field is nullable when **all three** conditions are met:
+
+1. **Scaled**: has `scale=` or `offset=` (produces `float64`)
+2. **Not repeated**: not part of a `repeat=N` array
+3. **Not a discriminator**: no `value=N` match constraint
+
+Unscaled integer fields (`uint8`, `uint16`, etc.), enums, strings, and lookup fields are **not** nullable. They retain their raw value even when all bits are set. This is intentional: unscaled fields often use the sentinel as a legitimate "don't care" value (e.g., SID = 0xFF).
+
+### Encode behavior
+
+When encoding a struct with `nil` nullable fields, the encoder skips writing those fields. Since the output buffer is pre-filled with `0xFF`, nil fields automatically produce the correct sentinel bytes.
+
+```go
+pos := pgn.PositionRapidUpdate{
+    Latitude:  &lat,  // encoded normally
+    Longitude: nil,   // stays 0xFFFFFFFF in output
+}
+data := pos.Encode() // 8 bytes, longitude bytes are all 0xFF
+```
+
+### Impact on filter expressions
+
+The `--where` display filter handles nullable fields transparently. Numeric comparisons against a `nil` field evaluate to false (the frame is excluded):
+
+```bash
+# Frames where latitude is nil will NOT match this filter
+lplex dump --where "latitude > 40"
+```
+
+### Impact on change tracking
+
+The `ChangeTracker` (used by `--changes`) handles nullable fields via the `FieldToleranceDiff`. When comparing two packets:
+
+- Two `nil` values are equal (no change)
+- `nil` vs non-nil (or vice versa) is always a significant change
+- Two non-nil values use the normal tolerance comparison
 
 ## Cross-PGN pair decoding
 

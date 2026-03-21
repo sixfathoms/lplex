@@ -73,7 +73,10 @@ if info.Decode != nil {
         // decode error (data too short, etc.)
     }
     pos := decoded.(pgn.PositionRapidUpdate)
-    fmt.Printf("lat=%.6f lon=%.6f\n", pos.Latitude, pos.Longitude)
+    // Scaled fields are *float64 (nil = sensor data not available)
+    if pos.Latitude != nil && pos.Longitude != nil {
+        fmt.Printf("lat=%.6f lon=%.6f\n", *pos.Latitude, *pos.Longitude)
+    }
 }
 ```
 
