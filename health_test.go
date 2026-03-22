@@ -115,6 +115,83 @@ func TestHealthHandler_ReplicationDisconnected(t *testing.T) {
 	}
 }
 
+func TestLivenessHandler(t *testing.T) {
+	handler := LivenessHandler()
+	req := httptest.NewRequest("GET", "/livez", nil)
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", w.Code)
+	}
+
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status != "ok" {
+		t.Errorf("status: got %q, want %q", resp.Status, "ok")
+	}
+}
+
+func TestReadinessHandler_OK(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	injectFrame(b, 129025, 1, make([]byte, 8))
+	time.Sleep(50 * time.Millisecond)
+
+	handler := ReadinessHandler(HealthConfig{Broker: b})
+	req := httptest.NewRequest("GET", "/readyz", nil)
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", w.Code)
+	}
+
+	var h HealthStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &h); err != nil {
+		t.Fatal(err)
+	}
+	if h.Status != "ok" {
+		t.Errorf("status: got %q, want %q", h.Status, "ok")
+	}
+}
+
+func TestReadinessHandler_Degraded(t *testing.T) {
+	b := newTestBroker()
+	go b.Run()
+	defer close(b.rxFrames)
+
+	replFn := func() *ReplicationStatus {
+		return &ReplicationStatus{Connected: false, LiveLag: 500}
+	}
+
+	handler := ReadinessHandler(HealthConfig{
+		Broker:     b,
+		ReplStatus: replFn,
+	})
+	req := httptest.NewRequest("GET", "/readyz", nil)
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200 (degraded is still ready)", w.Code)
+	}
+
+	var h HealthStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &h); err != nil {
+		t.Fatal(err)
+	}
+	if h.Status != "degraded" {
+		t.Errorf("status: got %q, want %q", h.Status, "degraded")
+	}
+}
+
 func TestBrokerStats(t *testing.T) {
 	b := newTestBroker()
 	go b.Run()

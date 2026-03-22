@@ -50,7 +50,39 @@ type HealthConfig struct {
 	BusSilenceThreshold time.Duration
 }
 
+// LivenessHandler returns an http.HandlerFunc for /livez.
+// It reports whether the process is alive. Always returns 200 OK
+// with a minimal JSON body. Suitable for Kubernetes livenessProbe.
+func LivenessHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
+	}
+}
+
+// ReadinessHandler returns an http.HandlerFunc for /readyz.
+// It reports whether the service is ready to handle traffic by checking
+// CAN bus activity and replication connectivity. Returns 200 for "ok"
+// or "degraded", 503 for "unhealthy". Suitable for Kubernetes readinessProbe.
+func ReadinessHandler(cfg HealthConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		stats := cfg.Broker.Stats()
+		status := buildHealth(stats, cfg.ReplStatus, cfg.BusSilenceThreshold)
+
+		w.Header().Set("Content-Type", "application/json")
+		if status.Status == "unhealthy" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+		_ = json.NewEncoder(w).Encode(status)
+	}
+}
+
 // HealthHandler returns an http.HandlerFunc that serves the /healthz endpoint.
+// It returns the full health status including broker, replication, and component
+// health. For Kubernetes, prefer /livez and /readyz instead.
 func HealthHandler(cfg HealthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		stats := cfg.Broker.Stats()
