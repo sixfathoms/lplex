@@ -34,6 +34,7 @@ var configToFlag = map[string]string{
 	"journal.rotate-size":               "journal-rotate-size",
 	"journal.archive.command":           "journal-archive-command",
 	"journal.archive.trigger":           "journal-archive-trigger",
+	"ring-size":                         "ring-size",
 	"device.idle-timeout":               "device-idle-timeout",
 	"replication.rate-limit":            "replication-rate-limit",
 	"replication.rate-burst":            "replication-rate-burst",

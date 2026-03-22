@@ -40,6 +40,9 @@ http {
 # Data directory for instance state and journals
 data-dir = "/data/lplex"
 
+# Ring buffer size per instance in entries (must be power of 2, default 65536).
+# ring-size = 65536
+
 # Device idle expiry: remove devices not seen for this duration.
 # Handles devices that restart with a new source address.
 # device {
