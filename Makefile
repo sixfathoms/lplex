@@ -32,8 +32,8 @@ check-proto-tools:
 		esac; \
 		exit 1; \
 	}
-	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	@command -v protoc-gen-go >/dev/null 2>&1 || go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	@command -v protoc-gen-go-grpc >/dev/null 2>&1 || go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	@command -v protoc-gen-go >/dev/null 2>&1 || { \
 		echo "error: protoc-gen-go not found in PATH after install."; \
 		echo "Add Go bin directory to your PATH:"; \
