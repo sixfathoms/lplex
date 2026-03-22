@@ -14,6 +14,7 @@ import (
 
 	"github.com/sixfathoms/lplex/journal"
 	pb "github.com/sixfathoms/lplex/proto/replication/v1"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -593,9 +594,13 @@ func (c *ReplicationClient) readRawBlock(f *os.File, r *journal.Reader, blockIdx
 }
 
 func (c *ReplicationClient) buildDialOptions() ([]grpc.DialOption, error) {
+	opts := []grpc.DialOption{
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	}
+
 	if c.cfg.CertFile == "" {
 		// No TLS (for testing)
-		return []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, nil
+		return append(opts, grpc.WithTransportCredentials(insecure.NewCredentials())), nil
 	}
 
 	cert, err := tls.LoadX509KeyPair(c.cfg.CertFile, c.cfg.KeyFile)
@@ -610,9 +615,7 @@ func (c *ReplicationClient) buildDialOptions() ([]grpc.DialOption, error) {
 		Certificates: []tls.Certificate{cert},
 	}
 
-	return []grpc.DialOption{
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
-	}, nil
+	return append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg))), nil
 }
 
 func (c *ReplicationClient) totalJournalBytes() uint64 {

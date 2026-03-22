@@ -64,6 +64,8 @@ func main() {
 	ringSize := flag.Int("ring-size", 65536, "Ring buffer size in entries (must be power of 2)")
 	busSilenceTimeout := flag.String("bus-silence-timeout", "", "Alert when no CAN frames received for this duration (ISO 8601, e.g. PT30S)")
 	configFile := flag.String("config", "", "Path to HOCON config file (default: ./lplex-server.conf, /etc/lplex/lplex-server.conf)")
+	otelEndpoint := flag.String("otel-endpoint", "", "OTLP gRPC collector endpoint for distributed tracing (e.g. localhost:4317)")
+	otelSampleRatio := flag.Float64("otel-sample-ratio", 1.0, "Trace sampling ratio (0.0-1.0, default: 1.0 = sample all)")
 	flag.Parse()
 
 	if *showVersion {
@@ -87,6 +89,23 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if cfgPath != "" {
 		logger.Info("loaded config", "path", cfgPath)
+	}
+
+	// Initialize distributed tracing.
+	tracingShutdown, err := lplex.InitTracing(context.Background(), lplex.TracingConfig{
+		Enabled:        *otelEndpoint != "",
+		Endpoint:       *otelEndpoint,
+		ServiceName:    "lplex-server",
+		ServiceVersion: version,
+		SampleRatio:    *otelSampleRatio,
+	})
+	if err != nil {
+		logger.Error("failed to initialize tracing", "error", err)
+		os.Exit(1)
+	}
+	defer func() { _ = tracingShutdown(context.Background()) }()
+	if *otelEndpoint != "" {
+		logger.Info("tracing enabled", "endpoint", *otelEndpoint, "sample_ratio", *otelSampleRatio)
 	}
 
 	bufDuration, err := lplex.ParseISO8601Duration(*maxBufDur)

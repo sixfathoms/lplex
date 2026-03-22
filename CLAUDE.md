@@ -182,6 +182,7 @@ lplex-cloud process
 | `fastpacket.go` | `FastPacketAssembler`, `FragmentFastPacket`, `IsFastPacket` (checks `pgn.Registry` for `FastPacket` flag) |
 | `devices.go` | `DeviceRegistry`, PGN 60928/126996 decoding, manufacturer lookup table, NAME-based eviction (same NAME on new source evicts old), idle expiry (`ExpireIdle`) |
 | `journal_writer.go` | `JournalWriter`, `JournalWriterStats`, `JournalConfig` (including `OnRotate` callback), block encoding, zstd compression, block index, file rotation, device table tracking (with product info), atomic write metrics (blocks/bytes written, last block duration) |
+| `tracing.go` | `TracingConfig`, `InitTracing`, `Tracer`, OpenTelemetry setup with OTLP/gRPC exporter, probabilistic sampling, W3C Trace Context propagation |
 | `metrics.go` | `MetricsHandler`, Prometheus text format exposition. Broker metrics (frames, ring, consumers, devices, journal drops), journal write metrics (blocks, bytes, latency), replication metrics (lag, backfill progress, frames/blocks sent, reconnects) |
 | `replication.go` | `SeqRange`, `HoleTracker`, `SyncState`, hole tracking algorithm |
 | `replication_client.go` | `ReplicationClient`, `ReplicationClientConfig`, `ReplicationStatus`, live stream + backfill + reconnect loop, atomic replication counters (frames sent, blocks sent, reconnects) |
@@ -292,6 +293,8 @@ lplex-server has send policy flags to gate the `/send` and `/query` endpoints: `
 
 Both binaries support `-device-idle-timeout` (default `5m`, `0` = disabled) to remove devices that haven't been seen within the timeout. HOCON path: `device.idle-timeout`. When a device is evicted (either by idle expiry or by NAME dedup on address change), its ValueStore entries are cleaned up and a `device_removed` event is sent to subscribers.
 
+Both binaries support `-otel-endpoint` (OTLP gRPC collector endpoint, empty = disabled) and `-otel-sample-ratio` (0.0-1.0, default 1.0) for distributed tracing. When enabled, traces propagate via W3C Trace Context through HTTP (otelhttp middleware) and gRPC (otelgrpc interceptors) for end-to-end observability across boat → cloud replication.
+
 Both binaries share the same retention/archive flags: `-journal-retention-max-age`, `-journal-retention-min-keep`, `-journal-retention-max-size`, `-journal-retention-soft-pct`, `-journal-retention-overflow-policy`, `-journal-archive-command`, `-journal-archive-trigger`. HOCON paths: `journal.retention.max-age`, `journal.retention.min-keep`, `journal.retention.max-size`, `journal.retention.soft-pct`, `journal.retention.overflow-policy`, `journal.archive.command`, `journal.archive.trigger`. See [`lplex-server.conf.example`](lplex-server.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example).
 
 ## Dependencies
@@ -303,3 +306,4 @@ Both binaries share the same retention/archive flags: `-journal-retention-max-ag
 - `google.golang.org/grpc` - gRPC framework for replication protocol
 - `google.golang.org/protobuf` - Protocol Buffers runtime
 - `github.com/spf13/cobra` - CLI framework for lplex subcommands
+- `go.opentelemetry.io/otel` - OpenTelemetry distributed tracing (OTLP/gRPC exporter, HTTP + gRPC instrumentation)

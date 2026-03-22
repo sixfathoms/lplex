@@ -21,6 +21,7 @@ import (
 
 	"github.com/sixfathoms/lplex"
 	pb "github.com/sixfathoms/lplex/proto/replication/v1"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -62,6 +63,8 @@ func main() {
 	deviceIdleTimeout := flag.String("device-idle-timeout", "5m", "Remove devices not seen for this duration (0 = disabled)")
 	configFile := flag.String("config", "", "Path to HOCON config file")
 	showVersion := flag.Bool("version", false, "Print version and exit")
+	otelEndpoint := flag.String("otel-endpoint", "", "OTLP gRPC collector endpoint for distributed tracing (e.g. localhost:4317)")
+	otelSampleRatio := flag.Float64("otel-sample-ratio", 1.0, "Trace sampling ratio (0.0-1.0, default: 1.0 = sample all)")
 	flag.Parse()
 
 	if *showVersion {
@@ -85,6 +88,23 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if cfgPath != "" {
 		logger.Info("loaded config", "path", cfgPath)
+	}
+
+	// Initialize distributed tracing.
+	tracingShutdown, err := lplex.InitTracing(context.Background(), lplex.TracingConfig{
+		Enabled:        *otelEndpoint != "",
+		Endpoint:       *otelEndpoint,
+		ServiceName:    "lplex-cloud",
+		ServiceVersion: version,
+		SampleRatio:    *otelSampleRatio,
+	})
+	if err != nil {
+		logger.Error("failed to initialize tracing", "error", err)
+		os.Exit(1)
+	}
+	defer func() { _ = tracingShutdown(context.Background()) }()
+	if *otelEndpoint != "" {
+		logger.Info("tracing enabled", "endpoint", *otelEndpoint, "sample_ratio", *otelSampleRatio)
 	}
 
 	// Initialize instance manager
@@ -236,7 +256,7 @@ func startACMEServer(
 
 	// gRPC server without TLS creds: the http.Server handles TLS,
 	// and grpc-go's ServeHTTP propagates TLS state to peer context.
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 	pb.RegisterReplicationServer(grpcServer, replServer)
 
 	corsHandler := corsMiddleware(httpMux)
@@ -310,6 +330,7 @@ func startDualPortServer(
 		grpcOpts = append(grpcOpts, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	}
 
+	grpcOpts = append(grpcOpts, grpc.StatsHandler(otelgrpc.NewServerHandler()))
 	grpcServer := grpc.NewServer(grpcOpts...)
 	pb.RegisterReplicationServer(grpcServer, replServer)
 
