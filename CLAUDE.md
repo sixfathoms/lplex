@@ -175,7 +175,8 @@ lplex-cloud process
 |---|---|
 | `broker.go` | `Broker`, `BrokerConfig` (including `ReplicaMode`, `InitialHead`, `DeviceIdleTimeout`), `ClientSession`, `subscriber`, `EventFilter`, ring buffer, fan-out, session lifecycle, ephemeral subscriptions, consumer registry, journal feed, value store feed, device idle expiry, `device_removed` events |
 | `consumer.go` | `Consumer`, `Frame`, `ErrFallenBehind`, pull-based tiered reader (journal -> ring -> live), journal fallback with file discovery, seq-based seeking, and block-level prefetch |
-| `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint, on-demand PGN query (`POST /query` via ISO Request PGN 59904) |
+| `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint, on-demand PGN query (`POST /query` via ISO Request PGN 59904), WebSocket upgrade bypass for compression/tracing wrappers |
+| `websocket.go` | `HandleWebSocket`, bidirectional WebSocket transport (`GET /ws`). Streams filtered CAN frames to client, accepts `send` messages for CAN bus transmission. Same filter params as `/events`. |
 | `send_policy.go` | `SendPolicy`, `SendRule`, `PGNMatcher`, `ParseSendRule`, `ParseSendRules`, rule DSL parser and evaluator for `/send` and `/query` gating |
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
@@ -308,3 +309,4 @@ Both binaries share the same retention/archive flags: `-journal-retention-max-ag
 - `google.golang.org/protobuf` - Protocol Buffers runtime
 - `github.com/spf13/cobra` - CLI framework for lplex subcommands
 - `go.opentelemetry.io/otel` - OpenTelemetry distributed tracing (OTLP/gRPC exporter, HTTP + gRPC instrumentation)
+- `github.com/coder/websocket` - WebSocket transport for bidirectional client communication

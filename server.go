@@ -37,6 +37,7 @@ func NewServer(broker *Broker, logger *slog.Logger, policy SendPolicy) *Server {
 		sendPolicy: policy,
 	}
 	s.mux.HandleFunc("GET /events", s.HandleEphemeralSSE)
+	s.mux.HandleFunc("GET /ws", s.HandleWebSocket)
 	s.mux.HandleFunc("PUT /clients/{clientId}", s.handleCreateSession)
 	s.mux.HandleFunc("GET /clients/{clientId}/events", s.handleSSE)
 	s.mux.HandleFunc("PUT /clients/{clientId}/ack", s.handleAck)
@@ -62,6 +63,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		w.Header().Set("Access-Control-Max-Age", "86400")
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	// WebSocket upgrades require http.Hijacker; bypass compression and
+	// tracing wrappers that strip it.
+	if r.Header.Get("Upgrade") == "websocket" {
+		s.mux.ServeHTTP(w, r)
 		return
 	}
 	otelhttp.NewHandler(CompressHandler(s.mux), "",
