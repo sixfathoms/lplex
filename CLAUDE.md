@@ -181,9 +181,10 @@ lplex-cloud process
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
 | `fastpacket.go` | `FastPacketAssembler`, `FragmentFastPacket`, `IsFastPacket` (checks `pgn.Registry` for `FastPacket` flag) |
 | `devices.go` | `DeviceRegistry`, PGN 60928/126996 decoding, manufacturer lookup table, NAME-based eviction (same NAME on new source evicts old), idle expiry (`ExpireIdle`) |
-| `journal_writer.go` | `JournalWriter`, `JournalConfig` (including `OnRotate` callback), block encoding, zstd compression, block index, file rotation, device table tracking (with product info) |
+| `journal_writer.go` | `JournalWriter`, `JournalWriterStats`, `JournalConfig` (including `OnRotate` callback), block encoding, zstd compression, block index, file rotation, device table tracking (with product info), atomic write metrics (blocks/bytes written, last block duration) |
+| `metrics.go` | `MetricsHandler`, Prometheus text format exposition. Broker metrics (frames, ring, consumers, devices, journal drops), journal write metrics (blocks, bytes, latency), replication metrics (lag, backfill progress, frames/blocks sent, reconnects) |
 | `replication.go` | `SeqRange`, `HoleTracker`, `SyncState`, hole tracking algorithm |
-| `replication_client.go` | `ReplicationClient`, `ReplicationClientConfig`, `ReplicationStatus`, live stream + backfill + reconnect loop |
+| `replication_client.go` | `ReplicationClient`, `ReplicationClientConfig`, `ReplicationStatus`, live stream + backfill + reconnect loop, atomic replication counters (frames sent, blocks sent, reconnects) |
 | `replication_events.go` | `EventLog`, `ReplicationEvent`, `ReplicationEventType`, per-instance ring buffer (1024 entries) for diagnostic events (live start/stop, backfill start/stop, block received, checkpoint) |
 | `replication_server.go` | `ReplicationServer`, `InstanceManager` (including `SetOnRotate`), `InstanceState`, `InstanceStatus`, `InstanceSummary`, gRPC handlers (Handshake, Live, Backfill), mTLS verification, state persistence, event recording |
 | `block_writer.go` | `BlockWriter`, `BlockWriterConfig` (including `OnRotate` callback), raw block append to journal files with file rotation |

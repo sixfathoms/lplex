@@ -167,6 +167,7 @@ func main() {
 
 	// Set up journal writer if configured
 	var journalCh chan lplex.RxFrame
+	var jw *lplex.JournalWriter
 	if *journalDir != "" {
 		var rotateDur time.Duration
 		if *journalRotateDur != "" {
@@ -225,7 +226,7 @@ func main() {
 			}
 		}
 
-		jw, err := lplex.NewJournalWriter(jwCfg, broker.Devices(), journalCh)
+		jw, err = lplex.NewJournalWriter(jwCfg, broker.Devices(), journalCh)
 		if err != nil {
 			logger.Error("journal writer init failed", "error", err)
 			os.Exit(1)
@@ -353,7 +354,14 @@ func main() {
 			return &s
 		}
 	}
-	srv.HandleFunc("GET /metrics", lplex.MetricsHandler(broker, replStatusFn))
+	var journalStatsFn func() *lplex.JournalWriterStats
+	if jw != nil {
+		journalStatsFn = func() *lplex.JournalWriterStats {
+			s := jw.Stats()
+			return &s
+		}
+	}
+	srv.HandleFunc("GET /metrics", lplex.MetricsHandler(broker, replStatusFn, journalStatsFn))
 
 	// Register health check endpoint.
 	healthCfg := lplex.HealthConfig{
