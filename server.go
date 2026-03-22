@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+// SSE framing bytes, pre-allocated to avoid per-write allocations.
+var (
+	sseDataPrefix = []byte("data: ")
+	sseDataSuffix = []byte("\n\n")
+)
+
 // Server handles HTTP API requests for lplex.
 type Server struct {
 	broker     *Broker
@@ -189,7 +195,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("failed to serialize frame", "error", err)
 			continue
 		}
-		fmt.Fprintf(w, "data: %s\n\n", jsonBytes)
+		w.Write(sseDataPrefix) //nolint:errcheck
+		w.Write(jsonBytes)     //nolint:errcheck
+		w.Write(sseDataSuffix) //nolint:errcheck
 		flusher.Flush()
 	}
 }
@@ -228,7 +236,9 @@ func (s *Server) HandleEphemeralSSE(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			w.Write(sseDataPrefix) //nolint:errcheck
+			w.Write(data)          //nolint:errcheck
+			w.Write(sseDataSuffix) //nolint:errcheck
 			flusher.Flush()
 		}
 	}
