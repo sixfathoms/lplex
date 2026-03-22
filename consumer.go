@@ -285,6 +285,7 @@ func readFirstSeq(path string) (uint64, bool) {
 	if err != nil || r.Version() != journal.Version2 || r.BlockCount() == 0 {
 		return 0, false
 	}
+	defer r.Close()
 	if err := r.SeekBlock(0); err != nil {
 		return 0, false
 	}
@@ -354,6 +355,7 @@ func (c *Consumer) openJournalFile(idx int) error {
 		return errors.New("journal v1 not supported for seq-based reading")
 	}
 
+	r.EnablePrefetch()
 	c.jFile = f
 	c.jReader = r
 	return nil
@@ -361,7 +363,10 @@ func (c *Consumer) openJournalFile(idx int) error {
 
 // closeCurrentFile closes the current journal file and reader.
 func (c *Consumer) closeCurrentFile() {
-	c.jReader = nil
+	if c.jReader != nil {
+		c.jReader.Close()
+		c.jReader = nil
+	}
 	if c.jFile != nil {
 		_ = c.jFile.Close()
 		c.jFile = nil
