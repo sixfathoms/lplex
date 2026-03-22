@@ -76,6 +76,7 @@ func init() {
 	rootCmd.AddCommand(sendCmd)
 	rootCmd.AddCommand(requestCmd)
 	rootCmd.AddCommand(switchesCmd)
+	rootCmd.AddCommand(verifyCmd)
 }
 
 func main() {
