@@ -45,6 +45,42 @@ curl -N "http://inuc1.local:8089/events?pgn=129025&manufacturer=Garmin"
 
 ---
 
+#### `GET /ws`
+
+Opens a WebSocket connection for bidirectional communication. CAN frames flow to the client (same filtering as `/events`), and the client can send CAN frames back (same validation as `/send`).
+
+**Query parameters:** Same as `GET /events` (pgn, exclude_pgn, manufacturer, instance, name, exclude_name).
+
+**Message format** (JSON envelope):
+
+```json
+// Server → Client (CAN frame)
+{"type": "frame", "data": {"seq":1234,"ts":"...","prio":2,"pgn":129025,"src":10,"dst":255,"data":"5A1F..."}}
+
+// Server → Client (device event)
+{"type": "device", "data": {...}}
+
+// Client → Server (send CAN frame)
+{"type": "send", "data": {"pgn":59904,"dst":255,"prio":6,"data":"0102030405060708"}}
+
+// Server → Client (error response)
+{"type": "error", "data": "send is disabled"}
+```
+
+**Example (JavaScript):**
+
+```javascript
+const ws = new WebSocket("ws://inuc1.local:8089/ws?pgn=129025");
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === "frame") console.log(msg.data);
+};
+// Send a CAN frame
+ws.send(JSON.stringify({type: "send", data: {pgn: 59904, dst: 255, prio: 6, data: "0102030405060708"}}));
+```
+
+---
+
 ### Buffered sessions
 
 #### `PUT /clients/{clientId}`
