@@ -64,6 +64,7 @@ const sidebars: SidebarsConfig = {
         'contributing/overview',
         'contributing/architecture',
         'contributing/journal-format',
+        'contributing/benchmarking',
       ],
     },
     {
