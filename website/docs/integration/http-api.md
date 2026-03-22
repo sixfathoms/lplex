@@ -45,6 +45,41 @@ curl -N "http://inuc1.local:8089/events?pgn=129025&manufacturer=Garmin"
 
 ---
 
+#### `GET /history`
+
+Queries journal files for historical CAN frames within a time range. Requires journaling to be enabled.
+
+**Query parameters:**
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `from` | RFC3339 | yes | Start time |
+| `to` | RFC3339 | no | End time (default: now) |
+| `pgn` | uint32 | no | Filter by PGN (repeatable) |
+| `src` | uint8 | no | Filter by source address (repeatable) |
+| `limit` | int | no | Max frames to return (default: 10000) |
+
+**Response:** `Content-Type: application/json`
+
+```json
+[
+  {"seq":1234,"ts":"2026-03-06T10:15:32.123Z","prio":2,"pgn":129025,"src":10,"dst":255,"data":"5A1F2B3C4D5E6F70"},
+  {"seq":1235,"ts":"2026-03-06T10:15:33.145Z","prio":2,"pgn":129025,"src":10,"dst":255,"data":"5B1F2C3D4E5F7071"}
+]
+```
+
+**Example:**
+
+```bash
+# GPS position for the last hour
+curl "http://inuc1.local:8089/history?from=$(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)&pgn=129025"
+
+# All frames from a specific time range
+curl "http://inuc1.local:8089/history?from=2026-03-06T10:00:00Z&to=2026-03-06T11:00:00Z&limit=1000"
+```
+
+---
+
 #### `GET /ws`
 
 Opens a WebSocket connection for bidirectional communication. CAN frames flow to the client (same filtering as `/events`), and the client can send CAN frames back (same validation as `/send`).
