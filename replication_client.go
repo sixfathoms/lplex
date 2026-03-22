@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sixfathoms/lplex/journal"
@@ -56,6 +57,12 @@ type ReplicationClient struct {
 	// Lag detection (protected by mu)
 	lagTriggered     bool      // live stream fell behind, trigger fast reconnect
 	lastLagReconnect time.Time // throttle lag-triggered reconnects
+
+	// Metrics counters (atomic for lock-free reads)
+	liveFramesSent     atomic.Uint64
+	backfillBlocksSent atomic.Uint64
+	backfillBytesSent  atomic.Uint64
+	reconnects         atomic.Uint64
 }
 
 // NewReplicationClient creates a new replication client. Call Run to start.
@@ -91,6 +98,7 @@ func (c *ReplicationClient) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		c.reconnects.Add(1)
 
 		c.mu.Lock()
 		c.connected = false
@@ -158,27 +166,35 @@ func (c *ReplicationClient) Status() ReplicationStatus {
 	}
 
 	return ReplicationStatus{
-		Connected:            c.connected,
-		InstanceID:           c.cfg.InstanceID,
-		LocalHeadSeq:         headSeq,
-		CloudCursor:          c.cloudCursor,
-		Holes:                append([]SeqRange(nil), c.holes...),
-		LiveLag:              liveLag,
+		Connected:             c.connected,
+		InstanceID:            c.cfg.InstanceID,
+		LocalHeadSeq:          headSeq,
+		CloudCursor:           c.cloudCursor,
+		Holes:                 append([]SeqRange(nil), c.holes...),
+		LiveLag:               liveLag,
 		BackfillRemainingSeqs: backfillRemaining,
-		LastAck:              c.lastAck,
+		LastAck:               c.lastAck,
+		LiveFramesSent:        c.liveFramesSent.Load(),
+		BackfillBlocksSent:    c.backfillBlocksSent.Load(),
+		BackfillBytesSent:     c.backfillBytesSent.Load(),
+		Reconnects:            c.reconnects.Load(),
 	}
 }
 
 // ReplicationStatus is the boat-side view of replication state.
 type ReplicationStatus struct {
-	Connected            bool       `json:"connected"`
-	InstanceID           string     `json:"instance_id"`
-	LocalHeadSeq         uint64     `json:"local_head_seq"`
-	CloudCursor          uint64     `json:"cloud_cursor"`
-	Holes                []SeqRange `json:"holes,omitzero"`
-	LiveLag              uint64     `json:"live_lag"`
-	BackfillRemainingSeqs uint64    `json:"backfill_remaining_seqs"`
-	LastAck              time.Time  `json:"last_ack,omitempty"`
+	Connected             bool       `json:"connected"`
+	InstanceID            string     `json:"instance_id"`
+	LocalHeadSeq          uint64     `json:"local_head_seq"`
+	CloudCursor           uint64     `json:"cloud_cursor"`
+	Holes                 []SeqRange `json:"holes,omitzero"`
+	LiveLag               uint64     `json:"live_lag"`
+	BackfillRemainingSeqs uint64     `json:"backfill_remaining_seqs"`
+	LastAck               time.Time  `json:"last_ack,omitempty"`
+	LiveFramesSent        uint64     `json:"live_frames_sent"`
+	BackfillBlocksSent    uint64     `json:"backfill_blocks_sent"`
+	BackfillBytesSent     uint64     `json:"backfill_bytes_sent"`
+	Reconnects            uint64     `json:"reconnects"`
 }
 
 func (c *ReplicationClient) connectAndStream(ctx context.Context) error {
@@ -372,6 +388,7 @@ func (c *ReplicationClient) runLiveStream(ctx context.Context, client pb.Replica
 		}); err != nil {
 			return err
 		}
+		c.liveFramesSent.Add(1)
 
 		// Periodic lag check: if the consumer is falling too far behind
 		// the broker head, bail out so we can reconnect at the tip and
@@ -537,6 +554,8 @@ func (c *ReplicationClient) backfillFromFile(ctx context.Context, stream pb.Repl
 		}); err != nil {
 			return err
 		}
+		c.backfillBlocksSent.Add(1)
+		c.backfillBytesSent.Add(uint64(len(blockData)))
 	}
 
 	return nil

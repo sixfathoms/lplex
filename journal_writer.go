@@ -58,12 +58,24 @@ type journalDeviceChange struct {
 	FrameIdx uint32
 }
 
+// JournalWriterStats holds point-in-time journal write metrics.
+type JournalWriterStats struct {
+	BlocksWritten          uint64        // total blocks flushed
+	BytesWritten           uint64        // total bytes written to disk
+	LastBlockWriteDuration time.Duration // duration of last block write
+}
+
 // JournalWriter writes CAN frames to block-based journal files.
 type JournalWriter struct {
 	cfg     JournalConfig
 	devices *DeviceRegistry
 	ch      <-chan RxFrame
 	paused  atomic.Bool // when true, frames are drained but not written
+
+	// metrics (atomic for lock-free reads from metrics handler)
+	blocksWritten          atomic.Uint64
+	bytesWritten           atomic.Uint64
+	lastBlockWriteNanos    atomic.Int64
 
 	// current file
 	file       *os.File
@@ -124,6 +136,15 @@ func NewJournalWriter(cfg JournalConfig, devices *DeviceRegistry, ch <-chan RxFr
 // SetPaused sets whether the writer should discard incoming frames.
 // Used by the overflow policy to stop writes when disk is full.
 func (w *JournalWriter) SetPaused(p bool) { w.paused.Store(p) }
+
+// Stats returns a point-in-time snapshot of journal write metrics.
+func (w *JournalWriter) Stats() JournalWriterStats {
+	return JournalWriterStats{
+		BlocksWritten:          w.blocksWritten.Load(),
+		BytesWritten:           w.bytesWritten.Load(),
+		LastBlockWriteDuration: time.Duration(w.lastBlockWriteNanos.Load()),
+	}
+}
 
 // Run is the main loop. Blocks until ctx is cancelled or the channel is closed.
 func (w *JournalWriter) Run(ctx context.Context) error {
@@ -373,21 +394,31 @@ func (w *JournalWriter) flushBlock() error {
 	checksum := crc32.Checksum(w.block[:bs-4], journal.CRC32cTable)
 	binary.LittleEndian.PutUint32(w.block[bs-4:], checksum)
 
+	writeStart := time.Now()
+	bytesBefore := w.fileBytes
+
 	switch w.cfg.Compression {
 	case journal.CompressionZstd:
-		return w.writeCompressedBlock()
+		if err := w.writeCompressedBlock(); err != nil {
+			return err
+		}
 	case journal.CompressionZstdDict:
-		return w.writeDictCompressedBlock()
+		if err := w.writeDictCompressedBlock(); err != nil {
+			return err
+		}
+	default:
+		n, err := w.file.Write(w.block)
+		if err != nil {
+			return fmt.Errorf("journal block write: %w", err)
+		}
+		w.fileBytes += int64(n)
+		w.frameCount = 0
+		w.dataOffset = 16
 	}
 
-	n, err := w.file.Write(w.block)
-	if err != nil {
-		return fmt.Errorf("journal block write: %w", err)
-	}
-	w.fileBytes += int64(n)
-
-	w.frameCount = 0
-	w.dataOffset = 16
+	w.blocksWritten.Add(1)
+	w.bytesWritten.Add(uint64(w.fileBytes - bytesBefore))
+	w.lastBlockWriteNanos.Store(int64(time.Since(writeStart)))
 
 	return nil
 }

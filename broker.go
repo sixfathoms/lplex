@@ -254,8 +254,11 @@ type Broker struct {
 	virtualDevices *VirtualDeviceManager
 
 	// metrics counters (lock-free)
-	frameCount    atomic.Uint64
-	lastFrameNano atomic.Int64 // UnixNano of most recent frame
+	frameCount      atomic.Uint64
+	lastFrameNano   atomic.Int64 // UnixNano of most recent frame
+	journalDrops    atomic.Uint64
+	devicesAdded    atomic.Uint64
+	devicesRemoved  atomic.Uint64
 }
 
 // TxRequest is a frame to write to the CAN bus.
@@ -487,6 +490,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 			isOurClaim = b.virtualDevices.HandleBusClaim(src, name)
 		}
 		if dev, evictedSrc, evicted := b.devices.HandleAddressClaim(src, frame.Data); dev != nil {
+			b.devicesAdded.Add(1)
 			b.logger.Info("device discovered",
 				"src", dev.Source,
 				"manufacturer", dev.Manufacturer,
@@ -494,6 +498,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 				"class", dev.DeviceClass,
 			)
 			if evicted {
+				b.devicesRemoved.Add(1)
 				b.logger.Info("evicted stale device (same NAME, old address)",
 					"old_src", evictedSrc, "new_src", src)
 				b.values.RemoveSource(evictedSrc)
@@ -611,6 +616,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 		select {
 		case b.journal <- frame:
 		default:
+			b.journalDrops.Add(1)
 			b.logger.Warn("journal buffer full, dropping frame")
 		}
 	}
@@ -792,6 +798,7 @@ func (b *Broker) expireDevices() {
 	cutoff := time.Now().Add(-b.deviceIdleTimeout)
 	evicted := b.devices.ExpireIdle(cutoff)
 	for _, src := range evicted {
+		b.devicesRemoved.Add(1)
 		b.logger.Info("expired idle device", "src", src)
 		b.values.RemoveSource(src)
 		b.fanOutDeviceRemoved(src)
@@ -919,15 +926,19 @@ func (b *Broker) VirtualDevices() *VirtualDeviceManager {
 
 // BrokerStats is a point-in-time snapshot of broker metrics.
 type BrokerStats struct {
-	FramesTotal      uint64    // total frames processed
-	LastFrameTime    time.Time // timestamp of most recent frame (zero if none)
-	RingEntries      uint64    // current entries in ring buffer
-	RingCapacity     int       // ring buffer size
-	HeadSeq          uint64    // next sequence number
-	ActiveSessions   int       // buffered client sessions
-	ActiveSubscribers int      // ephemeral SSE subscribers
-	ActiveConsumers  int       // pull-based consumers
-	DeviceCount      int       // discovered NMEA 2000 devices
+	FramesTotal       uint64    // total frames processed
+	LastFrameTime     time.Time // timestamp of most recent frame (zero if none)
+	RingEntries       uint64    // current entries in ring buffer
+	RingCapacity      int       // ring buffer size
+	HeadSeq           uint64    // next sequence number
+	ActiveSessions    int       // buffered client sessions
+	ActiveSubscribers int       // ephemeral SSE subscribers
+	ActiveConsumers   int       // pull-based consumers
+	DeviceCount       int       // discovered NMEA 2000 devices
+	JournalDrops      uint64    // frames dropped due to full journal channel
+	DevicesAdded      uint64    // cumulative device discovery events
+	DevicesRemoved    uint64    // cumulative device eviction events
+	ConsumerMaxLag    uint64    // max consumer lag (head - cursor) across all consumers
 }
 
 // Stats returns a point-in-time snapshot of broker metrics.
@@ -948,6 +959,15 @@ func (b *Broker) Stats() BrokerStats {
 
 	b.consumerMu.RLock()
 	consumers := len(b.consumers)
+	var maxLag uint64
+	for c := range b.consumers {
+		cursor := c.Cursor()
+		if head > cursor {
+			if lag := head - cursor; lag > maxLag {
+				maxLag = lag
+			}
+		}
+	}
 	b.consumerMu.RUnlock()
 
 	var lastFrame time.Time
@@ -965,6 +985,10 @@ func (b *Broker) Stats() BrokerStats {
 		ActiveSubscribers: subscribers,
 		ActiveConsumers:   consumers,
 		DeviceCount:       len(b.devices.Snapshot()),
+		JournalDrops:      b.journalDrops.Load(),
+		DevicesAdded:      b.devicesAdded.Load(),
+		DevicesRemoved:    b.devicesRemoved.Load(),
+		ConsumerMaxLag:    maxLag,
 	}
 }
 
