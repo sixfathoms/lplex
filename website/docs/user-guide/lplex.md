@@ -195,6 +195,12 @@ lplex dump --file recording.lpj --decode
 
 # Inspect journal structure (block layout, device table, compression)
 lplex inspect recording.lpj
+
+# Verify journal integrity (CRC32C checksums, sequence gaps)
+lplex verify recording.lpj
+
+# Verify all journals in a directory (includes cross-file continuity)
+lplex verify /var/lib/lplex/journal/
 ```
 
 :::note
