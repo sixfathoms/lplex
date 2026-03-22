@@ -62,7 +62,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.mux.ServeHTTP(w, r)
+	CompressHandler(s.mux).ServeHTTP(w, r)
 }
 
 // clientIDPattern validates client IDs: alphanumeric, hyphens, underscores, 1-64 chars.
