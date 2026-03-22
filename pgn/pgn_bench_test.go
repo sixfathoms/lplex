@@ -49,40 +49,30 @@ func BenchmarkDecode(b *testing.B) {
 
 func BenchmarkEncode(b *testing.B) {
 	b.Run("VesselHeading", func(b *testing.B) {
-		m := VesselHeading{
-			Sid:              0xff,
-			Heading:          3.1504,
-			Deviation:        0,
-			Variation:        0,
-			HeadingReference: HeadingReferenceTrue,
-		}
+		data, _ := hex.DecodeString("ff107b0000000000")
+		m, _ := DecodeVesselHeading(data)
 		b.ReportAllocs()
+		b.ResetTimer()
 		for b.Loop() {
 			m.Encode()
 		}
 	})
 
 	b.Run("WindData", func(b *testing.B) {
-		m := WindData{
-			Sid:           0xff,
-			WindSpeed:     14.12,
-			WindAngle:     0.7890,
-			WindReference: WindReferenceApparent,
-		}
+		data, _ := hex.DecodeString("ff640500d21e0200")
+		m, _ := DecodeWindData(data)
 		b.ReportAllocs()
+		b.ResetTimer()
 		for b.Loop() {
 			m.Encode()
 		}
 	})
 
 	b.Run("EngineParametersRapidUpdate", func(b *testing.B) {
-		m := EngineParametersRapidUpdate{
-			EngineInstance: 0,
-			EngineSpeed:    250.0,
-			EngineBoost:    0,
-			EngineTiltTrim: 0,
-		}
+		data, _ := hex.DecodeString("00e80300000000ff")
+		m, _ := DecodeEngineParametersRapidUpdate(data)
 		b.ReportAllocs()
+		b.ResetTimer()
 		for b.Loop() {
 			m.Encode()
 		}
