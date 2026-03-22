@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // SSE framing bytes, pre-allocated to avoid per-write allocations.
@@ -62,7 +64,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	CompressHandler(s.mux).ServeHTTP(w, r)
+	otelhttp.NewHandler(CompressHandler(s.mux), "",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	).ServeHTTP(w, r)
 }
 
 // clientIDPattern validates client IDs: alphanumeric, hyphens, underscores, 1-64 chars.
