@@ -316,17 +316,39 @@ Returns replication connection and sync state. Only available when replication i
 
 #### `GET /healthz`
 
-Health check endpoint.
+Full health check endpoint. Returns structured health status including broker stats, replication state, and component health.
+
+**Response:** `200 OK` (ok or degraded), `503 Service Unavailable` (unhealthy)
+
+```json
+{
+  "status": "ok",
+  "broker": {
+    "status": "ok",
+    "frames_total": 123456,
+    "head_seq": 123456,
+    "device_count": 5,
+    "ring_entries": 12000,
+    "ring_capacity": 65536
+  }
+}
+```
+
+Reports degraded when the CAN bus has been silent longer than `bus-silence-threshold` or replication is disconnected.
+
+#### `GET /livez`
+
+Liveness probe. Always returns `200 OK` if the process is running. Use for Kubernetes `livenessProbe`.
 
 **Response:** `200 OK`
 
 ```json
-{
-  "status": "ok"
-}
+{"status": "ok"}
 ```
 
-Reports unhealthy when the CAN bus has been silent longer than `bus-silence-threshold`.
+#### `GET /readyz`
+
+Readiness probe. Returns `200 OK` when the service is ready to handle traffic (status "ok" or "degraded"), `503` when unhealthy. Same response body as `/healthz`. Use for Kubernetes `readinessProbe`.
 
 #### `GET /metrics`
 

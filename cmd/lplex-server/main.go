@@ -369,6 +369,8 @@ func main() {
 		healthCfg.BusSilenceThreshold = silenceDur
 	}
 	srv.HandleFunc("GET /healthz", lplex.HealthHandler(healthCfg))
+	srv.HandleFunc("GET /livez", lplex.LivenessHandler())
+	srv.HandleFunc("GET /readyz", lplex.ReadinessHandler(healthCfg))
 
 	addr := fmt.Sprintf(":%d", *port)
 	httpServer := &http.Server{

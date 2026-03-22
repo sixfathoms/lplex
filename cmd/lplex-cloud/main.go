@@ -617,7 +617,7 @@ func registerCloudMetricsHealth(mux *http.ServeMux, im *lplex.InstanceManager, r
 		}
 	})
 
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	cloudHealthHandler := func(w http.ResponseWriter, r *http.Request) {
 		instances := im.List()
 		status := "ok"
 
@@ -643,7 +643,10 @@ func registerCloudMetricsHealth(mux *http.ServeMux, im *lplex.InstanceManager, r
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(resp)
-	})
+	}
+	mux.HandleFunc("GET /healthz", cloudHealthHandler)
+	mux.HandleFunc("GET /readyz", cloudHealthHandler)
+	mux.HandleFunc("GET /livez", lplex.LivenessHandler())
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
