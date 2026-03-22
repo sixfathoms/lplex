@@ -66,6 +66,8 @@ func main() {
 	configFile := flag.String("config", "", "Path to HOCON config file (default: ./lplex-server.conf, /etc/lplex/lplex-server.conf)")
 	otelEndpoint := flag.String("otel-endpoint", "", "OTLP gRPC collector endpoint for distributed tracing (e.g. localhost:4317)")
 	otelSampleRatio := flag.Float64("otel-sample-ratio", 1.0, "Trace sampling ratio (0.0-1.0, default: 1.0 = sample all)")
+	alertWebhookURL := flag.String("alert-webhook-url", "", "HTTP POST endpoint for alert notifications (empty = disabled)")
+	alertDedupWindow := flag.String("alert-dedup-window", "5m", "Suppress duplicate alerts within this window")
 	flag.Parse()
 
 	if *showVersion {
@@ -307,6 +309,28 @@ func main() {
 		}
 	}()
 
+	// Set up alert manager if webhook is configured.
+	dedupWindow, err := time.ParseDuration(*alertDedupWindow)
+	if err != nil {
+		logger.Error("invalid alert-dedup-window", "value", *alertDedupWindow, "error", err)
+		os.Exit(1)
+	}
+	alertMgr := lplex.NewAlertManager(lplex.AlertManagerConfig{
+		WebhookURL:  *alertWebhookURL,
+		DedupWindow: dedupWindow,
+		InstanceID:  *replInstanceID,
+		Logger:      logger,
+	})
+	if alertMgr != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			alertMgr.Run(ctx)
+		}()
+		logger.Info("alerting enabled", "webhook_url", *alertWebhookURL, "dedup_window", dedupWindow)
+	}
+	broker.SetAlerts(alertMgr)
+
 	// Start bus silence monitor if configured
 	if *busSilenceTimeout != "" {
 		silenceTimeout, err := lplex.ParseISO8601Duration(*busSilenceTimeout)
@@ -314,7 +338,7 @@ func main() {
 			logger.Error("invalid bus-silence-timeout", "value", *busSilenceTimeout, "error", err)
 			os.Exit(1)
 		}
-		monitor := lplex.NewBusSilenceMonitor(silenceTimeout, broker, logger)
+		monitor := lplex.NewBusSilenceMonitor(silenceTimeout, broker, logger, alertMgr)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -343,6 +367,7 @@ func main() {
 			LagCheckInterval:        *replLagCheckInterval,
 			MinLagReconnectInterval: minLagReconnect,
 		}, broker)
+		replClient.SetAlerts(alertMgr)
 
 		wg.Add(1)
 		go func() {

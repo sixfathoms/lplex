@@ -182,6 +182,7 @@ lplex-cloud process
 | `fastpacket.go` | `FastPacketAssembler`, `FragmentFastPacket`, `IsFastPacket` (checks `pgn.Registry` for `FastPacket` flag) |
 | `devices.go` | `DeviceRegistry`, PGN 60928/126996 decoding, manufacturer lookup table, NAME-based eviction (same NAME on new source evicts old), idle expiry (`ExpireIdle`) |
 | `journal_writer.go` | `JournalWriter`, `JournalWriterStats`, `JournalConfig` (including `OnRotate` callback), block encoding, zstd compression, block index, file rotation, device table tracking (with product info), atomic write metrics (blocks/bytes written, last block duration) |
+| `alerting.go` | `AlertManager`, `AlertManagerConfig`, `AlertEvent`, `AlertType`, webhook-based alerting with dedup window. Fires on bus silence/resume, device removal, replication disconnect/reconnect |
 | `tracing.go` | `TracingConfig`, `InitTracing`, `Tracer`, OpenTelemetry setup with OTLP/gRPC exporter, probabilistic sampling, W3C Trace Context propagation |
 | `metrics.go` | `MetricsHandler`, Prometheus text format exposition. Broker metrics (frames, ring, consumers, devices, journal drops), journal write metrics (blocks, bytes, latency), replication metrics (lag, backfill progress, frames/blocks sent, reconnects) |
 | `replication.go` | `SeqRange`, `HoleTracker`, `SyncState`, hole tracking algorithm |

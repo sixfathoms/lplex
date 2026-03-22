@@ -14,6 +14,7 @@ type BusSilenceMonitor struct {
 	timeout time.Duration
 	broker  *Broker
 	logger  *slog.Logger
+	alerts  *AlertManager
 
 	mu       sync.Mutex
 	silentAt time.Time // when silence was first detected (zero = not silent)
@@ -21,11 +22,13 @@ type BusSilenceMonitor struct {
 
 // NewBusSilenceMonitor creates a monitor that alerts when no frames have
 // been received for the given timeout duration. The timeout must be positive.
-func NewBusSilenceMonitor(timeout time.Duration, broker *Broker, logger *slog.Logger) *BusSilenceMonitor {
+// The optional AlertManager fires webhook alerts on silence/resume transitions.
+func NewBusSilenceMonitor(timeout time.Duration, broker *Broker, logger *slog.Logger, alerts *AlertManager) *BusSilenceMonitor {
 	return &BusSilenceMonitor{
 		timeout: timeout,
 		broker:  broker,
 		logger:  logger,
+		alerts:  alerts,
 	}
 }
 
@@ -75,6 +78,9 @@ func (m *BusSilenceMonitor) check() {
 				"last_frame", lastFrame,
 				"elapsed", elapsed.Truncate(time.Second),
 			)
+			if m.alerts != nil {
+				m.alerts.FireBusSilence(lastFrame, elapsed)
+			}
 		}
 	} else {
 		if !m.silentAt.IsZero() {
@@ -82,6 +88,9 @@ func (m *BusSilenceMonitor) check() {
 			m.logger.Info("bus activity resumed after silence",
 				"silence_duration", silenceDur.Truncate(time.Second),
 			)
+			if m.alerts != nil {
+				m.alerts.FireBusResumed(silenceDur)
+			}
 			m.silentAt = time.Time{}
 		}
 	}
