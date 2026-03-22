@@ -199,6 +199,10 @@ replication {
 | `-replication-tls-cert` | `replication.tls.cert` | (empty) | Client TLS cert |
 | `-replication-tls-key` | `replication.tls.key` | (empty) | Client TLS key |
 | `-replication-tls-ca` | `replication.tls.ca` | (empty) | CA cert |
+| `-otel-endpoint` | `otel.endpoint` | (empty) | OTLP gRPC collector for distributed tracing |
+| `-otel-sample-ratio` | `otel.sample-ratio` | `1.0` | Trace sampling ratio (0.0-1.0) |
+| `-alert-webhook-url` | `alert.webhook-url` | (empty) | HTTP POST endpoint for alert notifications |
+| `-alert-dedup-window` | `alert.dedup-window` | `5m` | Suppress duplicate alerts within window |
 
 ## lplex-cloud
 

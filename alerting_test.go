@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -62,9 +63,9 @@ func TestAlertManagerFireAndDeliver(t *testing.T) {
 }
 
 func TestAlertManagerDedup(t *testing.T) {
-	count := 0
+	var count atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count++
+		count.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -86,15 +87,15 @@ func TestAlertManagerDedup(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Only 1 should have been delivered
-	if count != 1 {
-		t.Errorf("expected 1 delivery (dedup), got %d", count)
+	if got := count.Load(); got != 1 {
+		t.Errorf("expected 1 delivery (dedup), got %d", got)
 	}
 }
 
 func TestAlertManagerDedupDifferentTypes(t *testing.T) {
-	count := 0
+	var count atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count++
+		count.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -115,8 +116,8 @@ func TestAlertManagerDedupDifferentTypes(t *testing.T) {
 	am.Fire(AlertEvent{Type: AlertDeviceRemoved, Severity: "warning", Summary: "c"})
 	time.Sleep(200 * time.Millisecond)
 
-	if count != 3 {
-		t.Errorf("expected 3 deliveries (different types), got %d", count)
+	if got := count.Load(); got != 3 {
+		t.Errorf("expected 3 deliveries (different types), got %d", got)
 	}
 }
 
