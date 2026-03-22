@@ -68,6 +68,12 @@ func main() {
 	otelSampleRatio := flag.Float64("otel-sample-ratio", 1.0, "Trace sampling ratio (0.0-1.0, default: 1.0 = sample all)")
 	alertWebhookURL := flag.String("alert-webhook-url", "", "HTTP POST endpoint for alert notifications (empty = disabled)")
 	alertDedupWindow := flag.String("alert-dedup-window", "5m", "Suppress duplicate alerts within this window")
+	mqttBrokerURL := flag.String("mqtt-broker", "", "MQTT broker URL for bridge publishing (e.g. tcp://localhost:1883)")
+	mqttTopicPrefix := flag.String("mqtt-topic-prefix", "lplex", "MQTT topic prefix for published frames")
+	mqttClientID := flag.String("mqtt-client-id", "lplex-server", "MQTT client ID")
+	mqttQoS := flag.Int("mqtt-qos", 0, "MQTT quality of service (0, 1, or 2)")
+	mqttUsername := flag.String("mqtt-username", "", "MQTT broker username")
+	mqttPassword := flag.String("mqtt-password", "", "MQTT broker password")
 	flag.Parse()
 
 	if *showVersion {
@@ -345,6 +351,26 @@ func main() {
 			monitor.Run(ctx)
 		}()
 		logger.Info("bus silence monitor enabled", "timeout", silenceTimeout)
+	}
+
+	// Start MQTT bridge if configured
+	if *mqttBrokerURL != "" {
+		bridge := lplex.NewMQTTBridge(lplex.MQTTBridgeConfig{
+			BrokerURL:   *mqttBrokerURL,
+			TopicPrefix: *mqttTopicPrefix,
+			ClientID:    *mqttClientID,
+			QoS:         byte(*mqttQoS),
+			Username:    *mqttUsername,
+			Password:    *mqttPassword,
+			Logger:      logger,
+		}, broker)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := bridge.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("MQTT bridge failed", "error", err)
+			}
+		}()
 	}
 
 	// Start replication client if configured
