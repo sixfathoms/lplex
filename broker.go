@@ -253,6 +253,9 @@ type Broker struct {
 	// virtual NMEA 2000 devices (nil = disabled)
 	virtualDevices *VirtualDeviceManager
 
+	// alerting (nil = disabled)
+	alerts *AlertManager
+
 	// metrics counters (lock-free)
 	frameCount      atomic.Uint64
 	lastFrameNano   atomic.Int64 // UnixNano of most recent frame
@@ -800,6 +803,9 @@ func (b *Broker) expireDevices() {
 	for _, src := range evicted {
 		b.devicesRemoved.Add(1)
 		b.logger.Info("expired idle device", "src", src)
+		if b.alerts != nil {
+			b.alerts.FireDeviceRemoved(src, nil)
+		}
 		b.values.RemoveSource(src)
 		b.fanOutDeviceRemoved(src)
 	}
@@ -864,6 +870,12 @@ func (b *Broker) Done() <-chan struct{} {
 // SetJournal sets the journal channel. Must be called before Run.
 func (b *Broker) SetJournal(ch chan<- RxFrame) {
 	b.journal = ch
+}
+
+// SetAlerts sets the alert manager for device removal notifications.
+// Must be called before Run.
+func (b *Broker) SetAlerts(am *AlertManager) {
+	b.alerts = am
 }
 
 // notifyConsumers does a non-blocking send to each consumer's notify channel.

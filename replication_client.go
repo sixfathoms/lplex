@@ -59,6 +59,9 @@ type ReplicationClient struct {
 	lagTriggered     bool      // live stream fell behind, trigger fast reconnect
 	lastLagReconnect time.Time // throttle lag-triggered reconnects
 
+	// alerting (nil = disabled)
+	alerts *AlertManager
+
 	// Metrics counters (atomic for lock-free reads)
 	liveFramesSent     atomic.Uint64
 	backfillBlocksSent atomic.Uint64
@@ -87,6 +90,11 @@ func NewReplicationClient(cfg ReplicationClientConfig, broker *Broker) *Replicat
 	}
 }
 
+// SetAlerts sets the alert manager for replication alerts. Must be called before Run.
+func (c *ReplicationClient) SetAlerts(am *AlertManager) {
+	c.alerts = am
+}
+
 // Run is the main loop. Connects to the cloud, performs handshake, and starts
 // live + backfill streams. Reconnects on failure with exponential backoff.
 // Blocks until ctx is cancelled.
@@ -100,6 +108,13 @@ func (c *ReplicationClient) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 		c.reconnects.Add(1)
+		if c.alerts != nil {
+			errMsg := ""
+			if err != nil {
+				errMsg = err.Error()
+			}
+			c.alerts.FireReplicationDisconnected(errMsg)
+		}
 
 		c.mu.Lock()
 		c.connected = false
@@ -232,9 +247,14 @@ func (c *ReplicationClient) connectAndStream(ctx context.Context) error {
 	for i, h := range resp.Holes {
 		c.holes[i] = SeqRange{Start: h.Start, End: h.End}
 	}
+	wasDisconnected := c.reconnects.Load() > 0
 	c.connected = true
 	c.liveStartSeq = resp.LiveStartFrom
 	c.mu.Unlock()
+
+	if wasDisconnected && c.alerts != nil {
+		c.alerts.FireReplicationReconnected()
+	}
 
 	c.logger.Info("handshake complete",
 		"cursor", resp.Cursor,

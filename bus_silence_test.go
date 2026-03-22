@@ -17,7 +17,7 @@ func TestBusSilenceMonitor_DetectsSilence(t *testing.T) {
 	injectFrame(b, 129025, 1, []byte{0, 0, 0, 0, 0, 0, 0, 0})
 	time.Sleep(20 * time.Millisecond)
 
-	monitor := NewBusSilenceMonitor(50*time.Millisecond, b, slog.Default())
+	monitor := NewBusSilenceMonitor(50*time.Millisecond, b, slog.Default(), nil)
 
 	if monitor.IsSilent() {
 		t.Fatal("expected not silent initially")
@@ -41,7 +41,7 @@ func TestBusSilenceMonitor_ResumesAfterFrame(t *testing.T) {
 	injectFrame(b, 129025, 1, []byte{0, 0, 0, 0, 0, 0, 0, 0})
 	time.Sleep(20 * time.Millisecond)
 
-	monitor := NewBusSilenceMonitor(50*time.Millisecond, b, slog.Default())
+	monitor := NewBusSilenceMonitor(50*time.Millisecond, b, slog.Default(), nil)
 
 	// Let silence occur.
 	time.Sleep(80 * time.Millisecond)
@@ -66,7 +66,7 @@ func TestBusSilenceMonitor_NoAlertBeforeFirstFrame(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	monitor := NewBusSilenceMonitor(50*time.Millisecond, b, slog.Default())
+	monitor := NewBusSilenceMonitor(50*time.Millisecond, b, slog.Default(), nil)
 
 	// No frames received yet — should not alert.
 	time.Sleep(80 * time.Millisecond)
@@ -83,7 +83,7 @@ func TestBusSilenceMonitor_RunExitsOnCancel(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	monitor := NewBusSilenceMonitor(time.Second, b, slog.Default())
+	monitor := NewBusSilenceMonitor(time.Second, b, slog.Default(), nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
