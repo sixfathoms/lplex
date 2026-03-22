@@ -51,7 +51,7 @@ benchstat old.txt new.txt
 
 Pull requests automatically get a benchmark comparison comment posted by CI. The workflow:
 
-1. Runs all benchmarks on the PR branch (6 iterations)
+1. Runs all benchmarks on the PR branch (3 iterations, 250ms each)
 2. Checks out the base branch and runs the same benchmarks
 3. Compares results with `benchstat`
 4. Posts the comparison as a PR comment (updates the same comment on force-push)
