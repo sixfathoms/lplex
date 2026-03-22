@@ -5,7 +5,7 @@ title: HTTP API
 
 # HTTP API Reference
 
-lplex exposes a REST + SSE API for reading frames, managing sessions, and discovering devices. CORS is enabled (`Access-Control-Allow-Origin: *`).
+lplex exposes a REST + SSE API for reading frames, managing sessions, and discovering devices. CORS is enabled (`Access-Control-Allow-Origin: *`). Non-streaming responses support gzip compression when `Accept-Encoding: gzip` is sent.
 
 ## Endpoints
 
