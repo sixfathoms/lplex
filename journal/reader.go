@@ -56,6 +56,22 @@ type Reader struct {
 
 	// zstd decoder, lazy-init on first compressed block
 	zDecoder *zstd.Decoder
+
+	// prefetch state (nil = disabled, set via EnablePrefetch)
+	pf *prefetch
+}
+
+// prefetch holds state for background block read-ahead.
+// When enabled, after loading block N, the reader eagerly reads block N+1's
+// raw data from disk and (for compressed files) decompresses it in a
+// background goroutine. This overlaps I/O and decompression with frame
+// processing in the caller.
+type prefetch struct {
+	block   int           // block index being prefetched, -1 = none
+	buf     []byte        // decompressed block data (swapped with blockBuf on use)
+	done    chan struct{}  // closed when prefetch completes; nil = idle
+	err     error         // error from prefetch (valid after done is closed)
+	decoder *zstd.Decoder // separate decoder for the prefetch goroutine
 }
 
 // NewReader opens a journal for reading. Validates the file header.
@@ -313,6 +329,7 @@ func (jr *Reader) FrameSeq() uint64 {
 // number via binary search on BaseSeq. Only works for v2 files.
 // Returns an error for v1 files or if the seq is not found.
 func (jr *Reader) SeekToSeq(seq uint64) error {
+	jr.cancelPrefetch()
 	if jr.version != Version2 {
 		return fmt.Errorf("seq seeking requires journal v2")
 	}
@@ -486,12 +503,14 @@ func (jr *Reader) SeekBlock(n int) error {
 	if n < 0 || n >= len(jr.blocks) {
 		return fmt.Errorf("block %d out of range [0, %d)", n, len(jr.blocks))
 	}
+	jr.cancelPrefetch()
 	return jr.loadBlock(n)
 }
 
 // SeekToTime finds the block containing the given timestamp via binary search
 // and positions the reader at the start of that block.
 func (jr *Reader) SeekToTime(t time.Time) error {
+	jr.cancelPrefetch()
 	if len(jr.blocks) == 0 {
 		return fmt.Errorf("empty journal")
 	}
@@ -531,6 +550,199 @@ func (jr *Reader) SeekToTime(t time.Time) error {
 	}
 
 	return jr.loadBlock(result)
+}
+
+// EnablePrefetch enables read-ahead for sequential iteration. After loading
+// each block, the reader eagerly reads the next block's data from disk and
+// (for compressed files) decompresses it in a background goroutine, so the
+// work overlaps with frame processing in the caller.
+func (jr *Reader) EnablePrefetch() {
+	if jr.pf != nil {
+		return
+	}
+	jr.pf = &prefetch{
+		block: -1,
+		buf:   make([]byte, jr.blockSize),
+	}
+}
+
+// Close releases resources held by the reader, including any in-flight
+// prefetch goroutine and zstd decoders.
+func (jr *Reader) Close() {
+	jr.cancelPrefetch()
+	if jr.zDecoder != nil {
+		jr.zDecoder.Close()
+		jr.zDecoder = nil
+	}
+	if jr.pf != nil && jr.pf.decoder != nil {
+		jr.pf.decoder.Close()
+		jr.pf.decoder = nil
+	}
+}
+
+// cancelPrefetch waits for any in-flight prefetch goroutine and resets state.
+func (jr *Reader) cancelPrefetch() {
+	if jr.pf == nil || jr.pf.done == nil {
+		return
+	}
+	<-jr.pf.done
+	jr.pf.block = -1
+	jr.pf.done = nil
+}
+
+// startPrefetch initiates read-ahead for block n. For uncompressed files,
+// the block is read synchronously (saves a seek on next load). For compressed
+// files, the raw data is read synchronously and decompression runs in a
+// background goroutine.
+func (jr *Reader) startPrefetch(n int) {
+	if jr.pf == nil || n >= len(jr.blocks) {
+		return
+	}
+	if jr.compression == CompressionNone {
+		jr.prefetchUncompressed(n)
+	} else {
+		jr.prefetchCompressed(n)
+	}
+}
+
+func (jr *Reader) prefetchUncompressed(n int) {
+	off := jr.blocks[n].Offset
+	if _, err := jr.r.Seek(off, io.SeekStart); err != nil {
+		return
+	}
+	if _, err := io.ReadFull(jr.r, jr.pf.buf[:jr.blockSize]); err != nil {
+		return
+	}
+	jr.pf.block = n
+	jr.pf.done = make(chan struct{})
+	jr.pf.err = nil
+	close(jr.pf.done)
+}
+
+func (jr *Reader) prefetchCompressed(n int) {
+	bi := jr.blocks[n]
+	if _, err := jr.r.Seek(bi.Offset, io.SeekStart); err != nil {
+		return
+	}
+
+	if jr.compression == CompressionZstdDict {
+		jr.prefetchDictCompressed(n)
+		return
+	}
+
+	sfl := jr.seqFieldLen()
+	hdrLen := BlockHeaderLen + sfl
+	hdr := make([]byte, hdrLen)
+	if _, err := io.ReadFull(jr.r, hdr); err != nil {
+		return
+	}
+	compressedLen := binary.LittleEndian.Uint32(hdr[8+sfl : 12+sfl])
+	if compressedLen == 0 || int64(compressedLen) > int64(jr.blockSize)*2 {
+		return
+	}
+
+	compressed := make([]byte, compressedLen)
+	if _, err := io.ReadFull(jr.r, compressed); err != nil {
+		return
+	}
+
+	jr.pf.block = n
+	jr.pf.done = make(chan struct{})
+	jr.pf.err = nil
+
+	go func() {
+		defer close(jr.pf.done)
+		if jr.pf.decoder == nil {
+			dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
+			if err != nil {
+				jr.pf.err = err
+				return
+			}
+			jr.pf.decoder = dec
+		}
+		decompressed, err := jr.pf.decoder.DecodeAll(compressed, jr.pf.buf[:0])
+		if err != nil {
+			jr.pf.err = err
+			return
+		}
+		if len(decompressed) != jr.blockSize {
+			jr.pf.err = fmt.Errorf("prefetch block %d decompressed to %d bytes, expected %d", n, len(decompressed), jr.blockSize)
+			return
+		}
+		jr.pf.buf = decompressed[:jr.blockSize]
+	}()
+}
+
+func (jr *Reader) prefetchDictCompressed(n int) {
+	sfl := jr.seqFieldLen()
+	hdrLen := BlockHeaderLenDict + sfl
+	hdr := make([]byte, hdrLen)
+	if _, err := io.ReadFull(jr.r, hdr); err != nil {
+		return
+	}
+	dictLen := binary.LittleEndian.Uint32(hdr[8+sfl : 12+sfl])
+	compressedLen := binary.LittleEndian.Uint32(hdr[12+sfl : 16+sfl])
+	if compressedLen == 0 || int64(compressedLen)+int64(dictLen) > int64(jr.blockSize)*2 {
+		return
+	}
+
+	var dictData []byte
+	if dictLen > 0 {
+		dictData = make([]byte, dictLen)
+		if _, err := io.ReadFull(jr.r, dictData); err != nil {
+			return
+		}
+	}
+
+	compressed := make([]byte, compressedLen)
+	if _, err := io.ReadFull(jr.r, compressed); err != nil {
+		return
+	}
+
+	jr.pf.block = n
+	jr.pf.done = make(chan struct{})
+	jr.pf.err = nil
+
+	go func() {
+		defer close(jr.pf.done)
+		if dictLen > 0 {
+			dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderDicts(dictData))
+			if err != nil {
+				jr.pf.err = err
+				return
+			}
+			decompressed, err := dec.DecodeAll(compressed, jr.pf.buf[:0])
+			dec.Close()
+			if err != nil {
+				jr.pf.err = err
+				return
+			}
+			if len(decompressed) != jr.blockSize {
+				jr.pf.err = fmt.Errorf("prefetch block %d decompressed to %d bytes, expected %d", n, len(decompressed), jr.blockSize)
+				return
+			}
+			jr.pf.buf = decompressed[:jr.blockSize]
+		} else {
+			if jr.pf.decoder == nil {
+				dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
+				if err != nil {
+					jr.pf.err = err
+					return
+				}
+				jr.pf.decoder = dec
+			}
+			decompressed, err := jr.pf.decoder.DecodeAll(compressed, jr.pf.buf[:0])
+			if err != nil {
+				jr.pf.err = err
+				return
+			}
+			if len(decompressed) != jr.blockSize {
+				jr.pf.err = fmt.Errorf("prefetch block %d decompressed to %d bytes, expected %d", n, len(decompressed), jr.blockSize)
+				return
+			}
+			jr.pf.buf = decompressed[:jr.blockSize]
+		}
+	}()
 }
 
 // BlockDevices returns all device table entries for the current block.
@@ -596,11 +808,37 @@ func (jr *Reader) BlockDevicesAt(frameIdx int) []Device {
 }
 
 // loadBlock reads and validates block n, resetting the frame cursor.
+// If prefetch is enabled and has block n ready, the prefetched data is used
+// (buffer swap) instead of reading from disk.
 func (jr *Reader) loadBlock(n int) error {
-	if jr.compression != CompressionNone {
-		return jr.loadCompressedBlock(n)
+	// Check if prefetch has this block ready.
+	if jr.pf != nil && jr.pf.block == n && jr.pf.done != nil {
+		<-jr.pf.done
+		jr.pf.done = nil
+		if jr.pf.err == nil {
+			jr.blockBuf, jr.pf.buf = jr.pf.buf, jr.blockBuf
+			jr.pf.block = -1
+			err := jr.parseLoadedBlock(n)
+			if err == nil {
+				jr.startPrefetch(n + 1)
+			}
+			return err
+		}
+		// Prefetch failed, fall through to normal load.
+		jr.pf.block = -1
 	}
-	return jr.loadUncompressedBlock(n)
+
+	var err error
+	if jr.compression != CompressionNone {
+		err = jr.loadCompressedBlock(n)
+	} else {
+		err = jr.loadUncompressedBlock(n)
+	}
+	if err != nil {
+		return err
+	}
+	jr.startPrefetch(n + 1)
+	return nil
 }
 
 // loadUncompressedBlock reads a fixed-size block at the computed offset.

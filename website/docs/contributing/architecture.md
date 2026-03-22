@@ -65,6 +65,7 @@ Consumer.Next(ctx)
     │      - Discover files in journal dir
     │      - Binary search for seq in v2 files
     │      - Read forward through blocks
+    │      - Prefetch: next block read-ahead + background decompression
     │
     ├── 2. Check ring buffer (recent data)
     │      - If cursor is within ring range, read directly
@@ -74,7 +75,7 @@ Consumer.Next(ctx)
            - Read from ring buffer
 ```
 
-Consumers iterate at their own pace. A slow consumer reading from journal files doesn't affect a fast consumer reading from the ring buffer.
+Consumers iterate at their own pace. A slow consumer reading from journal files doesn't affect a fast consumer reading from the ring buffer. Journal reads use block-level prefetching: after loading block N, the reader eagerly reads block N+1 from disk and (for compressed files) decompresses it in a background goroutine, overlapping I/O and decompression with frame processing.
 
 If a consumer's cursor is behind both the journal and ring buffer (data no longer available), it gets `ErrFallenBehind`.
 
