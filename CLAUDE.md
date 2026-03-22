@@ -178,6 +178,7 @@ lplex-cloud process
 | `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint, on-demand PGN query (`POST /query` via ISO Request PGN 59904), WebSocket upgrade bypass for compression/tracing wrappers |
 | `websocket.go` | `HandleWebSocket`, bidirectional WebSocket transport (`GET /ws`). Streams filtered CAN frames to client, accepts `send` messages for CAN bus transmission. Same filter params as `/events`. |
 | `mqtt.go` | `MQTTBridge`, `MQTTBridgeConfig`, publishes CAN frames to an MQTT broker. Subscribes to the broker's frame stream and publishes to `{prefix}/frames` topics. Auto-reconnect via paho MQTT client. |
+| `signalk.go` | `ConvertToSignalK`, `ConvertToSignalKJSON`, `HasSignalKMapping`, `SignalKDelta`. Converts decoded PGN structs to SignalK delta format. Mappings for position, COG/SOG, heading, speed, depth, wind, engine, battery, temperature. |
 | `send_policy.go` | `SendPolicy`, `SendRule`, `PGNMatcher`, `ParseSendRule`, `ParseSendRules`, rule DSL parser and evaluator for `/send` and `/query` gating |
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
