@@ -49,6 +49,7 @@ type InstanceState struct {
 	rotateDuration    time.Duration       // journal rotation interval for live writer
 	rotateSize        int64               // journal rotation size cap for live writer
 	deviceIdleTimeout time.Duration       // passed through to broker config
+	ringSize          int                // ring buffer size for broker (0 = default 65536)
 	logger            *slog.Logger
 }
 
@@ -118,8 +119,12 @@ func (s *InstanceState) ensureBroker() {
 	journalDir := filepath.Join(s.journalDir, "journal")
 	initialHead := max(s.Cursor+1, 1)
 
+	ringSize := s.ringSize
+	if ringSize == 0 {
+		ringSize = 65536
+	}
 	b := NewBroker(BrokerConfig{
-		RingSize:          65536,
+		RingSize:          ringSize,
 		ReplicaMode:       true,
 		InitialHead:       initialHead,
 		JournalDir:        journalDir,
@@ -215,6 +220,7 @@ type InstanceManager struct {
 	rotateDuration    time.Duration                           // journal rotation interval for live writers
 	rotateSize        int64                                   // journal rotation size cap for live writers
 	deviceIdleTimeout time.Duration                           // passed through to per-instance brokers
+	ringSize          int                                     // ring buffer size for per-instance brokers (0 = default 65536)
 }
 
 // NewInstanceManager creates a new instance manager, loading any persisted state.
@@ -316,6 +322,19 @@ func (im *InstanceManager) SetDeviceIdleTimeout(d time.Duration) {
 	}
 }
 
+// SetRingSize configures the ring buffer size for all existing and future
+// instance brokers. Must be called before instances connect.
+func (im *InstanceManager) SetRingSize(size int) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	im.ringSize = size
+	for _, s := range im.instances {
+		s.mu.Lock()
+		s.ringSize = size
+		s.mu.Unlock()
+	}
+}
+
 // makeOnRotate returns an instance-scoped OnRotate callback, or nil if no
 // manager-level callback is set. Caller must hold im.mu.
 func (im *InstanceManager) makeOnRotate(id string) func(RotatedFile) {
@@ -366,6 +385,7 @@ func (im *InstanceManager) GetOrCreate(id string) *InstanceState {
 		rotateDuration:    im.rotateDuration,
 		rotateSize:        im.rotateSize,
 		deviceIdleTimeout: im.deviceIdleTimeout,
+		ringSize:          im.ringSize,
 		logger:            im.logger,
 	}
 	im.instances[id] = s

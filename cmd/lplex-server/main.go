@@ -61,6 +61,7 @@ func main() {
 	virtualDeviceModelID := flag.String("virtual-device-model-id", "lplex-server", "Product info model ID for the virtual device")
 	claimHeartbeatStr := flag.String("virtual-device-claim-heartbeat", "60s", "Interval for re-broadcasting address claims (PGN 60928)")
 	productInfoHeartbeatStr := flag.String("virtual-device-product-info-heartbeat", "5m", "Interval for re-broadcasting product info (PGN 126996)")
+	ringSize := flag.Int("ring-size", 65536, "Ring buffer size in entries (must be power of 2)")
 	busSilenceTimeout := flag.String("bus-silence-timeout", "", "Alert when no CAN frames received for this duration (ISO 8601, e.g. PT30S)")
 	configFile := flag.String("config", "", "Path to HOCON config file (default: ./lplex-server.conf, /etc/lplex/lplex-server.conf)")
 	flag.Parse()
@@ -139,7 +140,7 @@ func main() {
 	}
 
 	broker := lplex.NewBroker(lplex.BrokerConfig{
-		RingSize:             65536,
+		RingSize:             *ringSize,
 		MaxBufferDuration:    bufDuration,
 		JournalDir:           *journalDir,
 		Logger:               logger,

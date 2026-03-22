@@ -12,6 +12,12 @@ port = 8089
 # Max client buffer duration (ISO 8601)
 max-buffer-duration = PT5M
 
+# Ring buffer size in entries (must be power of 2, default 65536).
+# Each entry holds one reassembled CAN frame (~150 bytes). At 100 frames/sec,
+# 65536 entries ≈ 10 minutes of history. Increase for higher throughput buses
+# or longer replay windows.
+# ring-size = 65536
+
 # Send policy: controls whether HTTP clients can transmit CAN frames
 # via /send and /query. Disabled by default; enable explicitly.
 # Does NOT affect internal device discovery (ISO requests on startup).

@@ -33,6 +33,11 @@ port = 8089
 # Maximum buffer duration for buffered client sessions (ISO 8601)
 max-buffer-duration = PT5M
 
+# Ring buffer size in entries (must be power of 2, default 65536).
+# Each entry holds one reassembled CAN frame. At 100 frames/sec,
+# 65536 entries ≈ 10 minutes of history.
+# ring-size = 65536
+
 # Alert after this duration with no CAN frames (ISO 8601)
 bus-silence-timeout = PT30S
 
@@ -165,6 +170,7 @@ replication {
 | `-interface` | `interface` | `can0` | SocketCAN interface |
 | `-port` | `port` | `8089` | HTTP listen port |
 | `-max-buffer-duration` | `max-buffer-duration` | `PT5M` | Max buffer timeout for sessions |
+| `-ring-size` | `ring-size` | `65536` | Ring buffer entries (power of 2) |
 | `-bus-silence-timeout` | `bus-silence-timeout` | `PT30S` | Alert on bus silence |
 | `-bus-silence-threshold` | `health.bus-silence-threshold` | `PT30S` | Health check silence threshold |
 | `-device-idle-timeout` | `device.idle-timeout` | `5m` | Remove devices not seen for this duration (0 = disabled) |
@@ -227,6 +233,9 @@ http {
 # Instance state and journal storage
 data-dir = "/data/lplex"
 
+# Ring buffer size per instance in entries (must be power of 2, default 65536)
+# ring-size = 65536
+
 # Same retention/archive config as lplex-server
 journal {
   # Rotate live journal files after this duration or size (whichever comes first).
@@ -260,7 +269,7 @@ journal {
 | `-tls-key` | `grpc.tls.key` | (empty) | Server TLS key |
 | `-tls-client-ca` | `grpc.tls.client-ca` / `tls.client-ca` | (empty) | Client CA cert |
 | `-data-dir` | `data-dir` | `/data/lplex` | Data directory |
-
+| `-ring-size` | `ring-size` | `65536` | Ring buffer entries per instance (power of 2) |
 | `-device-idle-timeout` | `device.idle-timeout` | `5m` | Remove devices not seen for this duration (0 = disabled) |
 | `-journal-rotate-duration` | `journal.rotate-duration` | `PT1H` | Rotate live journal files after this duration (ISO 8601) |
 | `-journal-rotate-size` | `journal.rotate-size` | `0` | Rotate live journal files after this many bytes (0 = disabled) |

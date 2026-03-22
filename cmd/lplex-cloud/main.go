@@ -58,6 +58,7 @@ func main() {
 	replRateLimit := flag.Int("replication-rate-limit", lplex.DefaultMaxFrameRate, "Max frames/sec per live stream (0 = unlimited)")
 	replRateBurst := flag.Int("replication-rate-burst", lplex.DefaultRateBurst, "Burst allowance for transient frame rate spikes")
 	replMaxLiveLag := flag.Int("replication-max-live-lag", int(lplex.DefaultMaxLiveLag), "Max frames live stream can lag before closing stream")
+	ringSize := flag.Int("ring-size", 65536, "Ring buffer size in entries per instance (must be power of 2)")
 	deviceIdleTimeout := flag.String("device-idle-timeout", "5m", "Remove devices not seen for this duration (0 = disabled)")
 	configFile := flag.String("config", "", "Path to HOCON config file")
 	showVersion := flag.Bool("version", false, "Print version and exit")
@@ -104,6 +105,9 @@ func main() {
 			devTimeout = -1
 		}
 		im.SetDeviceIdleTimeout(devTimeout)
+	}
+	if *ringSize != 65536 {
+		im.SetRingSize(*ringSize)
 	}
 
 	// Parse and apply journal rotation for live writers.
