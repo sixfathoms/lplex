@@ -203,6 +203,12 @@ replication {
 | `-otel-sample-ratio` | `otel.sample-ratio` | `1.0` | Trace sampling ratio (0.0-1.0) |
 | `-alert-webhook-url` | `alert.webhook-url` | (empty) | HTTP POST endpoint for alert notifications |
 | `-alert-dedup-window` | `alert.dedup-window` | `5m` | Suppress duplicate alerts within window |
+| `-mqtt-broker` | `mqtt.broker` | (empty) | MQTT broker URL (e.g. `tcp://localhost:1883`) |
+| `-mqtt-topic-prefix` | `mqtt.topic-prefix` | `lplex` | MQTT topic prefix for published frames |
+| `-mqtt-client-id` | `mqtt.client-id` | `lplex-server` | MQTT client ID |
+| `-mqtt-qos` | `mqtt.qos` | `0` | MQTT QoS level (0, 1, or 2) |
+| `-mqtt-username` | `mqtt.username` | (empty) | MQTT broker username |
+| `-mqtt-password` | `mqtt.password` | (empty) | MQTT broker password |
 
 ## lplex-cloud
 

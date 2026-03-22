@@ -119,3 +119,65 @@ data: {"seq":1235,"ts":"2026-03-06T10:15:32.145Z","prio":3,"pgn":130306,"src":22
 ```
 
 Each `data:` line contains a JSON-encoded frame. Events are separated by a blank line per the SSE spec.
+
+## MQTT bridge
+
+lplex can publish CAN frames to an MQTT broker, enabling integration with Home Assistant, Node-RED, SignalK, and other IoT systems.
+
+### Enabling
+
+```bash
+lplex-server -mqtt-broker tcp://localhost:1883
+```
+
+### Configuration
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-mqtt-broker` | (empty) | MQTT broker URL. Empty = bridge disabled. |
+| `-mqtt-topic-prefix` | `lplex` | Prefix for all published topics |
+| `-mqtt-client-id` | `lplex-server` | Client ID for the MQTT connection |
+| `-mqtt-qos` | `0` | MQTT QoS level (0 = at most once, 1 = at least once, 2 = exactly once) |
+| `-mqtt-username` | (empty) | Broker authentication username |
+| `-mqtt-password` | (empty) | Broker authentication password |
+
+### Topics
+
+Frames are published to `{prefix}/frames`:
+
+```
+lplex/frames → {"seq":1234,"ts":"2026-03-22T14:30:45.123Z","prio":2,"pgn":129025,"src":10,"dst":255,"data":"5A1F2B3C4D5E6F70"}
+```
+
+The payload is the same JSON format used by the `/events` SSE stream and WebSocket endpoint.
+
+### Examples
+
+```bash
+# Publish to local Mosquitto broker
+lplex-server -mqtt-broker tcp://localhost:1883
+
+# Custom topic prefix for multi-boat setups
+lplex-server -mqtt-broker tcp://mqtt.local:1883 -mqtt-topic-prefix boat/sv-adventure/nmea
+
+# With authentication and QoS 1 (at least once delivery)
+lplex-server -mqtt-broker tcp://mqtt.example.com:8883 -mqtt-username boat -mqtt-password secret -mqtt-qos 1
+```
+
+### Home Assistant integration
+
+Subscribe to `lplex/frames` in a Home Assistant MQTT sensor to create entities from boat data:
+
+```yaml
+mqtt:
+  sensor:
+    - name: "Boat GPS"
+      state_topic: "lplex/frames"
+      value_template: "{{ value_json.pgn }}"
+```
+
+### Reliability
+
+- **Auto-reconnect**: the MQTT client automatically reconnects if the broker becomes unavailable, with a 5-second retry interval
+- **Non-blocking**: if the MQTT publish can't keep up with the CAN frame rate, frames are dropped from the subscriber buffer (128 entries) rather than blocking the broker
+- **QoS trade-offs**: QoS 0 has the lowest overhead but no delivery guarantee; QoS 1 ensures delivery but may duplicate messages during reconnection
