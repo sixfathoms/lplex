@@ -21,6 +21,7 @@
 #
 # Prerequisites:
 #   - AWS CLI v2 installed and configured (aws configure)
+#   - jq installed (for JSON construction)
 #   - IAM permissions: s3:PutObject on the target bucket/prefix
 #
 # S3 key format:
@@ -35,27 +36,19 @@ set -euo pipefail
 : "${S3_PREFIX:=lplex/journals/}"
 : "${INSTANCE_ID:=$(hostname)}"
 
-# Read metadata from stdin (one JSONL line per file).
-# We don't strictly need the metadata for S3 upload, but we consume it
+# Consume stdin metadata (one JSONL line per file).
+# We don't need the metadata for S3 upload, but we must read it
 # to avoid blocking the keeper.
-declare -A FILE_SIZES
-while IFS= read -r line; do
-    path=$(echo "$line" | jq -r '.path // empty')
-    size=$(echo "$line" | jq -r '.size // 0')
-    if [[ -n "$path" ]]; then
-        FILE_SIZES["$path"]="$size"
-    fi
-done
+cat > /dev/null
 
-# Upload each file to S3.
+# Upload each file to S3 and emit JSONL status.
 for filepath in "$@"; do
     filename=$(basename "$filepath")
     s3_key="${S3_PREFIX}${INSTANCE_ID}/${filename}"
 
-    if aws s3 cp "$filepath" "s3://${S3_BUCKET}/${s3_key}" --no-progress 2>/tmp/archive-err.log; then
-        echo "{\"path\":\"${filepath}\",\"status\":\"ok\"}"
+    if err=$(aws s3 cp "$filepath" "s3://${S3_BUCKET}/${s3_key}" --no-progress 2>&1); then
+        jq -nc --arg path "$filepath" '{path: $path, status: "ok"}'
     else
-        err=$(cat /tmp/archive-err.log | tr '\n' ' ' | tr '"' "'")
-        echo "{\"path\":\"${filepath}\",\"status\":\"error\",\"error\":\"${err}\"}"
+        jq -nc --arg path "$filepath" --arg err "$err" '{path: $path, status: "error", error: $err}'
     fi
 done
