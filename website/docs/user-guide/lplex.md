@@ -173,6 +173,23 @@ With multiple boats, the name is required.
 `--boat` is mutually exclusive with `--server` and `--file`. Either the `--boat` flag handles discovery or you specify a server directly.
 :::
 
+## Tail
+
+`lplex tail` is a simpler alternative to `lplex dump` for quick debugging. It follows live frames with auto-reconnect, similar to `tail -f`. Use `--last N` to replay the last N frames before following live.
+
+It supports the same filter flags as `dump` (`--pgn`, `--decode`, `--changes`, `--where`, etc.).
+
+```bash
+# Follow live frames
+lplex tail
+
+# Replay last 100 frames then follow live
+lplex tail --last 100
+
+# GPS only, decoded
+lplex tail --decode --pgn 129025
+```
+
 ## Journal replay
 
 Replay a recorded journal file instead of connecting to a live server:
