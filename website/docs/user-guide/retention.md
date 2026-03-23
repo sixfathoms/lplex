@@ -118,6 +118,28 @@ When the archive trigger is `on-rotate`, the keeper runs a one-time sweep on sta
 
 Failed archives retry with exponential backoff: 1 minute initial delay, doubling up to a 1 hour cap.
 
+## Example: S3 archival
+
+A complete example with S3 upload is in [`examples/archive-s3/`](https://github.com/sixfathoms/lplex/tree/main/examples/archive-s3):
+
+- **`archive-to-s3.sh`** — Archive script that uploads journal files to S3 using the AWS CLI. Implements the JSONL protocol and uploads to `s3://{bucket}/{prefix}{instance}/{filename}`.
+- **`lplex-server.conf`** — Complete server config with hourly rotation, 7-day retention, 10 GB cap, and on-rotate S3 archival.
+
+### Setup
+
+1. Install and configure the AWS CLI: `aws configure`
+2. Set the `S3_BUCKET` environment variable (e.g. in `/etc/default/lplex-server`)
+3. Copy `archive-to-s3.sh` to `/usr/local/bin/` and make it executable
+4. Update `lplex-server.conf` with the archive command path
+
+```bash
+# /etc/default/lplex-server
+S3_BUCKET=my-boat-data
+INSTANCE_ID=inuc1
+```
+
+The script uploads each rotated journal file to `s3://my-boat-data/lplex/journals/inuc1/` immediately after rotation. Failed uploads retry with exponential backoff (handled by the keeper).
+
 ## Cloud considerations
 
 In `lplex-cloud`, a single JournalKeeper goroutine manages all instance directories. The `InstanceManager` threads `OnRotate` callbacks to each instance's JournalWriter and BlockWriter. The `DirFunc` dynamically discovers instance journal directories so the keeper adapts as instances come and go.
