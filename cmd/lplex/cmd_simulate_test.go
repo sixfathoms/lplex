@@ -265,6 +265,53 @@ func TestSimulateServesEvents(t *testing.T) {
 	})
 }
 
+func TestSimulateLoop(t *testing.T) {
+	// Create a small journal with 10 frames.
+	base := time.Date(2024, 3, 15, 10, 0, 0, 0, time.UTC)
+	var frames []lplex.RxFrame
+	for i := range 10 {
+		frames = append(frames, makeTestFrame(
+			base.Add(time.Duration(i)*50*time.Millisecond),
+			129025, 1,
+			[]byte{byte(i), 1, 2, 3, 4, 5, 6, 7},
+		))
+	}
+	journalPath := writeTestJournal(t, frames)
+
+	// Set up simulate flags for looping.
+	simFile = journalPath
+	simSpeed = 0 // as fast as possible
+	simLoop = true
+	simRingSize = 1024
+
+	logger := newTestLogger()
+	broker := lplex.NewBroker(lplex.BrokerConfig{
+		RingSize:          simRingSize,
+		MaxBufferDuration: 10 * time.Minute,
+		Logger:            logger,
+		DeviceIdleTimeout: -1,
+	})
+	go broker.Run()
+	defer broker.CloseRx()
+
+	// Cancel after enough time for at least 2 full replays.
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+
+	err := replayInto(ctx, broker, logger)
+	if err != nil && err != context.DeadlineExceeded {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// With 10 frames per loop and speed=0, we should have replayed
+	// well over 20 frames (at least 2 loops) in 3 seconds.
+	stats := broker.Stats()
+	if stats.FramesTotal < 20 {
+		t.Fatalf("expected at least 20 frames from 2+ loops, got %d", stats.FramesTotal)
+	}
+	t.Logf("looped replay produced %d frames in 3s", stats.FramesTotal)
+}
+
 func newTestLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
