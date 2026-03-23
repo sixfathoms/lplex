@@ -25,6 +25,7 @@ Opens an SSE stream of live CAN frames. No session, no replay.
 | `instance` | uint8 | Filter by device instance (repeatable, OR'd) |
 | `name` | string | Filter by 64-bit CAN NAME hex (repeatable, OR'd) |
 | `exclude_name` | string | Exclude device by 64-bit CAN NAME hex (repeatable, OR'd) |
+| `decode` | bool | Set to `true` to include decoded PGN fields inline (adds `"decoded"` object to each frame) |
 
 Different filter types are AND'd together.
 

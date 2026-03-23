@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sixfathoms/lplex/journal"
+	"github.com/sixfathoms/lplex/pgn"
 )
 
 // handleHistory serves GET /history queries against journal files.
@@ -131,7 +132,9 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	frames := queryJournalFiles(files, fromTime, toTime, pgns, srcs, limit, interval)
+	decode := q.Get("decode") == "true"
+
+	frames := queryJournalFiles(files, fromTime, toTime, pgns, srcs, limit, interval, decode)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(frames); err != nil {
@@ -140,13 +143,14 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 type historyFrame struct {
-	Seq  uint64 `json:"seq,omitempty"`
-	Ts   string `json:"ts"`
-	Prio uint8  `json:"prio"`
-	PGN  uint32 `json:"pgn"`
-	Src  uint8  `json:"src"`
-	Dst  uint8  `json:"dst"`
-	Data string `json:"data"`
+	Seq     uint64 `json:"seq,omitempty"`
+	Ts      string `json:"ts"`
+	Prio    uint8  `json:"prio"`
+	PGN     uint32 `json:"pgn"`
+	Src     uint8  `json:"src"`
+	Dst     uint8  `json:"dst"`
+	Data    string `json:"data"`
+	Decoded any    `json:"decoded,omitempty"`
 }
 
 // downsampleKey identifies a unique (source, PGN) pair for downsampling.
@@ -155,7 +159,7 @@ type downsampleKey struct {
 	PGN uint32
 }
 
-func queryJournalFiles(files []string, from, to time.Time, pgns map[uint32]bool, srcs map[uint8]bool, limit int, interval time.Duration) []historyFrame {
+func queryJournalFiles(files []string, from, to time.Time, pgns map[uint32]bool, srcs map[uint8]bool, limit int, interval time.Duration, decode bool) []historyFrame {
 	var result []historyFrame
 	// Track the last emitted bucket per (src, pgn) for downsampling
 	lastBucket := make(map[downsampleKey]int64)
@@ -165,14 +169,14 @@ func queryJournalFiles(files []string, from, to time.Time, pgns map[uint32]bool,
 			break
 		}
 
-		frames := queryOneFile(path, from, to, pgns, srcs, limit-len(result), interval, lastBucket)
+		frames := queryOneFile(path, from, to, pgns, srcs, limit-len(result), interval, lastBucket, decode)
 		result = append(result, frames...)
 	}
 
 	return result
 }
 
-func queryOneFile(path string, from, to time.Time, pgns map[uint32]bool, srcs map[uint8]bool, maxFrames int, interval time.Duration, lastBucket map[downsampleKey]int64) []historyFrame {
+func queryOneFile(path string, from, to time.Time, pgns map[uint32]bool, srcs map[uint8]bool, maxFrames int, interval time.Duration, lastBucket map[downsampleKey]int64, decode bool) []historyFrame {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
@@ -242,6 +246,14 @@ func queryOneFile(path string, from, to time.Time, pgns map[uint32]bool, srcs ma
 
 		if reader.Version() == journal.Version2 {
 			frame.Seq = reader.FrameSeq()
+		}
+
+		if decode {
+			if info, ok := pgn.Registry[header.PGN]; ok && info.Decode != nil {
+				if decoded, err := info.Decode(entry.Data); err == nil {
+					frame.Decoded = decoded
+				}
+			}
 		}
 
 		frames = append(frames, frame)
