@@ -504,12 +504,12 @@ func TestBrokerFilterExcludeName(t *testing.T) {
 	var excludedNAME uint64 = 0x00A1B2C3D4E5F600
 	claimData := make([]byte, 8)
 	binary.LittleEndian.PutUint64(claimData, excludedNAME)
-	b.devices.HandleAddressClaim(1, claimData)
+	b.devices.HandleAddressClaim("", 1, claimData)
 
 	// Register a different device at src=2.
 	var keptNAME uint64 = 0x00DEADBEEFCAFE00
 	binary.LittleEndian.PutUint64(claimData, keptNAME)
-	b.devices.HandleAddressClaim(2, claimData)
+	b.devices.HandleAddressClaim("", 2, claimData)
 
 	filter := &EventFilter{ExcludeNames: []uint64{excludedNAME}}
 	c := b.NewConsumer(ConsumerConfig{Cursor: b.CurrentSeq() + 1, Filter: filter})
@@ -961,10 +961,10 @@ func TestBrokerDeviceEvictionOnAddressChange(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Source 5 should be gone from devices.
-	if b.Devices().Get(5) != nil {
+	if b.Devices().Get("", 5) != nil {
 		t.Error("old source 5 should have been evicted")
 	}
-	if b.Devices().Get(10) == nil {
+	if b.Devices().Get("", 10) == nil {
 		t.Error("new source 10 should exist")
 	}
 
@@ -1016,7 +1016,7 @@ func TestBrokerDeviceIdleExpiry(t *testing.T) {
 	injectFrame(b, 129025, 5, []byte{0x01, 0, 0, 0, 0, 0, 0, 0})
 	time.Sleep(50 * time.Millisecond)
 
-	if b.Devices().Get(5) == nil {
+	if b.Devices().Get("", 5) == nil {
 		t.Fatal("device 5 should exist initially")
 	}
 
@@ -1025,7 +1025,7 @@ func TestBrokerDeviceIdleExpiry(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	b.expireDevices()
 
-	if b.Devices().Get(5) != nil {
+	if b.Devices().Get("", 5) != nil {
 		t.Error("device 5 should have been expired")
 	}
 
@@ -1052,7 +1052,7 @@ func TestBrokerDeviceIdleExpiryDisabled(t *testing.T) {
 
 	b.expireDevices()
 
-	if b.Devices().Get(5) == nil {
+	if b.Devices().Get("", 5) == nil {
 		t.Error("device 5 should not be expired when timeout is disabled")
 	}
 }

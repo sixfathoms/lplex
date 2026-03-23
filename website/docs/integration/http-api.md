@@ -25,6 +25,7 @@ Opens an SSE stream of live CAN frames. No session, no replay.
 | `instance` | uint8 | Filter by device instance (repeatable, OR'd) |
 | `name` | string | Filter by 64-bit CAN NAME hex (repeatable, OR'd) |
 | `exclude_name` | string | Exclude device by 64-bit CAN NAME hex (repeatable, OR'd) |
+| `bus` | string | Filter by bus name (repeatable, OR'd). Only relevant in multi-bus setups. |
 | `decode` | bool | Set to `true` to include decoded PGN fields inline (adds `"decoded"` object to each frame) |
 
 Different filter types are AND'd together.
@@ -32,9 +33,9 @@ Different filter types are AND'd together.
 **Response:** `Content-Type: text/event-stream`
 
 ```
-data: {"seq":1234,"ts":"2026-03-06T10:15:32.123Z","prio":2,"pgn":129025,"src":10,"dst":255,"data":"5A1F2B3C4D5E6F70"}
+data: {"seq":1234,"ts":"2026-03-06T10:15:32.123Z","prio":2,"pgn":129025,"src":10,"dst":255,"bus":"can0","data":"5A1F2B3C4D5E6F70"}
 
-data: {"seq":1235,"ts":"2026-03-06T10:15:32.145Z","prio":3,"pgn":130306,"src":22,"dst":255,"data":"01A4060000030000"}
+data: {"seq":1235,"ts":"2026-03-06T10:15:32.145Z","prio":3,"pgn":130306,"src":22,"dst":255,"bus":"can0","data":"01A4060000030000"}
 
 ```
 
@@ -42,6 +43,9 @@ data: {"seq":1235,"ts":"2026-03-06T10:15:32.145Z","prio":3,"pgn":130306,"src":22
 
 ```bash
 curl -N "http://inuc1.local:8089/events?pgn=129025&manufacturer=Garmin"
+
+# Filter to a specific bus in multi-bus setups
+curl -N "http://inuc1.local:8089/events?bus=can1"
 ```
 
 ---
@@ -58,6 +62,7 @@ Queries journal files for historical CAN frames within a time range. Requires jo
 | `to` | RFC3339 | no | End time (default: now) |
 | `pgn` | uint32 | no | Filter by PGN (repeatable) |
 | `src` | uint8 | no | Filter by source address (repeatable) |
+| `bus` | string | no | Filter by bus name (repeatable). Multi-bus only. |
 | `limit` | int | no | Max frames to return (default: 10000) |
 | `interval` | duration | no | Downsample interval (e.g., `1s`, `5s`, `PT1M`). Keeps one frame per (source, PGN) per time bucket. |
 
@@ -89,7 +94,7 @@ curl "http://inuc1.local:8089/history?from=2026-03-06T10:00:00Z&to=2026-03-06T11
 
 Opens a WebSocket connection for bidirectional communication. CAN frames flow to the client (same filtering as `/events`), and the client can send CAN frames back (same validation as `/send`).
 
-**Query parameters:** Same as `GET /events` (pgn, exclude_pgn, manufacturer, instance, name, exclude_name).
+**Query parameters:** Same as `GET /events` (pgn, exclude_pgn, manufacturer, instance, name, exclude_name, bus).
 
 **Message format** (JSON envelope):
 
@@ -221,6 +226,7 @@ Send a CAN frame to the bus.
 | `dst` | uint8 | Destination (255 for broadcast) |
 | `prio` | uint8 | Priority (0-7, lower is higher priority) |
 | `data` | string | Hex-encoded payload |
+| `bus` | string | Target bus name (optional, multi-bus only). Routes the frame to a specific CAN interface. |
 
 **Response:** `202 Accepted`
 
@@ -245,6 +251,7 @@ Send an ISO Request (PGN 59904) asking devices to transmit a specific PGN, then 
 | `pgn` | uint32 | PGN to request (required) |
 | `dst` | uint8 | Destination address (default 255 for broadcast) |
 | `timeout` | string | ISO 8601 duration to wait for response (default `PT2S`) |
+| `bus` | string | Target bus name (optional, multi-bus only). Routes the request to a specific CAN interface. |
 
 **Response:** `200 OK` — the first matching frame as JSON (same format as SSE frame events).
 
@@ -281,6 +288,7 @@ Returns a snapshot of all discovered NMEA 2000 devices.
 [
   {
     "src": 10,
+    "bus": "can0",
     "name": "0x00A1B2C3D4E5F600",
     "manufacturer": "Garmin",
     "manufacturer_code": 229,
@@ -309,7 +317,7 @@ Returns a snapshot of all discovered NMEA 2000 devices.
 
 Returns the last-seen frame for each (device, PGN) pair.
 
-**Query parameters:** Same as `GET /events` (pgn, manufacturer, instance, name).
+**Query parameters:** Same as `GET /events` (pgn, manufacturer, instance, name, bus).
 
 **Response:** `200 OK`
 
@@ -318,6 +326,7 @@ Returns the last-seen frame for each (device, PGN) pair.
   {
     "name": "0x00A1B2C3D4E5F600",
     "src": 10,
+    "bus": "can0",
     "manufacturer": "Garmin",
     "model_id": "GPS 19x HVS",
     "values": [
@@ -444,6 +453,7 @@ Every frame in the SSE stream and API responses uses this format:
   "pgn": 129025,
   "src": 10,
   "dst": 255,
+  "bus": "can0",
   "data": "5A1F2B3C4D5E6F70"
 }
 ```
@@ -456,6 +466,7 @@ Every frame in the SSE stream and API responses uses this format:
 | `pgn` | uint32 | NMEA 2000 Parameter Group Number |
 | `src` | uint8 | Source address (0-253) |
 | `dst` | uint8 | Destination address (255 = broadcast) |
+| `bus` | string | CAN interface name (e.g. `"can0"`). Present in multi-bus setups. |
 | `data` | string | Hex-encoded payload bytes |
 
 ## Cloud API

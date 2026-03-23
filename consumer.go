@@ -47,6 +47,7 @@ type Frame struct {
 	Seq       uint64
 	Timestamp time.Time
 	Header    CANHeader
+	Bus       string // SocketCAN interface name (empty for journal-replayed frames)
 	Data      []byte // raw CAN payload
 	json      []byte // cached pre-serialized JSON
 }
@@ -60,6 +61,7 @@ func (f *Frame) JSON() ([]byte, error) {
 	msg := frameJSON{
 		Seq:  f.Seq,
 		Ts:   f.Timestamp.UTC().Format(time.RFC3339Nano),
+		Bus:  f.Bus,
 		Prio: f.Header.Priority,
 		PGN:  f.Header.PGN,
 		Src:  f.Header.Source,
@@ -111,7 +113,7 @@ func (c *Consumer) Next(ctx context.Context) (*Frame, error) {
 			}
 			c.cursor++
 
-			if !c.filter.matches(entry.Header) {
+			if !c.filter.matches(entry.Bus, entry.Header) {
 				continue
 			}
 
@@ -119,6 +121,7 @@ func (c *Consumer) Next(ctx context.Context) (*Frame, error) {
 				Seq:       entry.Seq,
 				Timestamp: entry.Timestamp,
 				Header:    entry.Header,
+				Bus:       entry.Bus,
 				Data:      entry.RawData,
 				json:      entry.JSON,
 			}, nil
@@ -235,7 +238,7 @@ func (c *Consumer) readFromJournal(ctx context.Context) (*Frame, error) {
 			header := CANHeader(entry.Header)
 			c.cursor++
 
-			if !c.filter.matches(header) {
+			if !c.filter.matches("", header) {
 				continue
 			}
 

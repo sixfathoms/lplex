@@ -18,6 +18,7 @@ type RxFrame struct {
 	Timestamp time.Time
 	Header    CANHeader
 	Data      []byte
+	Bus       string // SocketCAN interface name (e.g. "can0"); empty for single-bus or unknown
 	Seq       uint64 // assigned by broker in handleFrame; zero when fed by external code
 }
 
@@ -26,6 +27,7 @@ type ringEntry struct {
 	Seq       uint64
 	Timestamp time.Time
 	Header    CANHeader // original header, used for filtered replay
+	Bus       string    // SocketCAN interface name (e.g. "can0")
 	RawData   []byte    // raw CAN payload
 	JSON      []byte    // pre-serialized SSE JSON line (without "data: " prefix)
 }
@@ -50,20 +52,26 @@ type EventFilter struct {
 	Instances     []uint8
 	Names         []uint64 // 64-bit CAN NAMEs (include)
 	ExcludeNames  []uint64 // 64-bit CAN NAMEs (exclude)
+	Buses         []string // SocketCAN interface names (e.g. "can0", "can1")
 }
 
 // IsEmpty returns true if no filter criteria are set.
 func (f *EventFilter) IsEmpty() bool {
 	return f == nil || (len(f.PGNs) == 0 && len(f.ExcludePGNs) == 0 &&
 		len(f.Manufacturers) == 0 && len(f.Instances) == 0 &&
-		len(f.Names) == 0 && len(f.ExcludeNames) == 0)
+		len(f.Names) == 0 && len(f.ExcludeNames) == 0 &&
+		len(f.Buses) == 0)
 }
 
 // matches checks if a frame passes this filter. For device-based criteria
 // (manufacturer, instance, name), the device registry is consulted.
-func (f *EventFilter) matches(header CANHeader, devices *DeviceRegistry) bool {
+func (f *EventFilter) matches(bus string, header CANHeader, devices *DeviceRegistry) bool {
 	if f.IsEmpty() {
 		return true
+	}
+
+	if len(f.Buses) > 0 && !slices.Contains(f.Buses, bus) {
+		return false
 	}
 
 	if len(f.PGNs) > 0 && !slices.Contains(f.PGNs, header.PGN) {
@@ -75,14 +83,14 @@ func (f *EventFilter) matches(header CANHeader, devices *DeviceRegistry) bool {
 	}
 
 	if len(f.ExcludeNames) > 0 {
-		dev := devices.Get(header.Source)
+		dev := devices.Get(bus, header.Source)
 		if dev != nil && slices.Contains(f.ExcludeNames, dev.NAME) {
 			return false
 		}
 	}
 
 	if len(f.Manufacturers) > 0 || len(f.Instances) > 0 || len(f.Names) > 0 {
-		dev := devices.Get(header.Source)
+		dev := devices.Get(bus, header.Source)
 		if dev == nil {
 			return false
 		}
@@ -128,6 +136,7 @@ type resolvedFilter struct {
 	excludePGNs    map[uint32]struct{} // nil = no exclusions
 	sources        map[uint8]struct{}  // nil = all sources
 	excludeSources map[uint8]struct{}  // nil = no source exclusions
+	buses          map[string]struct{} // nil = all buses
 }
 
 // resolve snapshots the device registry and converts device-based filter
@@ -138,6 +147,13 @@ func (f *EventFilter) resolve(devices *DeviceRegistry) *resolvedFilter {
 	}
 
 	r := &resolvedFilter{}
+
+	if len(f.Buses) > 0 {
+		r.buses = make(map[string]struct{}, len(f.Buses))
+		for _, bus := range f.Buses {
+			r.buses[bus] = struct{}{}
+		}
+	}
 
 	if len(f.PGNs) > 0 {
 		r.pgns = make(map[uint32]struct{}, len(f.PGNs))
@@ -174,9 +190,14 @@ func (f *EventFilter) resolve(devices *DeviceRegistry) *resolvedFilter {
 	return r
 }
 
-func (r *resolvedFilter) matches(header CANHeader) bool {
+func (r *resolvedFilter) matches(bus string, header CANHeader) bool {
 	if r == nil {
 		return true
+	}
+	if r.buses != nil {
+		if _, ok := r.buses[bus]; !ok {
+			return false
+		}
 	}
 	if r.pgns != nil {
 		if _, ok := r.pgns[header.PGN]; !ok {
@@ -268,6 +289,7 @@ type Broker struct {
 type TxRequest struct {
 	Header CANHeader
 	Data   []byte
+	Bus    string // target SocketCAN interface; empty = default (first) bus
 }
 
 // BrokerConfig holds broker configuration.
@@ -370,7 +392,8 @@ func (b *Broker) Run() {
 
 	if !b.replicaMode {
 		// Broadcast ISO Request for Address Claim so devices already on the bus identify themselves.
-		b.sendISORequest(0xFF, 60928)
+		// Empty bus = default/all buses.
+		b.sendISORequest("", 0xFF, 60928)
 	}
 
 	// Start virtual device address claims after discovery has had time to populate.
@@ -436,9 +459,10 @@ func (b *Broker) isoRequestSource() uint8 {
 
 // sendISORequest sends an ISO Request (PGN 59904) asking the target to transmit
 // the specified PGN. dst=0xFF for broadcast, or a specific source address.
+// The bus parameter routes the request to the correct CAN interface.
 // ISO requests are internal housekeeping and are NOT locally injected; they'll
 // appear in the ring buffer when the CAN echo comes back.
-func (b *Broker) sendISORequest(dst uint8, pgn uint32) {
+func (b *Broker) sendISORequest(bus string, dst uint8, pgn uint32) {
 	select {
 	case b.txFrames <- TxRequest{
 		Header: CANHeader{
@@ -448,6 +472,7 @@ func (b *Broker) sendISORequest(dst uint8, pgn uint32) {
 			Destination: dst,
 		},
 		Data: []byte{byte(pgn), byte(pgn >> 8), byte(pgn >> 16)},
+		Bus:  bus,
 	}:
 	default:
 	}
@@ -455,9 +480,8 @@ func (b *Broker) sendISORequest(dst uint8, pgn uint32) {
 
 // SendISORequest sends an ISO Request (PGN 59904) to the given destination,
 // asking it to transmit the specified PGN. Returns an error if the tx queue is full.
-// The request is locally injected so callers can observe it in the ring buffer
-// without waiting for the CAN echo.
-func (b *Broker) SendISORequest(dst uint8, pgn uint32) error {
+// The bus parameter routes the request to the correct CAN interface (empty = default).
+func (b *Broker) SendISORequest(bus string, dst uint8, pgn uint32) error {
 	if !b.QueueTx(TxRequest{
 		Header: CANHeader{
 			Priority:    6,
@@ -466,6 +490,7 @@ func (b *Broker) SendISORequest(dst uint8, pgn uint32) error {
 			Destination: dst,
 		},
 		Data: []byte{byte(pgn), byte(pgn >> 8), byte(pgn >> 16)},
+		Bus:  bus,
 	}) {
 		return fmt.Errorf("tx queue full")
 	}
@@ -474,9 +499,10 @@ func (b *Broker) SendISORequest(dst uint8, pgn uint32) error {
 
 func (b *Broker) handleFrame(frame RxFrame) {
 	src := frame.Header.Source
+	bus := frame.Bus
 
 	// Track per-source packet stats for all frames (local and wire).
-	newSource := b.devices.RecordPacket(src, frame.Timestamp, len(frame.Data))
+	newSource := b.devices.RecordPacket(bus, src, frame.Timestamp, len(frame.Data))
 
 	// Device discovery: decode address claims and product info for the
 	// device registry, send ISO requests for wire frames only (local frames
@@ -492,9 +518,10 @@ func (b *Broker) handleFrame(frame RxFrame) {
 			name := binary.LittleEndian.Uint64(frame.Data[:8])
 			isOurClaim = b.virtualDevices.HandleBusClaim(src, name)
 		}
-		if dev, evictedSrc, evicted := b.devices.HandleAddressClaim(src, frame.Data); dev != nil {
+		if dev, evictedSrc, evicted := b.devices.HandleAddressClaim(bus, src, frame.Data); dev != nil {
 			b.devicesAdded.Add(1)
 			b.logger.Info("device discovered",
+				"bus", bus,
 				"src", dev.Source,
 				"manufacturer", dev.Manufacturer,
 				"function", dev.DeviceFunction,
@@ -503,9 +530,9 @@ func (b *Broker) handleFrame(frame RxFrame) {
 			if evicted {
 				b.devicesRemoved.Add(1)
 				b.logger.Info("evicted stale device (same NAME, old address)",
-					"old_src", evictedSrc, "new_src", src)
-				b.values.RemoveSource(evictedSrc)
-				b.fanOutDeviceRemoved(evictedSrc)
+					"bus", bus, "old_src", evictedSrc, "new_src", src)
+				b.values.RemoveSource(bus, evictedSrc)
+				b.fanOutDeviceRemoved(bus, evictedSrc)
 			}
 			b.fanOutDevice(dev)
 			if isOurClaim {
@@ -513,10 +540,10 @@ func (b *Broker) handleFrame(frame RxFrame) {
 				// complete in /devices without waiting for an ISO
 				// request from another device on the bus.
 				if prodData := b.virtualDevices.ProductInfoPayload(src); prodData != nil {
-					b.devices.HandleProductInfo(src, prodData)
+					b.devices.HandleProductInfo(bus, src, prodData)
 				}
 			} else if !b.replicaMode {
-				b.sendISORequest(src, 126996)
+				b.sendISORequest(bus, src, 126996)
 			}
 		}
 	case 59904:
@@ -526,8 +553,9 @@ func (b *Broker) handleFrame(frame RxFrame) {
 			b.virtualDevices.HandleISORequest(frame.Header.Destination, reqPGN, src)
 		}
 	case 126996:
-		if dev := b.devices.HandleProductInfo(src, frame.Data); dev != nil {
+		if dev := b.devices.HandleProductInfo(bus, src, frame.Data); dev != nil {
 			b.logger.Info("product info",
+				"bus", bus,
 				"src", dev.Source,
 				"model", dev.ModelID,
 				"serial", dev.ModelSerial,
@@ -537,7 +565,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 		}
 	default:
 		if newSource && !b.replicaMode {
-			b.sendISORequest(src, 60928)
+			b.sendISORequest(bus, src, 60928)
 		}
 	}
 
@@ -554,6 +582,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 	msg := frameJSON{
 		Seq:  seq,
 		Ts:   frame.Timestamp.UTC().Format(time.RFC3339Nano),
+		Bus:  bus,
 		Prio: frame.Header.Priority,
 		PGN:  frame.Header.PGN,
 		Src:  frame.Header.Source,
@@ -577,6 +606,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 			Seq:       seq,
 			Timestamp: frame.Timestamp,
 			Header:    frame.Header,
+			Bus:       bus,
 			RawData:   frame.Data,
 			JSON:      jsonBytes,
 		}
@@ -589,6 +619,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 			Seq:       b.head,
 			Timestamp: frame.Timestamp,
 			Header:    frame.Header,
+			Bus:       bus,
 			RawData:   frame.Data,
 			JSON:      jsonBytes,
 		}
@@ -604,11 +635,11 @@ func (b *Broker) handleFrame(frame RxFrame) {
 	b.frameCount.Add(1)
 	b.lastFrameNano.Store(frame.Timestamp.UnixNano())
 
-	// Track last-seen value per (source, PGN).
-	b.values.Record(frame.Header.Source, frame.Header.PGN, frame.Timestamp, frame.Data, seq)
+	// Track last-seen value per (bus, source, PGN).
+	b.values.Record(bus, frame.Header.Source, frame.Header.PGN, frame.Timestamp, frame.Data, seq)
 
 	// Fan out to connected clients (filters checked per-session)
-	b.fanOut(frame.Header, jsonBytes)
+	b.fanOut(bus, frame.Header, jsonBytes)
 
 	// Notify pull-based consumers
 	b.notifyConsumers()
@@ -628,6 +659,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 type frameJSON struct {
 	Seq  uint64 `json:"seq"`
 	Ts   string `json:"ts"`
+	Bus  string `json:"bus,omitempty"`
 	Prio uint8  `json:"prio"`
 	PGN  uint32 `json:"pgn"`
 	Src  uint8  `json:"src"`
@@ -659,10 +691,10 @@ func (b *Broker) Subscribe(filter *EventFilter) (*subscriber, func()) {
 
 // fanOut sends pre-serialized JSON to all ephemeral subscribers,
 // skipping those whose filter doesn't match.
-func (b *Broker) fanOut(header CANHeader, data []byte) {
+func (b *Broker) fanOut(bus string, header CANHeader, data []byte) {
 	b.subscriberMu.RLock()
 	for sub := range b.subscribers {
-		if !sub.filter.matches(header, b.devices) {
+		if !sub.filter.matches(bus, header, b.devices) {
 			continue
 		}
 		select {
@@ -699,12 +731,14 @@ func (b *Broker) fanOutDevice(dev *Device) {
 }
 
 // fanOutDeviceRemoved sends a device_removed event to all ephemeral subscribers.
-func (b *Broker) fanOutDeviceRemoved(src uint8) {
+func (b *Broker) fanOutDeviceRemoved(bus string, src uint8) {
 	msg := struct {
 		Type   string `json:"type"`
+		Bus    string `json:"bus,omitempty"`
 		Source uint8  `json:"src"`
 	}{
 		Type:   "device_removed",
+		Bus:    bus,
 		Source: src,
 	}
 
@@ -800,14 +834,14 @@ func (b *Broker) expireDevices() {
 	}
 	cutoff := time.Now().Add(-b.deviceIdleTimeout)
 	evicted := b.devices.ExpireIdle(cutoff)
-	for _, src := range evicted {
+	for _, key := range evicted {
 		b.devicesRemoved.Add(1)
-		b.logger.Info("expired idle device", "src", src)
+		b.logger.Info("expired idle device", "bus", key.Bus, "src", key.Source)
 		if b.alerts != nil {
-			b.alerts.FireDeviceRemoved(src, nil)
+			b.alerts.FireDeviceRemoved(key.Source, nil)
 		}
-		b.values.RemoveSource(src)
-		b.fanOutDeviceRemoved(src)
+		b.values.RemoveSource(key.Bus, key.Source)
+		b.fanOutDeviceRemoved(key.Bus, key.Source)
 	}
 }
 
@@ -815,8 +849,8 @@ func (b *Broker) expireDevices() {
 // address claim but no product info yet. Handles the case where the
 // initial burst of requests on startup gets lost on the CAN bus.
 func (b *Broker) retryProductInfo() {
-	for _, src := range b.devices.SourcesMissingProductInfo() {
-		b.sendISORequest(src, 126996)
+	for _, bs := range b.devices.SourcesMissingProductInfo() {
+		b.sendISORequest(bs.Bus, bs.Source, 126996)
 	}
 }
 

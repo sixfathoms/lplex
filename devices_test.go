@@ -32,7 +32,7 @@ func TestDecodeNAME(t *testing.T) {
 	name |= uint64(4) << 60              // industryGroup bits 60-62
 	name |= uint64(1) << 63              // arbitrary address capable
 
-	dev := decodeNAME(name, 1)
+	dev := decodeNAME(name, "", 1)
 
 	if dev.Source != 1 {
 		t.Errorf("source: got %d, want 1", dev.Source)
@@ -68,7 +68,7 @@ func TestDecodeNAMEWithInstance(t *testing.T) {
 	name |= uint64(130) << 40 // deviceFunction
 	name |= uint64(75) << 49  // deviceClass
 
-	dev := decodeNAME(name, 42)
+	dev := decodeNAME(name, "", 42)
 
 	if dev.DeviceInstance != 21 {
 		t.Errorf("deviceInstance: got %d, want 21", dev.DeviceInstance)
@@ -86,7 +86,7 @@ func TestDeviceRegistryNewDevice(t *testing.T) {
 	name |= uint64(229) << 21 // Garmin
 	binary.LittleEndian.PutUint64(data, name)
 
-	dev, _, _ := reg.HandleAddressClaim(1, data)
+	dev, _, _ := reg.HandleAddressClaim("",1, data)
 	if dev == nil {
 		t.Fatal("expected new device")
 	}
@@ -103,10 +103,10 @@ func TestDeviceRegistryDuplicate(t *testing.T) {
 	name |= uint64(229) << 21
 	binary.LittleEndian.PutUint64(data, name)
 
-	reg.HandleAddressClaim(1, data)
+	reg.HandleAddressClaim("",1, data)
 
 	// Same NAME, same source: no change
-	dev, _, _ := reg.HandleAddressClaim(1, data)
+	dev, _, _ := reg.HandleAddressClaim("",1, data)
 	if dev != nil {
 		t.Error("expected nil for duplicate address claim")
 	}
@@ -117,12 +117,12 @@ func TestDeviceRegistryChanged(t *testing.T) {
 
 	data1 := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data1, uint64(229)<<21)
-	reg.HandleAddressClaim(1, data1)
+	reg.HandleAddressClaim("",1, data1)
 
 	// Different NAME on same source: address change
 	data2 := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data2, uint64(135)<<21)
-	dev, _, _ := reg.HandleAddressClaim(1, data2)
+	dev, _, _ := reg.HandleAddressClaim("",1, data2)
 	if dev == nil {
 		t.Fatal("expected new device for changed NAME")
 	}
@@ -137,7 +137,7 @@ func TestDeviceRegistrySnapshot(t *testing.T) {
 	for _, src := range []uint8{1, 5, 10} {
 		data := make([]byte, 8)
 		binary.LittleEndian.PutUint64(data, uint64(229)<<21|uint64(src))
-		reg.HandleAddressClaim(src, data)
+		reg.HandleAddressClaim("",src, data)
 	}
 
 	snap := reg.Snapshot()
@@ -148,7 +148,7 @@ func TestDeviceRegistrySnapshot(t *testing.T) {
 
 func TestDeviceRegistryShortData(t *testing.T) {
 	reg := NewDeviceRegistry()
-	dev, _, _ := reg.HandleAddressClaim(1, []byte{0x01, 0x02})
+	dev, _, _ := reg.HandleAddressClaim("",1, []byte{0x01, 0x02})
 	if dev != nil {
 		t.Error("expected nil for short data")
 	}
@@ -166,7 +166,7 @@ func TestRecordPacketIgnoresReservedAddresses(t *testing.T) {
 	ts := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	for _, src := range []uint8{254, 255} {
-		isNew := reg.RecordPacket(src, ts, 8)
+		isNew := reg.RecordPacket("",src, ts, 8)
 		if isNew {
 			t.Errorf("src=%d: expected false, got true", src)
 		}
@@ -184,23 +184,23 @@ func TestSourcesMissingProductInfo(t *testing.T) {
 	// Device with address claim but no product info.
 	data1 := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data1, uint64(229)<<21|1)
-	reg.HandleAddressClaim(10, data1)
-	reg.RecordPacket(10, ts, 8)
+	reg.HandleAddressClaim("",10, data1)
+	reg.RecordPacket("",10, ts, 8)
 
 	// Device with address claim AND product info.
 	data2 := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data2, uint64(229)<<21|2)
-	reg.HandleAddressClaim(20, data2)
-	reg.RecordPacket(20, ts, 8)
+	reg.HandleAddressClaim("",20, data2)
+	reg.RecordPacket("",20, ts, 8)
 	prodData := make([]byte, 134)
 	copy(prodData[4:36], "SomeModel")
-	reg.HandleProductInfo(20, prodData)
+	reg.HandleProductInfo("",20, prodData)
 
 	// Stats-only device (no NAME, no product info) should not be included.
-	reg.RecordPacket(30, ts, 8)
+	reg.RecordPacket("",30, ts, 8)
 
 	missing := reg.SourcesMissingProductInfo()
-	if len(missing) != 1 || missing[0] != 10 {
+	if len(missing) != 1 || missing[0].Source != 10 {
 		t.Errorf("expected [10], got %v", missing)
 	}
 }
@@ -209,7 +209,7 @@ func TestRecordPacketNewSource(t *testing.T) {
 	reg := NewDeviceRegistry()
 	ts := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	isNew := reg.RecordPacket(42, ts, 8)
+	isNew := reg.RecordPacket("",42, ts, 8)
 	if !isNew {
 		t.Error("expected true for new source")
 	}
@@ -245,9 +245,9 @@ func TestRecordPacketIncrementsExisting(t *testing.T) {
 	t0 := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 	t1 := t0.Add(5 * time.Second)
 
-	reg.RecordPacket(7, t0, 8)
+	reg.RecordPacket("",7, t0, 8)
 
-	isNew := reg.RecordPacket(7, t1, 16)
+	isNew := reg.RecordPacket("",7, t1, 16)
 	if isNew {
 		t.Error("expected false for existing source")
 	}
@@ -274,13 +274,13 @@ func TestHandleAddressClaimPreservesStats(t *testing.T) {
 	t1 := t0.Add(10 * time.Second)
 
 	// Record some packets first.
-	reg.RecordPacket(1, t0, 8)
-	reg.RecordPacket(1, t1, 8)
+	reg.RecordPacket("",1, t0, 8)
+	reg.RecordPacket("",1, t1, 8)
 
 	// Now an address claim arrives for the same source.
 	data := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data, uint64(229)<<21) // Garmin
-	dev, _, _ := reg.HandleAddressClaim(1, data)
+	dev, _, _ := reg.HandleAddressClaim("",1, data)
 
 	if dev == nil {
 		t.Fatal("expected new device from address claim")
@@ -321,11 +321,11 @@ func TestHandleProductInfoDecodesFields(t *testing.T) {
 	// Device must exist first (from address claim flow).
 	claim := make([]byte, 8)
 	binary.LittleEndian.PutUint64(claim, uint64(229)<<21) // Garmin
-	reg.HandleAddressClaim(1, claim)
+	reg.HandleAddressClaim("",1, claim)
 
 	payload := buildProductInfoPayload(4242, "GPS 19x", "4.80", "1.0", "12345678")
 
-	dev := reg.HandleProductInfo(1, payload)
+	dev := reg.HandleProductInfo("",1, payload)
 	if dev == nil {
 		t.Fatal("expected device update from product info")
 	}
@@ -355,13 +355,13 @@ func TestHandleProductInfoMergesExisting(t *testing.T) {
 	t0 := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// Build up stats + identity.
-	reg.RecordPacket(5, t0, 100)
+	reg.RecordPacket("",5, t0, 100)
 	claim := make([]byte, 8)
 	binary.LittleEndian.PutUint64(claim, uint64(591)<<21) // Raymarine
-	reg.HandleAddressClaim(5, claim)
+	reg.HandleAddressClaim("",5, claim)
 
 	payload := buildProductInfoPayload(999, "Axiom Pro", "3.10", "2.0", "SERIAL")
-	dev := reg.HandleProductInfo(5, payload)
+	dev := reg.HandleProductInfo("",5, payload)
 
 	if dev == nil {
 		t.Fatal("expected device from product info")
@@ -384,13 +384,13 @@ func TestHandleProductInfoDuplicateNoChange(t *testing.T) {
 	reg := NewDeviceRegistry()
 	claim := make([]byte, 8)
 	binary.LittleEndian.PutUint64(claim, uint64(229)<<21)
-	reg.HandleAddressClaim(1, claim)
+	reg.HandleAddressClaim("",1, claim)
 
 	payload := buildProductInfoPayload(100, "Test", "1.0", "1.0", "SN1")
-	reg.HandleProductInfo(1, payload)
+	reg.HandleProductInfo("",1, payload)
 
 	// Same payload again should return nil (no change).
-	dev := reg.HandleProductInfo(1, payload)
+	dev := reg.HandleProductInfo("",1, payload)
 	if dev != nil {
 		t.Error("expected nil for duplicate product info")
 	}
@@ -400,7 +400,7 @@ func TestHandleProductInfoUnknownSource(t *testing.T) {
 	reg := NewDeviceRegistry()
 	payload := buildProductInfoPayload(100, "Test", "1.0", "1.0", "SN1")
 
-	dev := reg.HandleProductInfo(99, payload)
+	dev := reg.HandleProductInfo("",99, payload)
 	if dev != nil {
 		t.Error("expected nil for unknown source")
 	}
@@ -410,9 +410,9 @@ func TestHandleProductInfoShortData(t *testing.T) {
 	reg := NewDeviceRegistry()
 	claim := make([]byte, 8)
 	binary.LittleEndian.PutUint64(claim, uint64(229)<<21)
-	reg.HandleAddressClaim(1, claim)
+	reg.HandleAddressClaim("",1, claim)
 
-	dev := reg.HandleProductInfo(1, make([]byte, 100)) // too short
+	dev := reg.HandleProductInfo("",1, make([]byte, 100)) // too short
 	if dev != nil {
 		t.Error("expected nil for short data")
 	}
@@ -431,8 +431,8 @@ func TestSynthesizeFramesRoundtrip(t *testing.T) {
 	name1 |= uint64(4) << 60    // marine
 	name1 |= uint64(1) << 63    // arbitrary address
 	binary.LittleEndian.PutUint64(claim1, name1)
-	src.HandleAddressClaim(1, claim1)
-	src.HandleProductInfo(1, buildProductInfoPayload(4242, "GPS 19x", "4.80", "1.0", "SN-001"))
+	src.HandleAddressClaim("",1, claim1)
+	src.HandleProductInfo("",1, buildProductInfoPayload(4242, "GPS 19x", "4.80", "1.0", "SN-001"))
 
 	// Device 2: address claim only, no product info (Airmar)
 	claim2 := make([]byte, 8)
@@ -442,10 +442,10 @@ func TestSynthesizeFramesRoundtrip(t *testing.T) {
 	name2 |= uint64(130) << 40  // device function
 	name2 |= uint64(75) << 49   // device class
 	binary.LittleEndian.PutUint64(claim2, name2)
-	src.HandleAddressClaim(5, claim2)
+	src.HandleAddressClaim("",5, claim2)
 
 	// Device 3: stats-only entry (no NAME), should be skipped.
-	src.RecordPacket(99, time.Now(), 8)
+	src.RecordPacket("",99, time.Now(), 8)
 
 	ts := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	frames := src.SynthesizeFrames(ts)
@@ -460,14 +460,14 @@ func TestSynthesizeFramesRoundtrip(t *testing.T) {
 	for _, f := range frames {
 		switch f.Header.PGN {
 		case 60928:
-			dst.HandleAddressClaim(f.Header.Source, f.Data)
+			dst.HandleAddressClaim("",f.Header.Source, f.Data)
 		case 126996:
-			dst.HandleProductInfo(f.Header.Source, f.Data)
+			dst.HandleProductInfo("",f.Header.Source, f.Data)
 		}
 	}
 
 	// Verify device 1 roundtripped correctly.
-	d1 := dst.Get(1)
+	d1 := dst.Get("",1)
 	if d1 == nil {
 		t.Fatal("device 1 missing")
 	}
@@ -494,7 +494,7 @@ func TestSynthesizeFramesRoundtrip(t *testing.T) {
 	}
 
 	// Verify device 2 roundtripped correctly (claim only, no product info).
-	d2 := dst.Get(5)
+	d2 := dst.Get("",5)
 	if d2 == nil {
 		t.Fatal("device 5 missing")
 	}
@@ -509,7 +509,7 @@ func TestSynthesizeFramesRoundtrip(t *testing.T) {
 	}
 
 	// Stats-only device (src 99) should not appear.
-	if dst.Get(99) != nil {
+	if dst.Get("",99) != nil {
 		t.Error("stats-only device (src 99) should not be synthesized")
 	}
 }
@@ -552,10 +552,10 @@ func TestHandleAddressClaimEvictsSameNAME(t *testing.T) {
 	nameX := uint64(229)<<21 | uint64(42)
 	data := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data, nameX)
-	reg.HandleAddressClaim(5, data)
+	reg.HandleAddressClaim("",5, data)
 
 	// Same NAME now claims source 10 (device restarted, new address).
-	dev, evictedSrc, evicted := reg.HandleAddressClaim(10, data)
+	dev, evictedSrc, evicted := reg.HandleAddressClaim("",10, data)
 	if dev == nil {
 		t.Fatal("expected new device")
 	}
@@ -570,11 +570,11 @@ func TestHandleAddressClaimEvictsSameNAME(t *testing.T) {
 	}
 
 	// Old source should be gone.
-	if reg.Get(5) != nil {
+	if reg.Get("",5) != nil {
 		t.Error("old source 5 should have been evicted")
 	}
 	// New source should be present.
-	if reg.Get(10) == nil {
+	if reg.Get("",10) == nil {
 		t.Error("new source 10 should exist")
 	}
 }
@@ -585,13 +585,13 @@ func TestHandleAddressClaimNoEvictionSameSource(t *testing.T) {
 	nameX := uint64(229)<<21 | uint64(42)
 	data := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data, nameX)
-	reg.HandleAddressClaim(5, data)
+	reg.HandleAddressClaim("",5, data)
 
 	// Different NAME on the same source is not an eviction, just a change.
 	nameY := uint64(135)<<21 | uint64(99)
 	data2 := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data2, nameY)
-	dev, _, evicted := reg.HandleAddressClaim(5, data2)
+	dev, _, evicted := reg.HandleAddressClaim("",5, data2)
 	if dev == nil {
 		t.Fatal("expected new device for changed NAME")
 	}
@@ -605,19 +605,19 @@ func TestExpireIdle(t *testing.T) {
 	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// Source 1: seen recently.
-	reg.RecordPacket(1, base, 8)
+	reg.RecordPacket("",1, base, 8)
 
 	// Source 2: seen a long time ago.
-	reg.RecordPacket(2, base.Add(-10*time.Minute), 8)
+	reg.RecordPacket("",2, base.Add(-10*time.Minute), 8)
 
 	// Source 3: also stale.
-	reg.RecordPacket(3, base.Add(-10*time.Minute), 8)
+	reg.RecordPacket("",3, base.Add(-10*time.Minute), 8)
 
 	// Source 4: with an address claim, but stale.
-	reg.RecordPacket(4, base.Add(-10*time.Minute), 8)
+	reg.RecordPacket("",4, base.Add(-10*time.Minute), 8)
 	claim := make([]byte, 8)
 	binary.LittleEndian.PutUint64(claim, uint64(229)<<21)
-	reg.HandleAddressClaim(4, claim)
+	reg.HandleAddressClaim("",4, claim)
 
 	cutoff := base.Add(-5 * time.Minute)
 	evicted := reg.ExpireIdle(cutoff)
@@ -628,13 +628,13 @@ func TestExpireIdle(t *testing.T) {
 	}
 
 	// Source 1 should survive.
-	if reg.Get(1) == nil {
+	if reg.Get("",1) == nil {
 		t.Error("source 1 should not be expired")
 	}
 
 	// The evicted ones should be gone.
 	for _, src := range []uint8{2, 3, 4} {
-		if reg.Get(src) != nil {
+		if reg.Get("",src) != nil {
 			t.Errorf("source %d should have been expired", src)
 		}
 	}
@@ -643,7 +643,7 @@ func TestExpireIdle(t *testing.T) {
 func TestExpireIdleNothingToExpire(t *testing.T) {
 	reg := NewDeviceRegistry()
 	now := time.Now()
-	reg.RecordPacket(1, now, 8)
+	reg.RecordPacket("",1, now, 8)
 
 	evicted := reg.ExpireIdle(now.Add(-time.Hour))
 	if len(evicted) != 0 {

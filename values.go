@@ -1,6 +1,7 @@
 package lplex
 
 import (
+	"cmp"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -15,8 +16,9 @@ import (
 type valueFilter struct {
 	pgns        map[uint32]struct{}
 	excludePGNs map[uint32]struct{}
-	hasDev      bool // true if any device-based criteria are set
-	devFunc     func(src uint8) bool
+	buses       map[string]struct{} // nil = all buses
+	hasDev      bool                // true if any device-based criteria are set
+	devFunc     func(bus string, src uint8) bool
 }
 
 // newValueFilter builds a valueFilter from an EventFilter and device registry.
@@ -27,6 +29,13 @@ func newValueFilter(f *EventFilter, devices *DeviceRegistry) *valueFilter {
 	}
 
 	vf := &valueFilter{}
+
+	if len(f.Buses) > 0 {
+		vf.buses = make(map[string]struct{}, len(f.Buses))
+		for _, b := range f.Buses {
+			vf.buses[b] = struct{}{}
+		}
+	}
 
 	if len(f.PGNs) > 0 {
 		vf.pgns = make(map[uint32]struct{}, len(f.PGNs))
@@ -46,13 +55,13 @@ func newValueFilter(f *EventFilter, devices *DeviceRegistry) *valueFilter {
 		vf.hasDev = true
 		excludeNames := f.ExcludeNames // capture for closure
 		prev := vf.devFunc
-		vf.devFunc = func(src uint8) bool {
-			dev := devices.Get(src)
+		vf.devFunc = func(bus string, src uint8) bool {
+			dev := devices.Get(bus, src)
 			if dev != nil && slices.Contains(excludeNames, dev.NAME) {
 				return false
 			}
 			if prev != nil {
-				return prev(src)
+				return prev(bus, src)
 			}
 			return true
 		}
@@ -61,11 +70,11 @@ func newValueFilter(f *EventFilter, devices *DeviceRegistry) *valueFilter {
 	if len(f.Manufacturers) > 0 || len(f.Names) > 0 || len(f.Instances) > 0 {
 		vf.hasDev = true
 		prev := vf.devFunc
-		vf.devFunc = func(src uint8) bool {
-			if prev != nil && !prev(src) {
+		vf.devFunc = func(bus string, src uint8) bool {
+			if prev != nil && !prev(bus, src) {
 				return false
 			}
-			dev := devices.Get(src)
+			dev := devices.Get(bus, src)
 			if dev == nil || dev.NAME == 0 {
 				return false
 			}
@@ -76,20 +85,21 @@ func newValueFilter(f *EventFilter, devices *DeviceRegistry) *valueFilter {
 	return vf
 }
 
-// valueKey identifies a unique value slot: one per (source address, PGN) pair.
+// valueKey identifies a unique value slot: one per (bus, source address, PGN) tuple.
 type valueKey struct {
+	Bus    string
 	Source uint8
 	PGN    uint32
 }
 
-// valueEntry is the most recent frame data for a given (source, PGN).
+// valueEntry is the most recent frame data for a given (bus, source, PGN).
 type valueEntry struct {
 	Timestamp time.Time
 	Data      []byte
 	Seq       uint64
 }
 
-// ValueStore tracks the last-seen frame data for each (source, PGN) pair.
+// ValueStore tracks the last-seen frame data for each (bus, source, PGN) tuple.
 // The broker goroutine writes via Record; HTTP handlers read via Snapshot.
 type ValueStore struct {
 	mu     sync.RWMutex
@@ -103,21 +113,21 @@ func NewValueStore() *ValueStore {
 	}
 }
 
-// RemoveSource deletes all stored values for the given source address.
-func (vs *ValueStore) RemoveSource(source uint8) {
+// RemoveSource deletes all stored values for the given (bus, source) pair.
+func (vs *ValueStore) RemoveSource(bus string, source uint8) {
 	vs.mu.Lock()
 	for k := range vs.values {
-		if k.Source == source {
+		if k.Bus == bus && k.Source == source {
 			delete(vs.values, k)
 		}
 	}
 	vs.mu.Unlock()
 }
 
-// Record updates the stored value for the given source and PGN.
+// Record updates the stored value for the given (bus, source, PGN).
 // Called by the broker goroutine on every frame.
-func (vs *ValueStore) Record(source uint8, pgn uint32, ts time.Time, data []byte, seq uint64) {
-	key := valueKey{Source: source, PGN: pgn}
+func (vs *ValueStore) Record(bus string, source uint8, pgn uint32, ts time.Time, data []byte, seq uint64) {
+	key := valueKey{Bus: bus, Source: source, PGN: pgn}
 
 	vs.mu.Lock()
 	entry := vs.values[key]
@@ -139,9 +149,16 @@ type PGNValue struct {
 	Seq  uint64 `json:"seq"`
 }
 
+// deviceGroupKey identifies a unique device for grouping values.
+type deviceGroupKey struct {
+	Bus    string
+	Source uint8
+}
+
 // DeviceValues groups PGN values by device in the JSON response.
 type DeviceValues struct {
 	Name         string     `json:"name"`
+	Bus          string     `json:"bus,omitempty"`
 	Source       uint8      `json:"src"`
 	Manufacturer string     `json:"manufacturer,omitempty"`
 	ModelID      string     `json:"model_id,omitempty"`
@@ -150,7 +167,7 @@ type DeviceValues struct {
 
 // Snapshot returns the current values grouped by device, resolved against
 // the device registry for NAME and manufacturer info. An optional filter
-// restricts results by PGN and/or device criteria (manufacturer, name, instance).
+// restricts results by PGN, bus, and/or device criteria (manufacturer, name, instance).
 func (vs *ValueStore) Snapshot(devices *DeviceRegistry, filter *EventFilter) []DeviceValues {
 	vf := newValueFilter(filter, devices)
 
@@ -162,6 +179,11 @@ func (vs *ValueStore) Snapshot(devices *DeviceRegistry, filter *EventFilter) []D
 	}
 	entries := make([]entry, 0, len(vs.values))
 	for k, v := range vs.values {
+		if vf != nil && vf.buses != nil {
+			if _, ok := vf.buses[k.Bus]; !ok {
+				continue
+			}
+		}
 		if vf != nil && vf.pgns != nil {
 			if _, ok := vf.pgns[k.PGN]; !ok {
 				continue
@@ -176,12 +198,13 @@ func (vs *ValueStore) Snapshot(devices *DeviceRegistry, filter *EventFilter) []D
 	}
 	vs.mu.RUnlock()
 
-	// Group by source address.
-	bySource := make(map[uint8][]PGNValue)
-	sources := make(map[uint8]struct{})
+	// Group by (bus, source).
+	byDevice := make(map[deviceGroupKey][]PGNValue)
+	deviceSet := make(map[deviceGroupKey]struct{})
 	for _, e := range entries {
-		sources[e.key.Source] = struct{}{}
-		bySource[e.key.Source] = append(bySource[e.key.Source], PGNValue{
+		dk := deviceGroupKey{Bus: e.key.Bus, Source: e.key.Source}
+		deviceSet[dk] = struct{}{}
+		byDevice[dk] = append(byDevice[dk], PGNValue{
 			PGN:  e.key.PGN,
 			Ts:   e.val.Timestamp.UTC().Format(time.RFC3339Nano),
 			Data: hex.EncodeToString(e.val.Data),
@@ -189,37 +212,37 @@ func (vs *ValueStore) Snapshot(devices *DeviceRegistry, filter *EventFilter) []D
 		})
 	}
 
-	// Build sorted source list.
-	sortedSources := make([]uint8, 0, len(sources))
-	for src := range sources {
-		sortedSources = append(sortedSources, src)
+	// Build sorted device list.
+	sortedDevices := make([]deviceGroupKey, 0, len(deviceSet))
+	for dk := range deviceSet {
+		sortedDevices = append(sortedDevices, dk)
 	}
-	slices.Sort(sortedSources)
+	slices.SortFunc(sortedDevices, func(a, b deviceGroupKey) int {
+		if c := cmp.Compare(a.Bus, b.Bus); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Source, b.Source)
+	})
 
-	result := make([]DeviceValues, 0, len(sortedSources))
-	for _, src := range sortedSources {
-		if vf != nil && vf.hasDev && !vf.devFunc(src) {
+	result := make([]DeviceValues, 0, len(sortedDevices))
+	for _, dk := range sortedDevices {
+		if vf != nil && vf.hasDev && !vf.devFunc(dk.Bus, dk.Source) {
 			continue
 		}
 
-		vals := bySource[src]
+		vals := byDevice[dk]
 		slices.SortFunc(vals, func(a, b PGNValue) int {
-			if a.PGN < b.PGN {
-				return -1
-			}
-			if a.PGN > b.PGN {
-				return 1
-			}
-			return 0
+			return cmp.Compare(a.PGN, b.PGN)
 		})
 
 		dv := DeviceValues{
-			Source: src,
+			Bus:    dk.Bus,
+			Source: dk.Source,
 			Values: vals,
 		}
 
 		// Resolve device identity from the registry.
-		if dev := devices.Get(src); dev != nil && dev.NAME != 0 {
+		if dev := devices.Get(dk.Bus, dk.Source); dev != nil && dev.NAME != 0 {
 			dv.Name = fmt.Sprintf("0x%016x", dev.NAME)
 			dv.Manufacturer = dev.Manufacturer
 			dv.ModelID = dev.ModelID
@@ -250,6 +273,7 @@ type DecodedPGNValue struct {
 // DecodedDeviceValues groups decoded PGN values by device.
 type DecodedDeviceValues struct {
 	Name         string            `json:"name"`
+	Bus          string            `json:"bus,omitempty"`
 	Source       uint8             `json:"src"`
 	Manufacturer string            `json:"manufacturer,omitempty"`
 	ModelID      string            `json:"model_id,omitempty"`
@@ -269,6 +293,11 @@ func (vs *ValueStore) DecodedSnapshot(devices *DeviceRegistry, filter *EventFilt
 	}
 	entries := make([]entry, 0, len(vs.values))
 	for k, v := range vs.values {
+		if vf != nil && vf.buses != nil {
+			if _, ok := vf.buses[k.Bus]; !ok {
+				continue
+			}
+		}
 		if vf != nil && vf.pgns != nil {
 			if _, ok := vf.pgns[k.PGN]; !ok {
 				continue
@@ -283,9 +312,9 @@ func (vs *ValueStore) DecodedSnapshot(devices *DeviceRegistry, filter *EventFilt
 	}
 	vs.mu.RUnlock()
 
-	// Group by source address, decoding each value.
-	bySource := make(map[uint8][]DecodedPGNValue)
-	sources := make(map[uint8]struct{})
+	// Group by (bus, source), decoding each value.
+	byDevice := make(map[deviceGroupKey][]DecodedPGNValue)
+	deviceSet := make(map[deviceGroupKey]struct{})
 	for _, e := range entries {
 		info, ok := pgn.Registry[e.key.PGN]
 		if !ok || info.Decode == nil {
@@ -295,8 +324,9 @@ func (vs *ValueStore) DecodedSnapshot(devices *DeviceRegistry, filter *EventFilt
 		if err != nil {
 			continue
 		}
-		sources[e.key.Source] = struct{}{}
-		bySource[e.key.Source] = append(bySource[e.key.Source], DecodedPGNValue{
+		dk := deviceGroupKey{Bus: e.key.Bus, Source: e.key.Source}
+		deviceSet[dk] = struct{}{}
+		byDevice[dk] = append(byDevice[dk], DecodedPGNValue{
 			PGN:         e.key.PGN,
 			Description: info.Description,
 			Ts:          e.val.Timestamp.UTC().Format(time.RFC3339Nano),
@@ -305,35 +335,35 @@ func (vs *ValueStore) DecodedSnapshot(devices *DeviceRegistry, filter *EventFilt
 		})
 	}
 
-	sortedSources := make([]uint8, 0, len(sources))
-	for src := range sources {
-		sortedSources = append(sortedSources, src)
+	sortedDevices := make([]deviceGroupKey, 0, len(deviceSet))
+	for dk := range deviceSet {
+		sortedDevices = append(sortedDevices, dk)
 	}
-	slices.Sort(sortedSources)
+	slices.SortFunc(sortedDevices, func(a, b deviceGroupKey) int {
+		if c := cmp.Compare(a.Bus, b.Bus); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Source, b.Source)
+	})
 
-	result := make([]DecodedDeviceValues, 0, len(sortedSources))
-	for _, src := range sortedSources {
-		if vf != nil && vf.hasDev && !vf.devFunc(src) {
+	result := make([]DecodedDeviceValues, 0, len(sortedDevices))
+	for _, dk := range sortedDevices {
+		if vf != nil && vf.hasDev && !vf.devFunc(dk.Bus, dk.Source) {
 			continue
 		}
 
-		vals := bySource[src]
+		vals := byDevice[dk]
 		slices.SortFunc(vals, func(a, b DecodedPGNValue) int {
-			if a.PGN < b.PGN {
-				return -1
-			}
-			if a.PGN > b.PGN {
-				return 1
-			}
-			return 0
+			return cmp.Compare(a.PGN, b.PGN)
 		})
 
 		dv := DecodedDeviceValues{
-			Source: src,
+			Bus:    dk.Bus,
+			Source: dk.Source,
 			Values: vals,
 		}
 
-		if dev := devices.Get(src); dev != nil && dev.NAME != 0 {
+		if dev := devices.Get(dk.Bus, dk.Source); dev != nil && dev.NAME != 0 {
 			dv.Name = fmt.Sprintf("0x%016x", dev.NAME)
 			dv.Manufacturer = dev.Manufacturer
 			dv.ModelID = dev.ModelID

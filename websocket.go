@@ -109,6 +109,7 @@ func (s *Server) wsHandleSend(ctx context.Context, conn *websocket.Conn, data js
 		Dst  uint8  `json:"dst"`
 		Prio uint8  `json:"prio"`
 		Data string `json:"data"`
+		Bus  string `json:"bus"` // target CAN interface (empty = default)
 	}
 	if err := json.Unmarshal(data, &req); err != nil {
 		s.wsError(ctx, conn, "invalid send payload")
@@ -124,7 +125,7 @@ func (s *Server) wsHandleSend(ctx context.Context, conn *websocket.Conn, data js
 		var dstNAME uint64
 		var nameKnown bool
 		if req.Dst != 0xFF {
-			if dev := s.broker.devices.Get(req.Dst); dev != nil {
+			if dev := s.broker.devices.Get(req.Bus, req.Dst); dev != nil {
 				dstNAME = dev.NAME
 				nameKnown = true
 			}
@@ -162,7 +163,7 @@ func (s *Server) wsHandleSend(ctx context.Context, conn *websocket.Conn, data js
 		Destination: req.Dst,
 	}
 
-	if !s.broker.QueueTx(TxRequest{Header: header, Data: frameData}) {
+	if !s.broker.QueueTx(TxRequest{Header: header, Data: frameData, Bus: req.Bus}) {
 		s.wsError(ctx, conn, "tx queue full")
 		return
 	}

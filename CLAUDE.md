@@ -1,6 +1,6 @@
 # lplex
 
-CAN bus HTTP bridge for NMEA 2000. Reads raw CAN frames from a SocketCAN interface, reassembles fast-packets, tracks device discovery, and streams frames to clients over SSE with session management, filtering, and replay. Supports cloud replication over gRPC for remote access to boat data.
+CAN bus HTTP bridge for NMEA 2000. Reads raw CAN frames from one or more SocketCAN interfaces, reassembles fast-packets, tracks device discovery, and streams frames to clients over SSE with session management, filtering, and replay. Supports multiple CAN buses simultaneously (e.g. can0 + can1 for separate engine/navigation buses) with per-bus filtering. Supports cloud replication over gRPC for remote access to boat data.
 
 ## Prerequisites
 
@@ -54,7 +54,7 @@ git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
 - **Install**: `.deb` package from GitHub Releases
 - **Service**: `lplex-server.service` (systemd)
 - **Config**: `/etc/lplex/lplex-server.conf` (HOCON) or `/etc/default/lplex-server` (`LPLEX_ARGS="-interface can0 -port 8089"`)
-- **CAN interface**: `can0`
+- **CAN interface(s)**: `can0` (single bus via `-interface`), or `can0,can1` (multi-bus via `-interfaces`)
 - **HTTP port**: 8089
 
 ## Architecture
@@ -62,28 +62,29 @@ git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
 Single-goroutine broker design, no locks in the hot path:
 
 ```
-SocketCAN (can0)
+SocketCAN (can0, can1, ...)
     |
-CANReader goroutine
+CANReader goroutine(s) — one per interface
     |  reads extended CAN frames
     |  reassembles fast-packets (multi-frame PGNs)
+    |  tags each frame with bus name (interface name)
     |
     v
-rxFrames chan
+rxFrames chan (shared across all buses)
     |
 Broker goroutine (single writer, owns all state)
     |  assigns monotonic sequence numbers
     |  appends pre-serialized JSON to ring buffer (64k entries, power-of-2)
     |  updates device registry (PGN 60928 address claim, PGN 126996 product info)
     |  evicts stale devices (NAME-based dedup on address change, idle timeout expiry)
-    |  fans out to ephemeral subscribers (with per-client filtering)
+    |  fans out to ephemeral subscribers (with per-client filtering incl. bus)
     |  notifies pull-based consumers (non-blocking send to notify channels)
-    |  sends ISO requests to discover new devices on the bus
+    |  sends ISO requests to discover new devices on the correct bus
     |  non-blocking send to journal channel (if enabled)
     |
     +---> ring buffer ([]ringEntry, lock-free writes, RLock for consumer reads)
-    +---> DeviceRegistry (RWMutex, keyed by source address)
-    +---> ValueStore (RWMutex, last frame per source+PGN)
+    +---> DeviceRegistry (RWMutex, keyed by (bus, source) pair)
+    +---> ValueStore (RWMutex, last frame per (bus, source, PGN))
     +---> consumers map (pull-based: cursor, filter, notify chan)
     +---> sessions map (buffered client metadata: cursor, filter, timeout)
     +---> subscribers map (ephemeral clients: channels, filters, no state)
@@ -102,10 +103,11 @@ HTTP Server (:8089)                    JournalWriter goroutine
     +-- GET  /values
     +-- GET  /replication/status
                                        Consumer (pull-based reader)
-CANWriter goroutine                        |  reads from tiered log:
-    |  reads from txFrames chan            |  1. journal files (oldest)
+CANWriter goroutine(s) — one per interface  |  reads from tiered log:
+    |  reads from per-bus TX chan          |  1. journal files (oldest)
     |  fragments fast-packets for TX      |  2. ring buffer (recent)
     |  writes to SocketCAN                |  3. live notification (blocking wait)
+    |  (TX dispatcher routes by bus)
 
 ReplicationClient (optional)
     |  gRPC connection to cloud
@@ -173,7 +175,7 @@ lplex-cloud process
 
 | File | Owns |
 |---|---|
-| `broker.go` | `Broker`, `BrokerConfig` (including `ReplicaMode`, `InitialHead`, `DeviceIdleTimeout`), `ClientSession`, `subscriber`, `EventFilter`, ring buffer, fan-out, session lifecycle, ephemeral subscriptions, consumer registry, journal feed, value store feed, device idle expiry, `device_removed` events |
+| `broker.go` | `Broker`, `BrokerConfig` (including `ReplicaMode`, `InitialHead`, `DeviceIdleTimeout`), `ClientSession`, `subscriber`, `EventFilter` (including `Buses` for multi-bus filtering), ring buffer, fan-out, session lifecycle, ephemeral subscriptions, consumer registry, journal feed, value store feed, device idle expiry, `device_removed` events |
 | `consumer.go` | `Consumer`, `Frame`, `ErrFallenBehind`, pull-based tiered reader (journal -> ring -> live), journal fallback with file discovery, seq-based seeking, and block-level prefetch |
 | `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint, on-demand PGN query (`POST /query` via ISO Request PGN 59904), WebSocket upgrade bypass for compression/tracing wrappers |
 | `websocket.go` | `HandleWebSocket`, bidirectional WebSocket transport (`GET /ws`). Streams filtered CAN frames to client, accepts `send` messages for CAN bus transmission. Same filter params as `/events`. |
@@ -184,7 +186,7 @@ lplex-cloud process
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
 | `fastpacket.go` | `FastPacketAssembler`, `FragmentFastPacket`, `IsFastPacket` (checks `pgn.Registry` for `FastPacket` flag) |
-| `devices.go` | `DeviceRegistry`, PGN 60928/126996 decoding, manufacturer lookup table, NAME-based eviction (same NAME on new source evicts old), idle expiry (`ExpireIdle`) |
+| `devices.go` | `DeviceRegistry` (keyed by `(bus, source)` pair via `deviceKey`), `BusSource`, PGN 60928/126996 decoding, manufacturer lookup table, NAME-based eviction (same NAME on same bus at new source evicts old), idle expiry (`ExpireIdle`) |
 | `journal_writer.go` | `JournalWriter`, `JournalWriterStats`, `JournalConfig` (including `OnRotate` callback), block encoding, zstd compression, block index, file rotation, device table tracking (with product info), atomic write metrics (blocks/bytes written, last block duration) |
 | `alerting.go` | `AlertManager`, `AlertManagerConfig`, `AlertEvent`, `AlertType`, webhook-based alerting with dedup window. Fires on bus silence/resume, device removal, replication disconnect/reconnect |
 | `tracing.go` | `TracingConfig`, `InitTracing`, `Tracer`, OpenTelemetry setup with OTLP/gRPC exporter, probabilistic sampling, W3C Trace Context propagation |
@@ -197,7 +199,7 @@ lplex-cloud process
 | `journal_keeper.go` | `JournalKeeper`, `KeeperConfig`, `KeeperDir`, `RotatedFile`, `ArchiveTrigger`, `OverflowPolicy`, retention algorithm (max-age/min-keep/max-size with soft/hard thresholds and overflow policy), archive script execution (JSONL protocol), marker file tracking, retry with exponential backoff, per-directory pause state |
 | `change_diff.go` | `DiffMethod` interface, `ByteMaskDiff` (byte-level bitmask diff), `FieldToleranceDiff` (field-level tolerance-aware diff using PGN decode + reflection), `SubKeyFunc` for multiplexed PGN sub-keying |
 | `change_tracker.go` | `ChangeTracker`, `ChangeTrackerConfig`, `ChangeEvent`, `ChangeEventType` (Snapshot/Delta/Idle), per-(source, PGN, subkey) state tracking, idle timeout detection, auto-wires `FieldToleranceDiff` from `pgn.Registry` tolerances. `ChangeReplayer` reconstructs full packets from compact deltas. |
-| `values.go` | `ValueStore`, `DeviceValues`, `PGNValue`, last-seen frame tracking per (source, PGN) pair, snapshot with device resolution, `RemoveSource` for cleanup on device eviction |
+| `values.go` | `ValueStore`, `DeviceValues`, `PGNValue`, last-seen frame tracking per (bus, source, PGN) tuple, snapshot with device resolution, `RemoveSource` for cleanup on device eviction |
 | `doc.go` | Package documentation with embedding example |
 
 ## Client Modes
@@ -206,7 +208,7 @@ Two connection modes, ephemeral is the default:
 
 ### Ephemeral (default)
 
-`GET /events` with optional query param filters (`?pgn=129025&manufacturer=Garmin`). No session, no replay, no ACK.
+`GET /events` with optional query param filters (`?pgn=129025&manufacturer=Garmin&bus=can0`). No session, no replay, no ACK.
 
 ```
 lplex dump --server http://inuc1.local:8089
@@ -262,7 +264,7 @@ Both `lplex-server` and `lplex-cloud` support automatic journal cleanup and arch
 
 - **Pull-based Consumer model**: buffered clients use a Kafka/Kinesis-style Consumer that reads from a tiered log (journal -> ring buffer -> live notification). Each consumer iterates at its own pace via `Next(ctx)`. Sessions store only metadata (cursor, filter, timeout); the HTTP handler creates a Consumer on each connection.
 - **Pre-serialized JSON in ring buffer**: frames are serialized once when received, not per-client.
-- **Resolved filters**: device-based filters are flattened to source addresses at consumer creation time, avoiding device registry lookups during iteration.
+- **Resolved filters**: device-based filters are flattened to source addresses at consumer creation time, avoiding device registry lookups during iteration. Bus filters are also pre-resolved into a map for O(1) lookup.
 - **Ephemeral subscribers are separate from sessions**: ephemeral `/events` uses push-based channels. Session-based `/clients/{id}/events` uses pull-based Consumer.
 - **ISO Request on unknown source**: broker discovers devices automatically.
 - **Journal v2 format**: blocks include `BaseSeq` for O(log n) sequence-based seeking. Reader supports both v1 (time-only) and v2 (time + seq). Consumer falls back to journal files when behind the ring buffer, returning `ErrFallenBehind` when data is unavailable.
@@ -293,6 +295,8 @@ The documentation site lives in `website/` (Docusaurus). See [`website/CLAUDE.md
 lplex-server supports HOCON config files (`-config path` or auto-discovered from `./lplex-server.conf`, `/etc/lplex/lplex-server.conf`, with backward-compat fallback to `./lplex.conf`, `/etc/lplex/lplex.conf`). CLI flags always override config file values (detected via `flag.Visit()`). Config values are applied through `flag.Set()` so they share the same parsing path as CLI flags. The mapping from HOCON paths to flag names lives in `configToFlag` in `cmd/lplex-server/config.go`.
 
 lplex-cloud uses the same pattern with `lplex-cloud.conf` (auto-discovered from `./lplex-cloud.conf`, `/etc/lplex-cloud/lplex-cloud.conf`). Mapping in `cmd/lplex-cloud/config.go`.
+
+lplex-server supports multiple CAN interfaces: `-interfaces can0,can1` (comma-separated) starts a CANReader per interface, all feeding into a single broker. The `-interface` flag still works for single-bus setups. HOCON path: `interfaces` (string, comma-separated). In multi-bus mode, a TX dispatcher routes outgoing frames to the correct interface based on the `Bus` field in `TxRequest`. Devices are keyed by `(bus, source)` so address collisions across buses are handled correctly.
 
 lplex-server has send policy flags to gate the `/send` and `/query` endpoints: `-send-enabled` (default false) and `-send-rules` (semicolon-separated rule strings). HOCON paths: `send.enabled`, `send.rules` (string or object array). CLI uses DSL syntax: `[!] [pgn:<spec>] [name:<hex>,...]` where `<spec>` supports values, comma-separated lists, and ranges (e.g. `pgn:59904,126208`, `pgn:65280-65535`). `!` prefix = deny. Omit pgn/name for wildcard. HOCON config also supports native object rules: `{ deny = true/false, pgn = "<spec>", name = "<hex>" or ["<hex>", ...] }`. Both string and object forms can be mixed in the same array. Rules are evaluated top-to-bottom, first match wins. No matching rule = deny. Empty rules + enabled = allow all. These do not affect the broker's internal ISO requests for device discovery.
 

@@ -53,6 +53,7 @@ func (c *JournalConfig) validate() error {
 
 // journalDeviceChange records an address claim seen during a block.
 type journalDeviceChange struct {
+	Bus      string
 	Source   uint8
 	NAME     uint64
 	FrameIdx uint32
@@ -269,6 +270,7 @@ func (w *JournalWriter) appendFrame(frame RxFrame) error {
 	if frame.Header.PGN == 60928 && len(frame.Data) >= 8 {
 		name := binary.LittleEndian.Uint64(frame.Data[0:8])
 		w.blockDeviceChanges = append(w.blockDeviceChanges, journalDeviceChange{
+			Bus:      frame.Bus,
 			Source:   frame.Header.Source,
 			NAME:     name,
 			FrameIdx: w.frameCount,
@@ -353,7 +355,7 @@ func (w *JournalWriter) flushBlock() error {
 	}
 	for _, c := range w.blockDeviceChanges {
 		e := devEntry{Source: c.Source, NAME: c.NAME, ActiveFrom: c.FrameIdx}
-		if dev := w.devices.Get(c.Source); dev != nil {
+		if dev := w.devices.Get(c.Bus, c.Source); dev != nil {
 			e.ProductCode = dev.ProductCode
 			e.ModelID = dev.ModelID
 			e.SoftwareVersion = dev.SoftwareVersion

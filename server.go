@@ -99,6 +99,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 			Instance     []uint8  `json:"instance"`
 			Name         []string `json:"name"`
 			ExcludeName  []string `json:"exclude_name"`
+			Bus          []string `json:"bus"`
 		} `json:"filter"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -123,6 +124,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 			ExcludePGNs:   req.Filter.ExcludePGN,
 			Manufacturers: req.Filter.Manufacturer,
 			Instances:     req.Filter.Instance,
+			Buses:         req.Filter.Bus,
 		}
 		for _, nameHex := range req.Filter.Name {
 			name, err := strconv.ParseUint(nameHex, 16, 64)
@@ -265,7 +267,7 @@ func (s *Server) HandleEphemeralSSE(w http.ResponseWriter, r *http.Request) {
 
 // ParseFilterParams reads optional filter query params from a request.
 // Supported params: pgn (decimal), manufacturer (name or code), instance (decimal),
-// name (hex CAN NAME). Returns nil filter if no params are set.
+// name (hex CAN NAME), bus (SocketCAN interface name). Returns nil filter if no params are set.
 func ParseFilterParams(r *http.Request) (*EventFilter, error) {
 	q := r.URL.Query()
 	pgns := q["pgn"]
@@ -274,13 +276,15 @@ func ParseFilterParams(r *http.Request) (*EventFilter, error) {
 	instances := q["instance"]
 	names := q["name"]
 	excludeNames := q["exclude_name"]
+	buses := q["bus"]
 
-	if len(pgns) == 0 && len(excludePGNs) == 0 && len(manufacturers) == 0 && len(instances) == 0 && len(names) == 0 && len(excludeNames) == 0 {
+	if len(pgns) == 0 && len(excludePGNs) == 0 && len(manufacturers) == 0 && len(instances) == 0 && len(names) == 0 && len(excludeNames) == 0 && len(buses) == 0 {
 		return nil, nil
 	}
 
 	f := &EventFilter{
 		Manufacturers: manufacturers,
+		Buses:         buses,
 	}
 
 	for _, s := range pgns {
@@ -369,7 +373,7 @@ func (s *Server) overrideSource(w http.ResponseWriter, src *uint8) bool {
 // checkSendPolicy validates that the send policy allows a frame with the given
 // PGN and destination address. Returns true if allowed, false if the request
 // was rejected (with an appropriate HTTP error written).
-func (s *Server) checkSendPolicy(w http.ResponseWriter, pgn uint32, dst uint8) bool {
+func (s *Server) checkSendPolicy(w http.ResponseWriter, bus string, pgn uint32, dst uint8) bool {
 	if !s.sendPolicy.Enabled {
 		http.Error(w, "send is disabled", http.StatusForbidden)
 		return false
@@ -384,7 +388,7 @@ func (s *Server) checkSendPolicy(w http.ResponseWriter, pgn uint32, dst uint8) b
 	var dstNAME uint64
 	var nameKnown bool
 	if dst != 0xFF {
-		if dev := s.broker.devices.Get(dst); dev != nil {
+		if dev := s.broker.devices.Get(bus, dst); dev != nil {
 			dstNAME = dev.NAME
 			nameKnown = true
 		}
@@ -417,12 +421,13 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		Dst  uint8  `json:"dst"`
 		Prio uint8  `json:"prio"`
 		Data string `json:"data"`
+		Bus  string `json:"bus"` // target CAN interface (empty = default)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if !s.checkSendPolicy(w, req.PGN, req.Dst) {
+	if !s.checkSendPolicy(w, req.Bus, req.PGN, req.Dst) {
 		return
 	}
 
@@ -444,7 +449,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		Destination: req.Dst,
 	}
 
-	if !s.broker.QueueTx(TxRequest{Header: header, Data: data}) {
+	if !s.broker.QueueTx(TxRequest{Header: header, Data: data, Bus: req.Bus}) {
 		http.Error(w, "tx queue full", http.StatusServiceUnavailable)
 		return
 	}
@@ -459,6 +464,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		PGN     uint32 `json:"pgn"`
 		Dst     uint8  `json:"dst"`
 		Timeout string `json:"timeout"`
+		Bus     string `json:"bus"` // target CAN interface (empty = default)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -471,7 +477,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if req.Dst == 0 {
 		req.Dst = 0xFF // broadcast
 	}
-	if !s.checkSendPolicy(w, req.PGN, req.Dst) {
+	if !s.checkSendPolicy(w, req.Bus, req.PGN, req.Dst) {
 		return
 	}
 
@@ -497,7 +503,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	defer cleanup()
 
 	// Send the ISO Request.
-	if err := s.broker.SendISORequest(req.Dst, req.PGN); err != nil {
+	if err := s.broker.SendISORequest(req.Bus, req.Dst, req.PGN); err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}

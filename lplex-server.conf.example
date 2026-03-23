@@ -6,6 +6,9 @@
 # SocketCAN interface name
 interface = can0
 
+# Multi-bus: list of CAN interfaces (overrides 'interface' when set)
+# interfaces = ["can0", "can1"]
+
 # HTTP listen port
 port = 8089
 

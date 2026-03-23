@@ -13,6 +13,7 @@ import (
 // configToFlag maps HOCON config paths to CLI flag names.
 var configToFlag = map[string]string{
 	"interface":               "interface",
+	"interfaces":              "interfaces",
 	"port":                    "port",
 	"max-buffer-duration":     "max-buffer-duration",
 	"journal.dir":             "journal-dir",
