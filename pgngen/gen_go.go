@@ -803,6 +803,11 @@ func writeVarStructFieldDecodes(b *strings.Builder, sd *StructDef, offVar, entry
 		}
 		goField := toPascal(f.Name)
 		nBytes := f.Bits / 8
+		// Bounds check: after variable-width fields (LAU strings) the cursor
+		// may be past what the initial minFixed check covered.
+		if nBytes > 0 {
+			fmt.Fprintf(b, "%sif %s+%d > len(data) { break }\n", indent, offVar, nBytes)
+		}
 		bitInByte := f.BitStart % 8 // always 0 for cursor-based (byte aligned within entry)
 		expr := readBitsExprCursor(offVar, 0, bitInByte, f.Bits, f.Signed)
 		if isNullable(f) {
