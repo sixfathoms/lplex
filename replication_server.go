@@ -159,7 +159,7 @@ func (s *InstanceState) ensureBroker() {
 	s.journalWriter = jw
 	s.journalDone = make(chan struct{})
 
-	go b.Run()
+	go b.Run(ctx)
 	go func() {
 		defer close(s.journalDone)
 		if err := jw.Run(ctx); err != nil && ctx.Err() == nil {

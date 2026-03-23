@@ -1,6 +1,7 @@
 package lplex
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -53,7 +54,7 @@ func TestVirtualDeviceClaimLifecycle(t *testing.T) {
 	})
 
 	// No devices on the bus, so address 252 should be picked.
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	if len(tv.txLog) != 1 {
 		t.Fatalf("expected 1 tx (claim), got %d", len(tv.txLog))
@@ -107,7 +108,7 @@ func TestVirtualDeviceClaimedSource(t *testing.T) {
 		t.Error("should not have a claimed source before start")
 	}
 
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	// Simulate echo to transition to Held.
 	tv.mgr.HandleBusClaim(252, 0x1234)
@@ -123,7 +124,7 @@ func TestVirtualDeviceConflictWeLose(t *testing.T) {
 
 	// Our NAME is higher (worse priority).
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0xFFFFFFFFFFFFFFFF})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	if len(tv.txLog) != 1 {
 		t.Fatalf("expected 1 tx, got %d", len(tv.txLog))
@@ -151,7 +152,7 @@ func TestVirtualDeviceConflictWeWin(t *testing.T) {
 
 	// Our NAME is lower (we win conflicts).
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0x0000000000000001})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	claimedAddr := tv.txLog[0].Header.Source
 	txBefore := len(tv.txLog)
@@ -179,7 +180,7 @@ func TestVirtualDeviceAddressAvoidance(t *testing.T) {
 	tv.registerDevice(252, 0xAAAA)
 
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0xBBBB})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	if len(tv.txLog) == 0 {
 		t.Fatal("expected at least one claim tx")
@@ -197,7 +198,7 @@ func TestVirtualDeviceMultiDevice(t *testing.T) {
 
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0x1111})
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0x2222})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	if len(tv.txLog) != 2 {
 		t.Fatalf("expected 2 claim txs, got %d", len(tv.txLog))
@@ -214,7 +215,7 @@ func TestVirtualDeviceMultiDevice(t *testing.T) {
 func TestVirtualDeviceISORequestAddressClaim(t *testing.T) {
 	tv := newTestVDM()
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0xDEAD})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	// Force to held state.
 	tv.mgr.mu.Lock()
@@ -244,7 +245,7 @@ func TestVirtualDeviceISORequestProductInfo(t *testing.T) {
 			ProductCode:     42,
 		},
 	})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	tv.mgr.mu.Lock()
 	tv.mgr.devices[0].state = ClaimHeld
@@ -268,7 +269,7 @@ func TestVirtualDeviceISORequestProductInfo(t *testing.T) {
 func TestVirtualDeviceISORequestWrongDst(t *testing.T) {
 	tv := newTestVDM()
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0xCAFE})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	tv.mgr.mu.Lock()
 	tv.mgr.devices[0].state = ClaimHeld
@@ -288,7 +289,7 @@ func TestVirtualDeviceISORequestWrongDst(t *testing.T) {
 func TestVirtualDeviceISORequestBroadcast(t *testing.T) {
 	tv := newTestVDM()
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0xFACE})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	tv.mgr.mu.Lock()
 	tv.mgr.devices[0].state = ClaimHeld
@@ -314,7 +315,7 @@ func TestVirtualDeviceNoClaimedSource(t *testing.T) {
 func TestVirtualDeviceNotReadyDuringHoldoff(t *testing.T) {
 	tv := newTestVDM()
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0x1234})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	// Device is in ClaimInProgress, not ready.
 	if tv.mgr.Ready() {
@@ -328,7 +329,7 @@ func TestVirtualDeviceHeartbeat(t *testing.T) {
 		NAME:        0x1234,
 		ProductInfo: VirtualProductInfo{ModelID: "hb-test"},
 	})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	// Transition to Held via echo.
 	tv.mgr.HandleBusClaim(252, 0x1234)
@@ -377,7 +378,7 @@ func TestVirtualDeviceHeartbeat(t *testing.T) {
 func TestVirtualDeviceHeartbeatSkipsNonHeld(t *testing.T) {
 	tv := newTestVDM()
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0x5678})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	// Device is in ClaimInProgress (no echo yet). Heartbeat should not send anything.
 	tv.mgr.lastClaimAt = time.Time{} // force interval to have elapsed
@@ -393,7 +394,7 @@ func TestVirtualDeviceHeartbeatMultiDevice(t *testing.T) {
 	tv := newTestVDM()
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0xAAAA})
 	tv.mgr.Add(VirtualDeviceConfig{NAME: 0xBBBB})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	// Transition both to Held.
 	tv.mgr.HandleBusClaim(252, 0xAAAA)
@@ -419,7 +420,7 @@ func TestVirtualDeviceDiagnostics(t *testing.T) {
 		NAME:        0xABCD,
 		ProductInfo: VirtualProductInfo{ModelID: "test-model"},
 	})
-	tv.mgr.StartAfterDiscovery(0)
+	tv.mgr.StartAfterDiscovery(context.Background(), 0)
 
 	devices := tv.mgr.Devices()
 	if len(devices) != 1 {

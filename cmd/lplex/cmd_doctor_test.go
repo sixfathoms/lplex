@@ -69,7 +69,7 @@ func TestDoctorCheckServerReachable(t *testing.T) {
 		Logger:            logger,
 		DeviceIdleTimeout: -1,
 	})
-	go broker.Run()
+	go broker.Run(context.Background())
 	defer broker.CloseRx()
 
 	srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{})

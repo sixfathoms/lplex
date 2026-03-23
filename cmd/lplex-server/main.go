@@ -318,7 +318,7 @@ func main() {
 		logger.Info("journal enabled", "dir", *journalDir, "block_size", *journalBlockSize, "compression", *journalCompression)
 	}
 
-	go broker.Run()
+	go broker.Run(ctx)
 
 	// Resolve interface list: -interfaces takes priority over -interface.
 	var ifaceNames []string

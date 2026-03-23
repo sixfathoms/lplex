@@ -111,7 +111,7 @@ func TestIntegrationBoatToCloudSSE(t *testing.T) {
 		RingSize: 4096,
 		Logger:   logger,
 	})
-	go boatBroker.Run()
+	go boatBroker.Run(context.Background())
 	defer boatBroker.CloseRx()
 
 	// Feed initial frames before replication starts.
@@ -383,11 +383,11 @@ func TestIntegrationMultiBoatCloudSSE(t *testing.T) {
 
 	// Create two boat brokers.
 	boat1 := NewBroker(BrokerConfig{RingSize: 1024, Logger: logger})
-	go boat1.Run()
+	go boat1.Run(context.Background())
 	defer boat1.CloseRx()
 
 	boat2 := NewBroker(BrokerConfig{RingSize: 1024, Logger: logger})
-	go boat2.Run()
+	go boat2.Run(context.Background())
 	defer boat2.CloseRx()
 
 	// Feed different PGNs to each boat for identification.
@@ -552,7 +552,7 @@ func TestIntegrationCloudSSELiveDelivery(t *testing.T) {
 	defer cancel()
 
 	boatBroker := NewBroker(BrokerConfig{RingSize: 1024, Logger: logger})
-	go boatBroker.Run()
+	go boatBroker.Run(context.Background())
 	defer boatBroker.CloseRx()
 
 	// Start replication.
@@ -659,7 +659,7 @@ func TestIntegrationCloudSSEDisconnectReconnect(t *testing.T) {
 	httpServer := startCloudHTTP(t, imObj, replServer)
 
 	boatBroker := NewBroker(BrokerConfig{RingSize: 4096, Logger: logger})
-	go boatBroker.Run()
+	go boatBroker.Run(context.Background())
 	defer boatBroker.CloseRx()
 
 	// Phase 1: First connection, feed frames 1-20.

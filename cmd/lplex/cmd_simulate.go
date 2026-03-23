@@ -70,7 +70,7 @@ func runSimulate(cmd *cobra.Command, _ []string) error {
 		Logger:            logger,
 		DeviceIdleTimeout: -1, // disable idle expiry during simulation
 	})
-	go broker.Run()
+	go broker.Run(ctx)
 
 	// Disable send (no real CAN bus to transmit on).
 	srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{Enabled: false})

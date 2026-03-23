@@ -27,7 +27,7 @@ func injectFrame(b *Broker, pgn uint32, src uint8, data []byte) {
 
 func TestBrokerSequenceNumbering(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -58,7 +58,7 @@ func TestBrokerSequenceNumbering(t *testing.T) {
 
 func TestBrokerAckAndReplay(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -109,7 +109,7 @@ func TestBrokerAckUnknownSession(t *testing.T) {
 
 func TestBrokerDeviceDiscovery(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -187,7 +187,7 @@ func drainTxFrame(b *Broker, timeout time.Duration) (TxRequest, bool) {
 
 func TestBrokerStartupBroadcastsISORequest(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	tx, ok := drainTxFrame(b, time.Second)
@@ -210,7 +210,7 @@ func TestBrokerStartupBroadcastsISORequest(t *testing.T) {
 
 func TestBrokerNewSourceTriggersISORequest(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	// Drain the startup broadcast.
@@ -233,7 +233,7 @@ func TestBrokerNewSourceTriggersISORequest(t *testing.T) {
 
 func TestBrokerAddressClaimTriggersProductInfoRequest(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	// Drain the startup broadcast.
@@ -285,7 +285,7 @@ func registerDevice(b *Broker, src uint8, manufacturerCode uint16, instance uint
 
 func TestBrokerFilterByManufacturer(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -317,7 +317,7 @@ func TestBrokerFilterByManufacturer(t *testing.T) {
 
 func TestBrokerFilterByManufacturerCode(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -348,7 +348,7 @@ func TestBrokerFilterByManufacturerCode(t *testing.T) {
 
 func TestBrokerFilterByInstance(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -377,7 +377,7 @@ func TestBrokerFilterByInstance(t *testing.T) {
 
 func TestBrokerFilterCombined(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -415,7 +415,7 @@ func TestBrokerFilterCombined(t *testing.T) {
 
 func TestBrokerFilterExcludePGN(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -456,7 +456,7 @@ func TestBrokerFilterExcludePGN(t *testing.T) {
 
 func TestBrokerFilterExcludeWithInclude(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -496,7 +496,7 @@ func TestBrokerFilterExcludeWithInclude(t *testing.T) {
 
 func TestBrokerFilterExcludeName(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -543,7 +543,7 @@ func TestBrokerFilterExcludeName(t *testing.T) {
 
 func TestBrokerBufferTimeoutZeroResetsCursor(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -568,7 +568,7 @@ func TestBrokerBufferTimeoutZeroResetsCursor(t *testing.T) {
 
 func TestBrokerSubscriber(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 	drainTxFrame(b, time.Second)
 
@@ -597,7 +597,7 @@ done:
 
 func TestBrokerSubscriberWithFilter(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 	drainTxFrame(b, time.Second)
 
@@ -627,7 +627,7 @@ done:
 
 func TestBrokerSubscriberCleanup(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 	drainTxFrame(b, time.Second)
 
@@ -656,7 +656,7 @@ func TestBrokerSubscriberCleanup(t *testing.T) {
 
 func TestBrokerSubscriberReceivesDeviceEvents(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 	drainTxFrame(b, time.Second)
 
@@ -711,7 +711,7 @@ func injectReplicaFrame(b *Broker, seq uint64, pgn uint32, src uint8) {
 
 func TestBrokerReplicaModeHonorsFrameSeq(t *testing.T) {
 	b := newReplicaBroker(1)
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 
 	c := b.NewConsumer(ConsumerConfig{Cursor: 1})
@@ -739,7 +739,7 @@ func TestBrokerReplicaModeHonorsFrameSeq(t *testing.T) {
 
 func TestBrokerReplicaModeHeadAdvancement(t *testing.T) {
 	b := newReplicaBroker(1)
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 
 	// Initially head is 1, so CurrentSeq should be 0 (head-1)
@@ -774,7 +774,7 @@ func TestBrokerReplicaModeHeadAdvancement(t *testing.T) {
 
 func TestBrokerReplicaModeNoISORequests(t *testing.T) {
 	b := newReplicaBroker(1)
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 
 	// In replica mode, no startup ISO broadcast
@@ -795,7 +795,7 @@ func TestBrokerReplicaModeNoISORequests(t *testing.T) {
 
 func TestBrokerReplicaModeWithGaps(t *testing.T) {
 	b := newReplicaBroker(1)
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 
 	// Send non-contiguous frames (simulating replication gaps)
@@ -835,7 +835,7 @@ func TestBrokerReplicaModeWithGaps(t *testing.T) {
 
 func TestBrokerInitialHead(t *testing.T) {
 	b := newReplicaBroker(5000)
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 
 	// CurrentSeq should reflect the initial head minus 1
@@ -875,7 +875,7 @@ func TestBrokerInitialHeadZeroDefaultsToOne(t *testing.T) {
 		InitialHead: 0, // zero means start at 1
 		Logger:      slog.Default(),
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 
 	if got := b.CurrentSeq(); got != 0 {
@@ -891,7 +891,7 @@ func TestBrokerReplicaModeRingWrap(t *testing.T) {
 		InitialHead: 1,
 		Logger:      slog.Default(),
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 
 	// Fill more than the ring size
@@ -924,7 +924,7 @@ func TestBrokerReplicaModeRingWrap(t *testing.T) {
 
 func TestBrokerDeviceEvictionOnAddressChange(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -1005,7 +1005,7 @@ func TestBrokerDeviceIdleExpiry(t *testing.T) {
 		DeviceIdleTimeout: 50 * time.Millisecond,
 		Logger:            slog.Default(),
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -1044,7 +1044,7 @@ func TestBrokerDeviceIdleExpiryDisabled(t *testing.T) {
 		DeviceIdleTimeout: -1, // disabled
 		Logger:            slog.Default(),
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 

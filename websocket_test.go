@@ -14,7 +14,7 @@ import (
 
 func TestWebSocketEphemeralStream(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -61,7 +61,7 @@ func TestWebSocketEphemeralStream(t *testing.T) {
 
 func TestWebSocketFilter(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -105,7 +105,7 @@ func TestWebSocketFilter(t *testing.T) {
 
 func TestWebSocketSendDisabled(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 

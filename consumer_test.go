@@ -20,7 +20,7 @@ func newConsumerTestBroker() *Broker {
 
 func TestConsumerLiveStream(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -57,7 +57,7 @@ func TestConsumerLiveStream(t *testing.T) {
 
 func TestConsumerCatchUp(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -87,7 +87,7 @@ func TestConsumerCatchUp(t *testing.T) {
 
 func TestConsumerFilter(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -123,7 +123,7 @@ func TestConsumerFilter(t *testing.T) {
 
 func TestConsumerClose(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -152,7 +152,7 @@ func TestConsumerClose(t *testing.T) {
 
 func TestConsumerCloseUnblocksNext(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -181,7 +181,7 @@ func TestConsumerCloseUnblocksNext(t *testing.T) {
 
 func TestConsumerContextCancellation(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -203,7 +203,7 @@ func TestConsumerFallenBehind(t *testing.T) {
 		RingSize:          16,
 		MaxBufferDuration: time.Minute,
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -226,7 +226,7 @@ func TestConsumerFallenBehind(t *testing.T) {
 
 func TestConsumerConcurrent(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -271,7 +271,7 @@ func TestConsumerConcurrent(t *testing.T) {
 
 func TestConsumerFrameJSON(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -354,7 +354,7 @@ func TestConsumerJournalFallback(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        dir,
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -427,7 +427,7 @@ func TestConsumerJournalToRingTransition(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        dir,
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -475,7 +475,7 @@ func TestConsumerJournalFilterApplied(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        dir,
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -518,7 +518,7 @@ func TestConsumerJournalEmptyDir(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        dir,
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -553,7 +553,7 @@ func TestConsumerJournalFrameJSON(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        dir,
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 

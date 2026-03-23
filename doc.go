@@ -13,7 +13,7 @@
 //	    MaxBufferDuration: 5 * time.Minute,
 //	    Logger:            logger,
 //	})
-//	go broker.Run()
+//	go broker.Run(ctx)
 //
 //	srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{})
 //	mux.Handle("/nmea/", http.StripPrefix("/nmea", srv))
