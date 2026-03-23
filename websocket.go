@@ -125,7 +125,7 @@ func (s *Server) wsHandleSend(ctx context.Context, conn *websocket.Conn, data js
 		var dstNAME uint64
 		var nameKnown bool
 		if req.Dst != 0xFF {
-			if dev := s.broker.devices.Get(req.Bus, req.Dst); dev != nil {
+			if dev := s.broker.Devices().Get(req.Bus, req.Dst); dev != nil {
 				dstNAME = dev.NAME
 				nameKnown = true
 			}

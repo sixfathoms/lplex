@@ -132,9 +132,9 @@ func TestConsumerClose(t *testing.T) {
 	// Close should remove from broker.
 	_ = c.Close()
 
-	b.consumerMu.RLock()
-	_, exists := b.consumers[c]
-	b.consumerMu.RUnlock()
+	b.state.consumerMu.RLock()
+	_, exists := b.state.consumers[c]
+	b.state.consumerMu.RUnlock()
 	if exists {
 		t.Error("consumer should be removed from broker after Close")
 	}

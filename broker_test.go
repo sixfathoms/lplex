@@ -127,7 +127,7 @@ func TestBrokerDeviceDiscovery(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Device registry should have the device
-	devices := b.devices.Snapshot()
+	devices := b.Devices().Snapshot()
 	if len(devices) != 1 {
 		t.Fatalf("expected 1 device, got %d", len(devices))
 	}
@@ -504,12 +504,12 @@ func TestBrokerFilterExcludeName(t *testing.T) {
 	var excludedNAME uint64 = 0x00A1B2C3D4E5F600
 	claimData := make([]byte, 8)
 	binary.LittleEndian.PutUint64(claimData, excludedNAME)
-	b.devices.HandleAddressClaim("", 1, claimData)
+	b.Devices().HandleAddressClaim("", 1, claimData)
 
 	// Register a different device at src=2.
 	var keptNAME uint64 = 0x00DEADBEEFCAFE00
 	binary.LittleEndian.PutUint64(claimData, keptNAME)
-	b.devices.HandleAddressClaim("", 2, claimData)
+	b.Devices().HandleAddressClaim("", 2, claimData)
 
 	filter := &EventFilter{ExcludeNames: []uint64{excludedNAME}}
 	c := b.NewConsumer(ConsumerConfig{Cursor: b.CurrentSeq() + 1, Filter: filter})
@@ -646,9 +646,9 @@ func TestBrokerSubscriberCleanup(t *testing.T) {
 	cleanup()
 
 	// After cleanup, subscriber should not be in the map.
-	b.subscriberMu.RLock()
-	_, exists := b.subscribers[sub]
-	b.subscriberMu.RUnlock()
+	b.state.subscriberMu.RLock()
+	_, exists := b.state.subscribers[sub]
+	b.state.subscriberMu.RUnlock()
 	if exists {
 		t.Error("subscriber should be removed after cleanup")
 	}

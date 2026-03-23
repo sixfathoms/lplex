@@ -385,7 +385,7 @@ func (c *Consumer) closeJournal() {
 // NewConsumer creates a pull-based consumer starting at the given cursor.
 // The consumer is registered with the broker for live notifications.
 func (b *Broker) NewConsumer(cfg ConsumerConfig) *Consumer {
-	filter := cfg.Filter.resolve(b.devices)
+	filter := cfg.Filter.resolve(b.state.devices)
 
 	c := &Consumer{
 		broker: b,
@@ -395,9 +395,9 @@ func (b *Broker) NewConsumer(cfg ConsumerConfig) *Consumer {
 		done:   make(chan struct{}),
 	}
 
-	b.consumerMu.Lock()
-	b.consumers[c] = struct{}{}
-	b.consumerMu.Unlock()
+	b.state.consumerMu.Lock()
+	b.state.consumers[c] = struct{}{}
+	b.state.consumerMu.Unlock()
 
 	return c
 }
