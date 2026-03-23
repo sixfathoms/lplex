@@ -382,6 +382,25 @@ lplex dump --changes --decode --json
 
 When tolerances are declared on a PGN, only the tolerance-bearing fields are checked. Other fields (like SID counters that increment every packet) are ignored.
 
+## Shell completions
+
+`lplex completion` generates shell completion scripts for tab-completing subcommands, flags, and arguments.
+
+```bash
+# Bash
+source <(lplex completion bash)
+
+# Zsh — add to your fpath, then restart the shell
+lplex completion zsh > "${fpath[1]}/_lplex"
+
+# Fish
+lplex completion fish | source
+```
+
+To load completions permanently, add the appropriate line to your shell's startup file (e.g., `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish`).
+
+PowerShell is also supported via `lplex completion powershell`.
+
 ## Piping and scripting
 
 lplex is designed to work well in Unix pipelines:
