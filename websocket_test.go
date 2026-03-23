@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/sixfathoms/lplex/sendpolicy"
 )
 
 func TestWebSocketEphemeralStream(t *testing.T) {
@@ -17,7 +18,7 @@ func TestWebSocketEphemeralStream(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	srv := NewServer(b, slog.Default(), SendPolicy{})
+	srv := NewServer(b, slog.Default(), sendpolicy.SendPolicy{})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -64,7 +65,7 @@ func TestWebSocketFilter(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	srv := NewServer(b, slog.Default(), SendPolicy{})
+	srv := NewServer(b, slog.Default(), sendpolicy.SendPolicy{})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -108,7 +109,7 @@ func TestWebSocketSendDisabled(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	srv := NewServer(b, slog.Default(), SendPolicy{Enabled: false})
+	srv := NewServer(b, slog.Default(), sendpolicy.SendPolicy{Enabled: false})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

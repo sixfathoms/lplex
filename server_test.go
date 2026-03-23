@@ -9,12 +9,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sixfathoms/lplex/sendpolicy"
 )
 
 func newTestServer() (*Server, *Broker) {
 	b := newTestBroker()
 	go b.Run()
-	s := NewServer(b, b.logger, SendPolicy{Enabled: true})
+	s := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true})
 	return s, b
 }
 
@@ -966,7 +968,7 @@ func TestSendDisabledByDefault(t *testing.T) {
 	go b.Run()
 	defer close(b.rxFrames)
 
-	srv := NewServer(b, b.logger, SendPolicy{}) // Enabled: false (default)
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{}) // Enabled: false (default)
 
 	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
 	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
@@ -983,7 +985,7 @@ func TestQueryDisabledByDefault(t *testing.T) {
 	go b.Run()
 	defer close(b.rxFrames)
 
-	srv := NewServer(b, b.logger, SendPolicy{})
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{})
 
 	body := `{"pgn":129025,"dst":255}`
 	req := httptest.NewRequest("POST", "/query", strings.NewReader(body))
@@ -1001,7 +1003,7 @@ func TestSendEnabledNoRulesAllowsAll(t *testing.T) {
 	defer close(b.rxFrames)
 
 	// Enabled with no rules = allow all (backwards compatible).
-	srv := NewServer(b, b.logger, SendPolicy{Enabled: true})
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true})
 
 	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
 	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
@@ -1018,8 +1020,8 @@ func TestSendRulePGNAllow(t *testing.T) {
 	go b.Run()
 	defer close(b.rxFrames)
 
-	rules, _ := ParseSendRules([]string{"pgn:59904"})
-	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+	rules, _ := sendpolicy.ParseSendRules([]string{"pgn:59904"})
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true, Rules: rules})
 
 	// Allowed PGN should succeed.
 	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
@@ -1047,8 +1049,8 @@ func TestSendRulePGNRange(t *testing.T) {
 	go b.Run()
 	defer close(b.rxFrames)
 
-	rules, _ := ParseSendRules([]string{"pgn:129025-129029"})
-	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+	rules, _ := sendpolicy.ParseSendRules([]string{"pgn:129025-129029"})
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true, Rules: rules})
 
 	// PGN in range.
 	body := `{"pgn":129026,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
@@ -1077,11 +1079,11 @@ func TestSendRuleDenyBeforeAllow(t *testing.T) {
 	defer close(b.rxFrames)
 
 	// Deny proprietary range, then allow all — first match wins.
-	rules, _ := ParseSendRules([]string{
+	rules, _ := sendpolicy.ParseSendRules([]string{
 		"!pgn:65280-65535",
 		"pgn:0-131071",
 	})
-	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true, Rules: rules})
 
 	// Normal PGN allowed.
 	body := `{"pgn":59904,"src":254,"dst":255,"prio":6,"data":"00ee00"}`
@@ -1120,8 +1122,8 @@ func TestSendRuleNAMEWithDevice(t *testing.T) {
 	binary.LittleEndian.PutUint64(nameBytes, 0x001c6e4000200000)
 	b.Devices().HandleAddressClaim("", 10, nameBytes)
 
-	rules, _ := ParseSendRules([]string{"pgn:59904 name:001c6e4000200000"})
-	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+	rules, _ := sendpolicy.ParseSendRules([]string{"pgn:59904 name:001c6e4000200000"})
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true, Rules: rules})
 
 	// Send to allowed device should succeed.
 	body := `{"pgn":59904,"src":254,"dst":10,"prio":6,"data":"00ee00"}`
@@ -1171,12 +1173,12 @@ func TestSendRuleOrderedEvaluation(t *testing.T) {
 	b.Devices().HandleAddressClaim("", 10, nameBytes)
 
 	// Allow PGN 59904 to specific device, allow broadcast PGN 59904, deny everything else.
-	rules, _ := ParseSendRules([]string{
+	rules, _ := sendpolicy.ParseSendRules([]string{
 		"pgn:59904 name:001c6e4000200000",
 		"pgn:59904",
 		"!pgn:0-131071",
 	})
-	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true, Rules: rules})
 
 	// Targeted send to allowed device — matches rule 1.
 	body := `{"pgn":59904,"src":254,"dst":10,"prio":6,"data":"00ee00"}`

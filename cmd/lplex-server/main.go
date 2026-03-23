@@ -18,6 +18,8 @@ import (
 	"github.com/grandcat/zeroconf"
 	"github.com/sixfathoms/lplex"
 	"github.com/sixfathoms/lplex/journal"
+	"github.com/sixfathoms/lplex/keeper"
+	"github.com/sixfathoms/lplex/sendpolicy"
 )
 
 var (
@@ -240,7 +242,7 @@ func main() {
 		}
 
 		// Set up journal keeper (retention + archive) if configured.
-		var keeper *lplex.JournalKeeper
+		var jk *keeper.JournalKeeper
 		keeperCfg, err := buildKeeperConfig(
 			*journalDir, *replInstanceID,
 			*retentionMaxAge, *retentionMinKeep, *retentionMaxSize,
@@ -252,7 +254,7 @@ func main() {
 			os.Exit(1)
 		}
 		if keeperCfg != nil {
-			keeper = lplex.NewJournalKeeper(*keeperCfg)
+			jk = keeper.NewJournalKeeper(*keeperCfg)
 		}
 
 		journalCh = make(chan lplex.RxFrame, 16384)
@@ -267,10 +269,10 @@ func main() {
 			RotateSize:     *journalRotateSize,
 			Logger:         logger,
 		}
-		if keeper != nil {
-			jwCfg.OnRotate = func(rf lplex.RotatedFile) {
+		if jk != nil {
+			jwCfg.OnRotate = func(rf keeper.RotatedFile) {
 				rf.InstanceID = *replInstanceID
-				keeper.Send(rf)
+				jk.Send(rf)
 			}
 		}
 
@@ -280,8 +282,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		if keeper != nil {
-			keeper.SetOnPauseChange(func(_ lplex.KeeperDir, paused bool) {
+		if jk != nil {
+			jk.SetOnPauseChange(func(_ keeper.KeeperDir, paused bool) {
 				jw.SetPaused(paused)
 			})
 		}
@@ -296,11 +298,11 @@ func main() {
 			}
 		}()
 
-		if keeper != nil {
+		if jk != nil {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				keeper.Run(ctx)
+				jk.Run(ctx)
 			}()
 			logger.Info("journal keeper enabled",
 				"max_age", *retentionMaxAge,
@@ -604,7 +606,7 @@ func buildKeeperConfig(
 	softPct int, overflowPolicyStr string,
 	archiveCmd, archiveTriggerStr string,
 	logger *slog.Logger,
-) (*lplex.KeeperConfig, error) {
+) (*keeper.KeeperConfig, error) {
 	var maxAge, minKeep time.Duration
 	var err error
 
@@ -621,12 +623,12 @@ func buildKeeperConfig(
 		}
 	}
 
-	archiveTrigger, err := lplex.ParseArchiveTrigger(archiveTriggerStr)
+	archiveTrigger, err := keeper.ParseArchiveTrigger(archiveTriggerStr)
 	if err != nil {
 		return nil, err
 	}
 
-	overflowPolicy, err := lplex.ParseOverflowPolicy(overflowPolicyStr)
+	overflowPolicy, err := keeper.ParseOverflowPolicy(overflowPolicyStr)
 	if err != nil {
 		return nil, err
 	}
@@ -636,8 +638,8 @@ func buildKeeperConfig(
 		return nil, nil
 	}
 
-	return &lplex.KeeperConfig{
-		Dirs:           []lplex.KeeperDir{{Dir: journalDir, InstanceID: instanceID}},
+	return &keeper.KeeperConfig{
+		Dirs:           []keeper.KeeperDir{{Dir: journalDir, InstanceID: instanceID}},
 		MaxAge:         maxAge,
 		MinKeep:        minKeep,
 		MaxSize:        maxSize,
@@ -650,8 +652,8 @@ func buildKeeperConfig(
 }
 
 // parseSendPolicy builds a SendPolicy from the CLI flag values.
-func parseSendPolicy(enabled bool, rulesStr string) (lplex.SendPolicy, error) {
-	p := lplex.SendPolicy{Enabled: enabled}
+func parseSendPolicy(enabled bool, rulesStr string) (sendpolicy.SendPolicy, error) {
+	p := sendpolicy.SendPolicy{Enabled: enabled}
 	if rulesStr != "" {
 		var ruleStrs []string
 		for _, s := range strings.Split(rulesStr, ";") {
@@ -660,7 +662,7 @@ func parseSendPolicy(enabled bool, rulesStr string) (lplex.SendPolicy, error) {
 				ruleStrs = append(ruleStrs, s)
 			}
 		}
-		rules, err := lplex.ParseSendRules(ruleStrs)
+		rules, err := sendpolicy.ParseSendRules(ruleStrs)
 		if err != nil {
 			return p, err
 		}

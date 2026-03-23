@@ -14,6 +14,7 @@ import (
 	"github.com/klauspost/compress/dict"
 	"github.com/klauspost/compress/zstd"
 	"github.com/sixfathoms/lplex/journal"
+	"github.com/sixfathoms/lplex/keeper"
 )
 
 // JournalConfig configures the journal writer.
@@ -25,7 +26,7 @@ type JournalConfig struct {
 	RotateDuration time.Duration           // 0 = no limit
 	RotateSize     int64                   // 0 = no limit
 	RotateCount    int64                   // 0 = no limit
-	OnRotate       func(RotatedFile)       // called after a journal file is closed by rotation
+	OnRotate       func(keeper.RotatedFile) // called after a journal file is closed by rotation
 	Logger         *slog.Logger
 }
 
@@ -188,7 +189,7 @@ func (w *JournalWriter) finalize() error {
 			return err
 		}
 		if w.cfg.OnRotate != nil {
-			w.cfg.OnRotate(RotatedFile{Path: w.filePath})
+			w.cfg.OnRotate(keeper.RotatedFile{Path: w.filePath})
 		}
 		w.file = nil
 		w.filePath = ""
@@ -610,7 +611,7 @@ func (w *JournalWriter) checkRotation() error {
 	w.blockOffsets = w.blockOffsets[:0]
 
 	if w.cfg.OnRotate != nil {
-		w.cfg.OnRotate(RotatedFile{Path: rotatedPath})
+		w.cfg.OnRotate(keeper.RotatedFile{Path: rotatedPath})
 	}
 	return nil
 }

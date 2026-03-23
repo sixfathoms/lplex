@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sixfathoms/lplex"
+	"github.com/sixfathoms/lplex/sendpolicy"
 	"github.com/sixfathoms/lplex/journal"
 )
 
@@ -148,7 +149,7 @@ func TestSimulateServesEvents(t *testing.T) {
 	})
 	go broker.Run()
 
-	srv := lplex.NewServer(broker, logger, lplex.SendPolicy{Enabled: false})
+	srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{Enabled: false})
 
 	addr := fmt.Sprintf(":%d", simPort)
 	httpServer := &http.Server{

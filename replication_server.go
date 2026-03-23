@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sixfathoms/lplex/journal"
+	"github.com/sixfathoms/lplex/keeper"
 	pb "github.com/sixfathoms/lplex/proto/replication/v1"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
@@ -45,7 +46,7 @@ type InstanceState struct {
 	journalWriter  *JournalWriter      // live journal writer (nil when broker not running)
 	journalDone    chan struct{}        // closed when journal writer goroutine exits
 	cancelFunc     context.CancelFunc  // stops the broker's journal writer
-	onRotate          func(RotatedFile)   // optional callback for keeper
+	onRotate          func(keeper.RotatedFile) // optional callback for keeper
 	rotateDuration    time.Duration       // journal rotation interval for live writer
 	rotateSize        int64               // journal rotation size cap for live writer
 	deviceIdleTimeout time.Duration       // passed through to broker config
@@ -216,7 +217,7 @@ type InstanceManager struct {
 	instances       map[string]*InstanceState
 	dataDir         string
 	logger          *slog.Logger
-	onRotate          func(instanceID string, rf RotatedFile) // optional callback for keeper
+	onRotate          func(instanceID string, rf keeper.RotatedFile) // optional callback for keeper
 	rotateDuration    time.Duration                           // journal rotation interval for live writers
 	rotateSize        int64                                   // journal rotation size cap for live writers
 	deviceIdleTimeout time.Duration                           // passed through to per-instance brokers
@@ -282,7 +283,7 @@ func NewInstanceManager(dataDir string, logger *slog.Logger) (*InstanceManager, 
 // file is rotated. Used by the cloud binary to feed the JournalKeeper.
 // Must be called before any connections are accepted. Retroactively updates
 // all existing instances loaded at startup.
-func (im *InstanceManager) SetOnRotate(fn func(instanceID string, rf RotatedFile)) {
+func (im *InstanceManager) SetOnRotate(fn func(instanceID string, rf keeper.RotatedFile)) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 	im.onRotate = fn
@@ -337,12 +338,12 @@ func (im *InstanceManager) SetRingSize(size int) {
 
 // makeOnRotate returns an instance-scoped OnRotate callback, or nil if no
 // manager-level callback is set. Caller must hold im.mu.
-func (im *InstanceManager) makeOnRotate(id string) func(RotatedFile) {
+func (im *InstanceManager) makeOnRotate(id string) func(keeper.RotatedFile) {
 	if im.onRotate == nil {
 		return nil
 	}
 	fn := im.onRotate
-	return func(rf RotatedFile) {
+	return func(rf keeper.RotatedFile) {
 		fn(id, rf)
 	}
 }

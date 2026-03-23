@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/sixfathoms/lplex/keeper"
 )
 
 func TestInstanceManagerCreateAndGet(t *testing.T) {
@@ -285,7 +287,7 @@ func TestCloudJournalWriterRotation(t *testing.T) {
 	im.SetJournalRotation(42*time.Second, 1024*1024)
 
 	var rotated atomic.Int32
-	im.SetOnRotate(func(instanceID string, rf RotatedFile) {
+	im.SetOnRotate(func(instanceID string, rf keeper.RotatedFile) {
 		if instanceID != "rotate-test" {
 			t.Errorf("unexpected instanceID in OnRotate: %q", instanceID)
 		}

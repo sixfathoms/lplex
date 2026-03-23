@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sixfathoms/lplex"
 	"github.com/sixfathoms/lplex/canbus"
+	"github.com/sixfathoms/lplex/changetracker"
 	"github.com/sixfathoms/lplex/filter"
 	"github.com/sixfathoms/lplex/journal"
 	"github.com/sixfathoms/lplex/lplexc"
@@ -275,9 +275,9 @@ func runReplay(ctx context.Context, path string, speed float64, startTimeStr str
 	out := bufio.NewWriter(os.Stdout)
 	defer out.Flush()
 
-	var tracker *lplex.ChangeTracker
+	var tracker *changetracker.ChangeTracker
 	if changes {
-		tracker = lplex.NewChangeTracker(lplex.ChangeTrackerConfig{})
+		tracker = changetracker.NewChangeTracker(changetracker.Config{})
 	}
 
 	var (
@@ -336,7 +336,7 @@ func runReplay(ctx context.Context, path string, speed float64, startTimeStr str
 		}
 		fr := entryToFrame(entry, seq)
 
-		var ct lplex.ChangeEventType
+		var ct changetracker.ChangeEventType
 		var diffBytes, fullBytes int
 		if tracker != nil {
 			for _, idle := range tracker.Tick(entry.Timestamp) {
@@ -352,7 +352,7 @@ func runReplay(ctx context.Context, path string, speed float64, startTimeStr str
 				continue
 			}
 			ct = ce.Type
-			if ct == lplex.Delta {
+			if ct == changetracker.Delta {
 				diffBytes = len(ce.Data)
 				fullBytes = len(entry.Data)
 			}
@@ -613,11 +613,11 @@ func streamEvents(sub *lplexc.Subscription, jsonMode, decode, changes bool, f *l
 	out := bufio.NewWriter(os.Stdout)
 	defer out.Flush()
 
-	var tracker *lplex.ChangeTracker
+	var tracker *changetracker.ChangeTracker
 	var tickDone chan struct{}
 
 	if changes {
-		tracker = lplex.NewChangeTracker(lplex.ChangeTrackerConfig{})
+		tracker = changetracker.NewChangeTracker(changetracker.Config{})
 
 		tickDone = make(chan struct{})
 		go func() {
@@ -678,7 +678,7 @@ func streamEvents(sub *lplexc.Subscription, jsonMode, decode, changes bool, f *l
 				}
 			}
 
-			var ct lplex.ChangeEventType
+			var ct changetracker.ChangeEventType
 			var diffBytes, fullBytes int
 			if tracker != nil {
 				dataBytes, err := hex.DecodeString(ev.Frame.Data)
@@ -691,7 +691,7 @@ func streamEvents(sub *lplexc.Subscription, jsonMode, decode, changes bool, f *l
 					continue
 				}
 				ct = ce.Type
-				if ct == lplex.Delta {
+				if ct == changetracker.Delta {
 					diffBytes = len(ce.Data)
 					fullBytes = len(dataBytes)
 				}

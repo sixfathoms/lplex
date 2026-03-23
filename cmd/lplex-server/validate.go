@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/sixfathoms/lplex"
+	"github.com/sixfathoms/lplex/keeper"
+	"github.com/sixfathoms/lplex/sendpolicy"
 )
 
 // runValidateConfig validates all configuration values and prints a report.
@@ -148,12 +150,12 @@ func runValidateConfig(
 	})
 
 	check("journal-retention-overflow-policy", retentionOverflowPolicy, func() error {
-		_, err := lplex.ParseOverflowPolicy(retentionOverflowPolicy)
+		_, err := keeper.ParseOverflowPolicy(retentionOverflowPolicy)
 		return err
 	})
 
 	check("journal-archive-trigger", archiveTriggerStr, func() error {
-		_, err := lplex.ParseArchiveTrigger(archiveTriggerStr)
+		_, err := keeper.ParseArchiveTrigger(archiveTriggerStr)
 		return err
 	})
 
@@ -167,7 +169,7 @@ func runValidateConfig(
 					ruleStrs = append(ruleStrs, s)
 				}
 			}
-			_, err := lplex.ParseSendRules(ruleStrs)
+			_, err := sendpolicy.ParseSendRules(ruleStrs)
 			return err
 		})
 	}

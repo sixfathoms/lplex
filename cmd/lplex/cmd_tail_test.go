@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sixfathoms/lplex"
+	"github.com/sixfathoms/lplex/sendpolicy"
 	"github.com/sixfathoms/lplex/lplexc"
 )
 
@@ -29,7 +30,7 @@ func startTestServer(t *testing.T) (string, *lplex.Broker, func()) {
 	})
 	go broker.Run()
 
-	srv := lplex.NewServer(broker, logger, lplex.SendPolicy{})
+	srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{})
 	srv.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})

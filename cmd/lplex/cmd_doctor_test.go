@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sixfathoms/lplex"
+	"github.com/sixfathoms/lplex/sendpolicy"
 )
 
 func TestDoctorCheckPlatform(t *testing.T) {
@@ -71,7 +72,7 @@ func TestDoctorCheckServerReachable(t *testing.T) {
 	go broker.Run()
 	defer broker.CloseRx()
 
-	srv := lplex.NewServer(broker, logger, lplex.SendPolicy{})
+	srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{})
 	httpSrv := &http.Server{Handler: srv}
 
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
