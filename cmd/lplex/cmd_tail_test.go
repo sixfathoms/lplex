@@ -28,7 +28,7 @@ func startTestServer(t *testing.T) (string, *lplex.Broker, func()) {
 		Logger:            logger,
 		DeviceIdleTimeout: -1,
 	})
-	go broker.Run()
+	go broker.Run(context.Background())
 
 	srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{})
 	srv.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {

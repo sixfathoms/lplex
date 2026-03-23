@@ -147,7 +147,7 @@ func TestSimulateServesEvents(t *testing.T) {
 		Logger:            logger,
 		DeviceIdleTimeout: -1,
 	})
-	go broker.Run()
+	go broker.Run(context.Background())
 
 	srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{Enabled: false})
 
@@ -292,7 +292,7 @@ func TestSimulateLoop(t *testing.T) {
 		Logger:            logger,
 		DeviceIdleTimeout: -1,
 	})
-	go broker.Run()
+	go broker.Run(context.Background())
 	defer broker.CloseRx()
 
 	// Cancel after enough time for at least 2 full replays.

@@ -1,6 +1,7 @@
 package lplex
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,7 +11,7 @@ import (
 
 func TestMetricsHandler(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	// Inject a frame so counters are nonzero.
@@ -64,7 +65,7 @@ func TestMetricsHandler(t *testing.T) {
 
 func TestMetricsHandlerWithReplication(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	replFn := func() *ReplicationStatus {
@@ -104,7 +105,7 @@ func TestMetricsHandlerWithReplication(t *testing.T) {
 
 func TestMetricsHandlerWithJournalStats(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	journalFn := func() *JournalWriterStats {
@@ -134,7 +135,7 @@ func TestMetricsHandlerWithJournalStats(t *testing.T) {
 
 func TestMetricsDeviceChurn(t *testing.T) {
 	b := newConsumerTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 

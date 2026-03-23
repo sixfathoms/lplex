@@ -1,6 +1,7 @@
 package lplex
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -388,8 +389,8 @@ func NewBroker(cfg BrokerConfig) *Broker {
 }
 
 // Run is the broker's main loop. Call in its own goroutine.
-// Exits when rxFrames is closed.
-func (b *Broker) Run() {
+// Exits when ctx is cancelled or rxFrames is closed.
+func (b *Broker) Run(ctx context.Context) {
 	defer close(b.done)
 
 	if !b.replicaMode {
@@ -400,7 +401,7 @@ func (b *Broker) Run() {
 
 	// Start virtual device address claims after discovery has had time to populate.
 	if b.virtualDevices != nil {
-		go b.virtualDevices.StartAfterDiscovery(2 * time.Second)
+		go b.virtualDevices.StartAfterDiscovery(ctx, 2*time.Second)
 	}
 
 	ticker := time.NewTicker(10 * time.Second)
@@ -408,6 +409,8 @@ func (b *Broker) Run() {
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case frame, ok := <-b.rxFrames:
 			if !ok {
 				return

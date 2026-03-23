@@ -2,6 +2,7 @@ package lplex
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"net/http"
@@ -15,7 +16,7 @@ import (
 
 func newTestServer() (*Server, *Broker) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	s := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true})
 	return s, b
 }
@@ -965,7 +966,7 @@ func TestCreateSessionWithExcludeName(t *testing.T) {
 
 func TestSendDisabledByDefault(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{}) // Enabled: false (default)
@@ -982,7 +983,7 @@ func TestSendDisabledByDefault(t *testing.T) {
 
 func TestQueryDisabledByDefault(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{})
@@ -999,7 +1000,7 @@ func TestQueryDisabledByDefault(t *testing.T) {
 
 func TestSendEnabledNoRulesAllowsAll(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	// Enabled with no rules = allow all (backwards compatible).
@@ -1017,7 +1018,7 @@ func TestSendEnabledNoRulesAllowsAll(t *testing.T) {
 
 func TestSendRulePGNAllow(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	rules, _ := sendpolicy.ParseSendRules([]string{"pgn:59904"})
@@ -1046,7 +1047,7 @@ func TestSendRulePGNAllow(t *testing.T) {
 
 func TestSendRulePGNRange(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	rules, _ := sendpolicy.ParseSendRules([]string{"pgn:129025-129029"})
@@ -1075,7 +1076,7 @@ func TestSendRulePGNRange(t *testing.T) {
 
 func TestSendRuleDenyBeforeAllow(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	// Deny proprietary range, then allow all — first match wins.
@@ -1108,7 +1109,7 @@ func TestSendRuleDenyBeforeAllow(t *testing.T) {
 
 func TestSendRuleNAMEWithDevice(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	// Drain the startup ISO broadcast.
@@ -1159,7 +1160,7 @@ func TestSendRuleNAMEWithDevice(t *testing.T) {
 
 func TestSendRuleOrderedEvaluation(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	// Drain the startup ISO broadcast.

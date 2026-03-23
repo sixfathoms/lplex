@@ -9,7 +9,7 @@ import (
 
 func TestBusSilenceMonitor_DetectsSilence(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -34,7 +34,7 @@ func TestBusSilenceMonitor_DetectsSilence(t *testing.T) {
 
 func TestBusSilenceMonitor_ResumesAfterFrame(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -62,7 +62,7 @@ func TestBusSilenceMonitor_ResumesAfterFrame(t *testing.T) {
 
 func TestBusSilenceMonitor_NoAlertBeforeFirstFrame(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -79,7 +79,7 @@ func TestBusSilenceMonitor_NoAlertBeforeFirstFrame(t *testing.T) {
 
 func TestBusSilenceMonitor_RunExitsOnCancel(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 

@@ -1,6 +1,7 @@
 package lplex
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -32,7 +33,7 @@ func TestHistoryEndpoint(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        dir,
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -93,7 +94,7 @@ func TestHistoryPGNFilter(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        dir,
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -127,7 +128,7 @@ func TestHistoryMissingFrom(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        t.TempDir(),
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -152,7 +153,7 @@ func TestHistoryNoJournal(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		// No JournalDir
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -177,7 +178,7 @@ func TestHistoryEmptyDir(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        t.TempDir(),
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
@@ -225,7 +226,7 @@ func TestHistoryDownsample(t *testing.T) {
 		MaxBufferDuration: time.Minute,
 		JournalDir:        dir,
 	})
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 

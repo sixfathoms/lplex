@@ -1,6 +1,7 @@
 package lplex
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +11,7 @@ import (
 
 func TestHealthHandler_OK(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	injectFrame(b, 129025, 1, make([]byte, 8))
@@ -46,7 +47,7 @@ func TestHealthHandler_OK(t *testing.T) {
 
 func TestHealthHandler_BusSilence(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	// Inject a frame with a timestamp in the past.
@@ -84,7 +85,7 @@ func TestHealthHandler_BusSilence(t *testing.T) {
 
 func TestHealthHandler_ReplicationDisconnected(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	replFn := func() *ReplicationStatus {
@@ -138,7 +139,7 @@ func TestLivenessHandler(t *testing.T) {
 
 func TestReadinessHandler_OK(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	injectFrame(b, 129025, 1, make([]byte, 8))
@@ -164,7 +165,7 @@ func TestReadinessHandler_OK(t *testing.T) {
 
 func TestReadinessHandler_Degraded(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	replFn := func() *ReplicationStatus {
@@ -194,7 +195,7 @@ func TestReadinessHandler_Degraded(t *testing.T) {
 
 func TestBrokerStats(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer close(b.rxFrames)
 
 	// Stats before any frames.

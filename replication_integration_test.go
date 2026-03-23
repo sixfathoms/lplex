@@ -51,7 +51,7 @@ func TestReplicationLiveStream(t *testing.T) {
 		RingSize: 1024,
 		Logger:   logger,
 	})
-	go boatBroker.Run()
+	go boatBroker.Run(context.Background())
 	defer boatBroker.CloseRx()
 
 	// Feed some frames into the boat broker before starting replication
@@ -478,7 +478,7 @@ func TestReplicationEndToEnd(t *testing.T) {
 		RingSize: 4096,
 		Logger:   logger,
 	})
-	go boatBroker.Run()
+	go boatBroker.Run(context.Background())
 	defer boatBroker.CloseRx()
 
 	// Phase 1: Feed initial frames into boat
@@ -601,11 +601,11 @@ func TestReplicationMultipleInstances(t *testing.T) {
 
 	// Create two boat brokers
 	boat1 := NewBroker(BrokerConfig{RingSize: 1024, Logger: logger})
-	go boat1.Run()
+	go boat1.Run(context.Background())
 	defer boat1.CloseRx()
 
 	boat2 := NewBroker(BrokerConfig{RingSize: 1024, Logger: logger})
-	go boat2.Run()
+	go boat2.Run(context.Background())
 	defer boat2.CloseRx()
 
 	// Feed frames into both
@@ -684,7 +684,7 @@ func TestReplicationCloudConsumerDuringLive(t *testing.T) {
 	defer cancel()
 
 	boatBroker := NewBroker(BrokerConfig{RingSize: 1024, Logger: logger})
-	go boatBroker.Run()
+	go boatBroker.Run(context.Background())
 	defer boatBroker.CloseRx()
 
 	// Start replication
@@ -843,7 +843,7 @@ func TestReplicationLiveLagDetection(t *testing.T) {
 		RingSize: 65536,
 		Logger:   logger,
 	})
-	go boatBroker.Run()
+	go boatBroker.Run(context.Background())
 	defer boatBroker.CloseRx()
 
 	// Feed more than DefaultMaxLiveLag frames before starting replication so
@@ -936,7 +936,7 @@ func TestReplicationReconnectPreservesState(t *testing.T) {
 
 	// Boat: feed frames 1-100
 	boatBroker := NewBroker(BrokerConfig{RingSize: 4096, Logger: logger})
-	go boatBroker.Run()
+	go boatBroker.Run(context.Background())
 	defer boatBroker.CloseRx()
 
 	feedFrames(boatBroker, 100)

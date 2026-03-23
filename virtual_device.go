@@ -1,6 +1,7 @@
 package lplex
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log/slog"
@@ -130,8 +131,14 @@ func (m *VirtualDeviceManager) Add(cfg VirtualDeviceConfig) {
 // StartAfterDiscovery waits for the device table to populate (the broker
 // broadcasts an ISO Request for PGN 60928 on startup), then claims addresses
 // for all configured virtual devices.
-func (m *VirtualDeviceManager) StartAfterDiscovery(delay time.Duration) {
-	time.Sleep(delay)
+func (m *VirtualDeviceManager) StartAfterDiscovery(ctx context.Context, delay time.Duration) {
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return
+		}
+	}
 
 	now := time.Now()
 	m.lastClaimAt = now

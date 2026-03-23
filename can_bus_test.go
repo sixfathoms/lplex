@@ -103,7 +103,7 @@ func TestLoopbackBusInjectDropsWhenFull(t *testing.T) {
 
 func TestLoopbackBusWithBroker(t *testing.T) {
 	b := newTestBroker()
-	go b.Run()
+	go b.Run(context.Background())
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
