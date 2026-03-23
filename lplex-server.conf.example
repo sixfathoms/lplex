@@ -9,6 +9,11 @@ interface = can0
 # Multi-bus: list of CAN interfaces (overrides 'interface' when set)
 # interfaces = ["can0", "can1"]
 
+# Use in-memory loopback buses instead of SocketCAN.
+# Useful for development/testing on macOS or other platforms without SocketCAN.
+# TX frames are echoed back as RX frames (matching SocketCAN kernel echo).
+# loopback = false
+
 # HTTP listen port
 port = 8089
 

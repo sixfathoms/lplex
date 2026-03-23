@@ -63,6 +63,7 @@ func main() {
 	claimHeartbeatStr := flag.String("virtual-device-claim-heartbeat", "60s", "Interval for re-broadcasting address claims (PGN 60928)")
 	productInfoHeartbeatStr := flag.String("virtual-device-product-info-heartbeat", "5m", "Interval for re-broadcasting product info (PGN 126996)")
 	ringSize := flag.Int("ring-size", 65536, "Ring buffer size in entries (must be power of 2)")
+	loopback := flag.Bool("loopback", false, "Use in-memory loopback buses instead of SocketCAN (for development on macOS)")
 	busSilenceTimeout := flag.String("bus-silence-timeout", "", "Alert when no CAN frames received for this duration (ISO 8601, e.g. PT30S)")
 	configFile := flag.String("config", "", "Path to HOCON config file (default: ./lplex-server.conf, /etc/lplex/lplex-server.conf)")
 	validateConfig := flag.Bool("validate-config", false, "Parse and validate config, then exit")
@@ -318,25 +319,38 @@ func main() {
 	go broker.Run()
 
 	// Resolve interface list: -interfaces takes priority over -interface.
-	var ifaces []string
+	var ifaceNames []string
 	if *ifacesStr != "" {
 		for _, s := range strings.Split(*ifacesStr, ",") {
 			s = strings.TrimSpace(s)
 			if s != "" {
-				ifaces = append(ifaces, s)
+				ifaceNames = append(ifaceNames, s)
 			}
 		}
 	} else {
-		ifaces = []string{*iface}
+		ifaceNames = []string{*iface}
 	}
 
-	// Start CAN readers (one per interface, all feed into the same broker).
-	for _, canIface := range ifaces {
-		canIface := canIface // capture for goroutine
+	// Build CANBus instances: SocketCAN (default) or loopback (for macOS dev).
+	buses := make([]lplex.CANBus, len(ifaceNames))
+	for i, name := range ifaceNames {
+		if *loopback {
+			buses[i] = lplex.NewLoopbackBus(name, 256, logger)
+		} else {
+			buses[i] = lplex.NewSocketCANBus(name, logger)
+		}
+	}
+	if *loopback {
+		logger.Info("using loopback buses (no SocketCAN)", "interfaces", ifaceNames)
+	}
+
+	// Start CAN readers (one per bus, all feed into the same broker).
+	for _, bus := range buses {
+		bus := bus // capture for goroutine
 		go func() {
-			if err := lplex.CANReader(ctx, canIface, broker.RxFrames(), logger); err != nil {
+			if err := bus.ReadFrames(ctx, broker.RxFrames()); err != nil {
 				if ctx.Err() == nil {
-					logger.Error("CAN reader failed", "error", err, "interface", canIface)
+					logger.Error("CAN reader failed", "error", err, "interface", bus.Name())
 					cancel()
 				}
 			}
@@ -344,33 +358,33 @@ func main() {
 	}
 
 	// Start TX dispatcher: routes TxRequests from the broker to the correct
-	// CAN interface based on the Bus field. Empty Bus = first interface.
-	if len(ifaces) == 1 {
+	// CAN bus based on the Bus field. Empty Bus = first bus.
+	if len(buses) == 1 {
 		// Single bus: direct writer, no routing needed.
 		go func() {
-			if err := lplex.CANWriter(ctx, ifaces[0], broker.TxFrames(), logger); err != nil {
+			if err := buses[0].WriteFrames(ctx, broker.TxFrames()); err != nil {
 				if ctx.Err() == nil {
-					logger.Error("CAN writer failed", "error", err, "interface", ifaces[0])
+					logger.Error("CAN writer failed", "error", err, "interface", buses[0].Name())
 					cancel()
 				}
 			}
 		}()
 	} else {
-		// Multi-bus: per-interface TX channels with a dispatcher goroutine.
-		txChans := make(map[string]chan lplex.TxRequest, len(ifaces))
-		for _, canIface := range ifaces {
+		// Multi-bus: per-bus TX channels with a dispatcher goroutine.
+		txChans := make(map[string]chan lplex.TxRequest, len(buses))
+		for _, bus := range buses {
 			ch := make(chan lplex.TxRequest, 64)
-			txChans[canIface] = ch
-			canIface := canIface
+			txChans[bus.Name()] = ch
+			bus := bus
 			go func() {
-				if err := lplex.CANWriter(ctx, canIface, ch, logger); err != nil {
+				if err := bus.WriteFrames(ctx, ch); err != nil {
 					if ctx.Err() == nil {
-						logger.Error("CAN writer failed", "error", err, "interface", canIface)
+						logger.Error("CAN writer failed", "error", err, "interface", bus.Name())
 					}
 				}
 			}()
 		}
-		defaultBus := ifaces[0]
+		defaultBus := buses[0].Name()
 		go func() {
 			for req := range broker.TxFrames() {
 				bus := req.Bus
@@ -392,7 +406,7 @@ func main() {
 					}
 				}
 			}
-			// Close all per-interface channels when the broker's TX channel closes.
+			// Close all per-bus channels when the broker's TX channel closes.
 			for _, ch := range txChans {
 				close(ch)
 			}
@@ -541,7 +555,7 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("HTTP server starting", "addr", addr, "interfaces", ifaces, "version", version)
+		logger.Info("HTTP server starting", "addr", addr, "interfaces", ifaceNames, "version", version)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTP server failed", "error", err)
 			cancel()

@@ -62,10 +62,9 @@ git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
 Single-goroutine broker design, no locks in the hot path:
 
 ```
-SocketCAN (can0, can1, ...)
-    |
-CANReader goroutine(s) — one per interface
-    |  reads extended CAN frames
+CANBus (SocketCANBus or LoopbackBus)
+    |  one per interface (can0, can1, ...)
+    |  ReadFrames goroutine reads CAN frames
     |  reassembles fast-packets (multi-frame PGNs)
     |  tags each frame with bus name (interface name)
     |
@@ -103,10 +102,10 @@ HTTP Server (:8089)                    JournalWriter goroutine
     +-- GET  /values
     +-- GET  /replication/status
                                        Consumer (pull-based reader)
-CANWriter goroutine(s) — one per interface  |  reads from tiered log:
+CANBus.WriteFrames goroutine(s)             |  reads from tiered log:
     |  reads from per-bus TX chan          |  1. journal files (oldest)
     |  fragments fast-packets for TX      |  2. ring buffer (recent)
-    |  writes to SocketCAN                |  3. live notification (blocking wait)
+    |  writes to CAN bus (or loopback)    |  3. live notification (blocking wait)
     |  (TX dispatcher routes by bus)
 
 ReplicationClient (optional)
@@ -157,7 +156,7 @@ lplex-cloud process
 
 | Package | Owns |
 |---|---|
-| `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANReader`, `CANWriter`, `JournalWriter`, `JournalKeeper`, `DeviceRegistry`, `ValueStore`, `FastPacketAssembler`, `ChangeTracker`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, `EventLog`, filters, ring buffer. Embeddable by external Go services. |
+| `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANBus` (interface), `SocketCANBus`, `LoopbackBus`, `CANReader`, `CANWriter`, `JournalWriter`, `JournalKeeper`, `DeviceRegistry`, `ValueStore`, `FastPacketAssembler`, `ChangeTracker`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, `EventLog`, filters, ring buffer. Embeddable by external Go services. |
 | `cmd/lplex-server/` | Boat server: flag parsing, HOCON config, signal handling, mDNS registration, wires broker + CAN I/O + HTTP + optional replication |
 | `cmd/lplex-cloud/` | Cloud server: gRPC + HTTP servers, InstanceManager, mTLS, HOCON config |
 | `cmd/lplex/` | Multi-subcommand CLI: `dump` (streaming/replay), `tail` (simple live follow with optional replay), `dashboard` (interactive TUI with live data), `simulate` (journal replay through full HTTP server), `inspect` (journal inspection), `verify` (journal integrity verification), `doctor` (system diagnostics), `completion` (shell completion scripts for bash/zsh/fish/powershell), `devices`, `values`, `send`, `request`, `switches`. Uses cobra. Pretty-print, device table, PGN decoding (`--decode`), change tracking (`--changes`), display filter expressions (`--where`), auto-reconnect. |
@@ -183,6 +182,7 @@ lplex-cloud process
 | `history.go` | `handleHistory`, `GET /history` endpoint for querying journal files by time range with PGN/source/interval filters and optional decode. Returns JSON array of matching frames. |
 | `mqtt.go` | `MQTTBridge`, `MQTTBridgeConfig`, publishes CAN frames to an MQTT broker. Subscribes to the broker's frame stream and publishes to `{prefix}/frames` topics. Auto-reconnect via paho MQTT client. |
 | `send_policy.go` | `SendPolicy`, `SendRule`, `PGNMatcher`, `ParseSendRule`, `ParseSendRules`, rule DSL parser and evaluator for `/send` and `/query` gating |
+| `can_bus.go` | `CANBus` interface (`ReadFrames`, `WriteFrames`, `Name`), `SocketCANBus` (wraps `CANReader`/`CANWriter`), `LoopbackBus` (in-memory echo for testing/macOS dev) |
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
 | `fastpacket.go` | `FastPacketAssembler`, `FragmentFastPacket`, `IsFastPacket` (checks `pgn.Registry` for `FastPacket` flag) |
@@ -298,7 +298,7 @@ lplex-cloud uses the same pattern with `lplex-cloud.conf` (auto-discovered from 
 
 `lplex-server -validate-config` parses and validates the config file (or CLI flags) without starting the server. It checks all durations, sizes, enum values, send rules, and virtual device config, reporting `[OK]`/`[FAIL]`/`[WARN]` per setting. Exit code 0 means valid, 1 means errors found.
 
-lplex-server supports multiple CAN interfaces: `-interfaces can0,can1` (comma-separated) starts a CANReader per interface, all feeding into a single broker. The `-interface` flag still works for single-bus setups. HOCON path: `interfaces` (string, comma-separated). In multi-bus mode, a TX dispatcher routes outgoing frames to the correct interface based on the `Bus` field in `TxRequest`. Devices are keyed by `(bus, source)` so address collisions across buses are handled correctly.
+lplex-server supports multiple CAN interfaces: `-interfaces can0,can1` (comma-separated) starts a `CANBus` per interface, all feeding into a single broker. The `-interface` flag still works for single-bus setups. HOCON path: `interfaces` (string, comma-separated). In multi-bus mode, a TX dispatcher routes outgoing frames to the correct interface based on the `Bus` field in `TxRequest`. Devices are keyed by `(bus, source)` so address collisions across buses are handled correctly. CAN I/O is abstracted behind the `CANBus` interface: `SocketCANBus` for real hardware, `LoopbackBus` for development/testing without SocketCAN (enabled via `-loopback` flag or `loopback = true` in HOCON).
 
 lplex-server has send policy flags to gate the `/send` and `/query` endpoints: `-send-enabled` (default false) and `-send-rules` (semicolon-separated rule strings). HOCON paths: `send.enabled`, `send.rules` (string or object array). CLI uses DSL syntax: `[!] [pgn:<spec>] [name:<hex>,...]` where `<spec>` supports values, comma-separated lists, and ranges (e.g. `pgn:59904,126208`, `pgn:65280-65535`). `!` prefix = deny. Omit pgn/name for wildcard. HOCON config also supports native object rules: `{ deny = true/false, pgn = "<spec>", name = "<hex>" or ["<hex>", ...] }`. Both string and object forms can be mixed in the same array. Rules are evaluated top-to-bottom, first match wins. No matching rule = deny. Empty rules + enabled = allow all. These do not affect the broker's internal ISO requests for device discovery.
 
