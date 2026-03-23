@@ -233,6 +233,38 @@ All standard HTTP endpoints are available: `/events`, `/ws`, `/devices`, `/value
 | `--loop` | `false` | Restart from beginning when the journal ends |
 | `--ring-size` | (default) | Ring buffer size for the broker |
 
+## Diagnostics
+
+`lplex doctor` runs diagnostic checks on your local system and lplex server to help troubleshoot setup issues.
+
+**Checks performed:**
+- Platform detection (OS, architecture)
+- CAN kernel modules loaded (Linux only)
+- CAN interface status (up/down, bitrate)
+- Server reachability and health
+- Device count on the bus
+- Journal directory writability
+- Disk space availability
+
+```bash
+# Auto-detect everything
+lplex doctor
+
+# Check a specific server
+lplex doctor --server http://inuc1.local:8089
+
+# Full check with journal directory
+lplex doctor --server http://inuc1.local:8089 --journal-dir /var/log/lplex
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--server` | (mDNS) | Server URL to check |
+| `--journal-dir` | (empty) | Journal directory to check for writability and disk space |
+| `--interfaces` | (auto-detect) | CAN interfaces to check (comma-separated) |
+
+Output uses status indicators for each check: `[OK]` passed, `[WARN]` non-fatal issue, `[FAIL]` problem detected, `[SKIP]` check not applicable (e.g., CAN modules on macOS).
+
 ## Filtering
 
 Filters can be combined. Multiple values for the same filter type are OR'd together. Different filter types are AND'd.
