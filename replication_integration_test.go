@@ -845,8 +845,11 @@ func TestReplicationLiveLagDetection(t *testing.T) {
 	})
 	brokerCtx, brokerCancel := context.WithCancel(context.Background())
 	go boatBroker.Run(brokerCtx)
+	feedDone := make(chan struct{})
+	close(feedDone) // pre-close so defer works if feed goroutine never starts
 	defer func() {
 		brokerCancel() // stop feedFrames goroutine and broker before closing channel
+		<-feedDone     // wait for feed goroutine to exit before closing channel
 		boatBroker.CloseRx()
 	}()
 
@@ -867,10 +870,19 @@ func TestReplicationLiveLagDetection(t *testing.T) {
 	go func() { done <- replClient.Run(ctx) }()
 
 	// Keep feeding frames to maintain the lag
+	feedDone = make(chan struct{}) // replace pre-closed channel
 	go func() {
-		for ctx.Err() == nil {
-			feedFrames(boatBroker, 200)
-			time.Sleep(50 * time.Millisecond)
+		defer close(feedDone)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case boatBroker.RxFrames() <- RxFrame{
+				Timestamp: time.Now(),
+				Header:    CANHeader{Priority: 2, PGN: 129025, Source: 1, Destination: 0xFF},
+				Data:      []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+			}:
+			}
 		}
 	}()
 
