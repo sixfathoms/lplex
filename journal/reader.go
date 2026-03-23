@@ -81,21 +81,25 @@ func NewReader(r io.ReadSeeker) (*Reader, error) {
 		return nil, fmt.Errorf("read journal header: %w", err)
 	}
 	if hdr[0] != Magic[0] || hdr[1] != Magic[1] || hdr[2] != Magic[2] {
-		return nil, fmt.Errorf("not a journal file (bad magic)")
+		return nil, &CorruptError{BlockIdx: -1, Reason: "bad_magic",
+			Detail: fmt.Sprintf("expected %q, got %q", Magic[:], hdr[:3])}
 	}
 	version := hdr[3]
 	if version != Version && version != Version2 {
-		return nil, fmt.Errorf("unsupported journal version %d", version)
+		return nil, &CorruptError{BlockIdx: -1, Reason: "unsupported_version",
+			Detail: fmt.Sprintf("version %d not supported", version)}
 	}
 	blockSize := int(binary.LittleEndian.Uint32(hdr[4:8]))
 	if blockSize < 4096 || blockSize&(blockSize-1) != 0 {
-		return nil, fmt.Errorf("invalid block size %d", blockSize)
+		return nil, &CorruptError{BlockIdx: -1, Reason: "invalid_block_size",
+			Detail: fmt.Sprintf("block size %d is invalid (must be >= 4096 and power of 2)", blockSize)}
 	}
 
 	flags := binary.LittleEndian.Uint32(hdr[8:12])
 	compression := CompressionType(flags & 0xFF)
 	if compression > CompressionZstdDict {
-		return nil, fmt.Errorf("unsupported compression type %d", compression)
+		return nil, &CorruptError{BlockIdx: -1, Reason: "unsupported_compression",
+			Detail: fmt.Sprintf("compression type %d not supported", compression)}
 	}
 
 	end, err := r.Seek(0, io.SeekEnd)
@@ -1017,7 +1021,8 @@ func (jr *Reader) parseLoadedBlock(n int) error {
 	stored := binary.LittleEndian.Uint32(jr.blockBuf[bs-4:])
 	computed := crc32.Checksum(jr.blockBuf[:bs-4], CRC32cTable)
 	if stored != computed {
-		return fmt.Errorf("block %d checksum mismatch: stored=%08x computed=%08x", n, stored, computed)
+		return &CorruptError{BlockIdx: n, Reason: "checksum_mismatch",
+			Detail: fmt.Sprintf("stored=%08x computed=%08x", stored, computed)}
 	}
 
 	trailerOff := bs - BlockTrailerLen
