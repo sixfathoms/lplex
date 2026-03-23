@@ -217,6 +217,8 @@ replication {
 | `-mqtt-qos` | `mqtt.qos` | `0` | MQTT QoS level (0, 1, or 2) |
 | `-mqtt-username` | `mqtt.username` | (empty) | MQTT broker username |
 | `-mqtt-password` | `mqtt.password` | (empty) | MQTT broker password |
+| `-send-rate-limit` | `send.rate-limit` | `0` | Max requests/sec for /send and /query (0 = unlimited) |
+| `-send-rate-burst` | `send.rate-burst` | `10` | Max burst size for /send rate limiter |
 | `-api-key` | `api-key` | (empty) | API key for HTTP authentication (empty = no auth) |
 
 ## lplex-cloud
