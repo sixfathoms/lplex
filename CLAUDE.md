@@ -304,6 +304,8 @@ lplex-server has send policy flags to gate the `/send` and `/query` endpoints: `
 
 Both binaries support `-device-idle-timeout` (default `5m`, `0` = disabled) to remove devices that haven't been seen within the timeout. HOCON path: `device.idle-timeout`. When a device is evicted (either by idle expiry or by NAME dedup on address change), its ValueStore entries are cleaned up and a `device_removed` event is sent to subscribers.
 
+lplex-server supports a `-read-only` flag (HOCON: `read-only`) that completely disables `/send` and `/query` endpoints regardless of send policy settings. This is a defense-in-depth kill switch.
+
 lplex-server supports rate limiting on `/send` and `/query` via `-send-rate-limit` (requests/sec, 0 = unlimited) and `-send-rate-burst` (max burst, default 10). HOCON paths: `send.rate-limit`, `send.rate-burst`. Uses a token bucket algorithm. Returns HTTP 429 when exceeded.
 
 lplex-server supports optional API key authentication via `-api-key` (HOCON path: `api-key`). When set, all HTTP requests must include the key via `Authorization: Bearer <key>` or `X-API-Key: <key>` header. Health endpoints (`/healthz`, `/livez`, `/readyz`, `/metrics`) are exempt.

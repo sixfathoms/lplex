@@ -47,6 +47,7 @@ var configToFlag = map[string]string{
 	"replication.max-live-lag":               "replication-max-live-lag",
 	"replication.lag-check-interval":         "replication-lag-check-interval",
 	"replication.min-lag-reconnect-interval": "replication-min-lag-reconnect-interval",
+	"read-only":                             "read-only",
 	"api-key":                               "api-key",
 	"send.rate-limit":                       "send-rate-limit",
 	"send.rate-burst":                       "send-rate-burst",

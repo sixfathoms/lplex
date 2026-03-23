@@ -30,6 +30,7 @@ type Server struct {
 	sendPolicy  sendpolicy.SendPolicy
 	apiKey      string        // if non-empty, all requests must authenticate
 	sendLimiter *rate.Limiter // if non-nil, rate-limits /send and /query
+	readOnly    bool          // if true, /send and /query are completely disabled
 }
 
 // NewServer creates a new HTTP server wired to the given broker.
@@ -60,6 +61,12 @@ func NewServer(broker *Broker, logger *slog.Logger, policy sendpolicy.SendPolicy
 // or the X-API-Key header. Health/liveness endpoints are exempt.
 func (s *Server) SetAPIKey(key string) {
 	s.apiKey = key
+}
+
+// SetReadOnly completely disables the /send and /query endpoints, regardless
+// of the send policy. This is a defense-in-depth kill switch.
+func (s *Server) SetReadOnly(readOnly bool) {
+	s.readOnly = readOnly
 }
 
 // SetSendRateLimit enables rate limiting on the /send and /query endpoints.
@@ -421,6 +428,10 @@ func (s *Server) overrideSource(w http.ResponseWriter, src *uint8) bool {
 // PGN and destination address. Returns true if allowed, false if the request
 // was rejected (with an appropriate HTTP error written).
 func (s *Server) checkSendPolicy(w http.ResponseWriter, bus string, pgn uint32, dst uint8) bool {
+	if s.readOnly {
+		http.Error(w, "server is in read-only mode", http.StatusForbidden)
+		return false
+	}
 	if !s.sendPolicy.Enabled {
 		http.Error(w, "send is disabled", http.StatusForbidden)
 		return false
