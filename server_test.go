@@ -340,7 +340,7 @@ func TestDevices(t *testing.T) {
 	var name uint64
 	name |= uint64(229) << 21 // Garmin
 	binary.LittleEndian.PutUint64(data, name)
-	b.devices.HandleAddressClaim("", 1, data)
+	b.Devices().HandleAddressClaim("", 1, data)
 
 	req := httptest.NewRequest("GET", "/devices", nil)
 	w := httptest.NewRecorder()
@@ -498,9 +498,9 @@ func TestCreateSessionWithFilter(t *testing.T) {
 	}
 
 	// Verify filter was stored on the session.
-	b.sessionMu.RLock()
-	session := b.sessions["filtered"]
-	b.sessionMu.RUnlock()
+	b.state.sessionMu.RLock()
+	session := b.state.sessions["filtered"]
+	b.state.sessionMu.RUnlock()
 
 	if session.Filter == nil {
 		t.Fatal("filter should not be nil")
@@ -526,9 +526,9 @@ func TestCreateSessionWithCANNameFilter(t *testing.T) {
 		t.Fatalf("status: got %d, want 200", w.Code)
 	}
 
-	b.sessionMu.RLock()
-	session := b.sessions["name-filter"]
-	b.sessionMu.RUnlock()
+	b.state.sessionMu.RLock()
+	session := b.state.sessions["name-filter"]
+	b.state.sessionMu.RUnlock()
 
 	if session.Filter == nil || len(session.Filter.Names) != 1 {
 		t.Fatal("expected 1 CAN NAME in filter")
@@ -573,9 +573,9 @@ func TestCreateSessionBufferTimeoutZero(t *testing.T) {
 		t.Fatalf("status: got %d, want 200", w.Code)
 	}
 
-	b.sessionMu.RLock()
-	session := b.sessions["reset-me"]
-	b.sessionMu.RUnlock()
+	b.state.sessionMu.RLock()
+	session := b.state.sessions["reset-me"]
+	b.state.sessionMu.RUnlock()
 
 	if session.Cursor != 0 {
 		t.Errorf("cursor should be 0 after PT0S reset, got %d", session.Cursor)
@@ -798,9 +798,9 @@ func TestCreateSessionDefaultDurationIsZero(t *testing.T) {
 		t.Fatalf("status: got %d, want 200", w.Code)
 	}
 
-	b.sessionMu.RLock()
-	session := b.sessions["zero-default"]
-	b.sessionMu.RUnlock()
+	b.state.sessionMu.RLock()
+	session := b.state.sessions["zero-default"]
+	b.state.sessionMu.RUnlock()
 
 	if session.BufferTimeout != 0 {
 		t.Errorf("default buffer_timeout should be 0, got %v", session.BufferTimeout)
@@ -821,9 +821,9 @@ func TestCreateSessionEmptyFilter(t *testing.T) {
 		t.Fatalf("status: got %d, want 200", w.Code)
 	}
 
-	b.sessionMu.RLock()
-	session := b.sessions["empty-filter"]
-	b.sessionMu.RUnlock()
+	b.state.sessionMu.RLock()
+	session := b.state.sessions["empty-filter"]
+	b.state.sessionMu.RUnlock()
 
 	if session.Filter != nil {
 		t.Errorf("empty filter should be normalized to nil, got %+v", session.Filter)
@@ -843,9 +843,9 @@ func TestCreateSessionWithExcludePGN(t *testing.T) {
 		t.Fatalf("status: got %d, want 200", w.Code)
 	}
 
-	b.sessionMu.RLock()
-	session := b.sessions["exclude-test"]
-	b.sessionMu.RUnlock()
+	b.state.sessionMu.RLock()
+	session := b.state.sessions["exclude-test"]
+	b.state.sessionMu.RUnlock()
 
 	if session.Filter == nil {
 		t.Fatal("filter should not be nil")
@@ -946,9 +946,9 @@ func TestCreateSessionWithExcludeName(t *testing.T) {
 		t.Fatalf("status: got %d, want 200", w.Code)
 	}
 
-	b.sessionMu.RLock()
-	session := b.sessions["exclude-name-test"]
-	b.sessionMu.RUnlock()
+	b.state.sessionMu.RLock()
+	session := b.state.sessions["exclude-name-test"]
+	b.state.sessionMu.RUnlock()
 
 	if session.Filter == nil {
 		t.Fatal("filter should not be nil")
@@ -1118,7 +1118,7 @@ func TestSendRuleNAMEWithDevice(t *testing.T) {
 	// Register a device at source 10 with a known NAME.
 	nameBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(nameBytes, 0x001c6e4000200000)
-	b.devices.HandleAddressClaim("", 10, nameBytes)
+	b.Devices().HandleAddressClaim("", 10, nameBytes)
 
 	rules, _ := ParseSendRules([]string{"pgn:59904 name:001c6e4000200000"})
 	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
@@ -1168,7 +1168,7 @@ func TestSendRuleOrderedEvaluation(t *testing.T) {
 
 	nameBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(nameBytes, 0x001c6e4000200000)
-	b.devices.HandleAddressClaim("", 10, nameBytes)
+	b.Devices().HandleAddressClaim("", 10, nameBytes)
 
 	// Allow PGN 59904 to specific device, allow broadcast PGN 59904, deny everything else.
 	rules, _ := ParseSendRules([]string{

@@ -229,15 +229,31 @@ type subscriber struct {
 	filter *EventFilter
 }
 
+// brokerState holds the broker's owned data structures that track devices,
+// values, sessions, subscribers, and consumers.
+type brokerState struct {
+	devices *DeviceRegistry
+	values  *ValueStore
+
+	sessionMu sync.RWMutex
+	sessions  map[string]*ClientSession
+
+	subscriberMu sync.RWMutex
+	subscribers  map[*subscriber]struct{}
+
+	consumerMu sync.RWMutex
+	consumers  map[*Consumer]struct{}
+}
+
 // Broker is the central coordinator. Single goroutine reads from rxFrames,
 // assigns sequence numbers, appends to ring buffer, updates device registry,
 // and fans out to client sessions and ephemeral subscribers.
 type Broker struct {
-	rxFrames   chan RxFrame
-	txFrames   chan TxRequest
-	devices    *DeviceRegistry
-	logger     *slog.Logger
-	done       chan struct{} // closed when Run() returns
+	rxFrames chan RxFrame
+	txFrames chan TxRequest
+	state    brokerState
+	logger   *slog.Logger
+	done     chan struct{} // closed when Run() returns
 
 	// ring buffer (protected by mu for replay reads)
 	mu       sync.RWMutex
@@ -246,26 +262,10 @@ type Broker struct {
 	head     uint64 // next write position (also next seq number)
 	tail     uint64 // oldest valid position
 
-	// client sessions (only accessed by broker goroutine, except for
-	// Replay which holds mu.RLock)
-	sessionMu sync.RWMutex
-	sessions  map[string]*ClientSession
-
-	// ephemeral subscribers (no session state, no replay, no ACK)
-	subscriberMu sync.RWMutex
-	subscribers  map[*subscriber]struct{}
-
 	maxBufferDuration time.Duration
 
 	// journal channel (nil = journaling disabled)
 	journal chan<- RxFrame
-
-	// pull-based consumers
-	consumerMu sync.RWMutex
-	consumers  map[*Consumer]struct{}
-
-	// last-values store (latest frame per source+PGN)
-	values *ValueStore
 
 	journalDir        string
 	replicaMode       bool          // when true, honor frame.Seq instead of auto-incrementing
@@ -356,19 +356,21 @@ func NewBroker(cfg BrokerConfig) *Broker {
 	}
 
 	b := &Broker{
-		rxFrames:          make(chan RxFrame, 256),
-		txFrames:          make(chan TxRequest, 64),
-		devices:           NewDeviceRegistry(),
+		rxFrames: make(chan RxFrame, 256),
+		txFrames: make(chan TxRequest, 64),
+		state: brokerState{
+			devices:     NewDeviceRegistry(),
+			values:      NewValueStore(),
+			sessions:    make(map[string]*ClientSession),
+			subscribers: make(map[*subscriber]struct{}),
+			consumers:   make(map[*Consumer]struct{}),
+		},
 		logger:            cfg.Logger,
 		done:              make(chan struct{}),
 		ring:              make([]ringEntry, cfg.RingSize),
 		ringMask:          cfg.RingSize - 1,
 		head:              head,
 		tail:              head, // empty ring at the right position
-		sessions:          make(map[string]*ClientSession),
-		subscribers:       make(map[*subscriber]struct{}),
-		consumers:         make(map[*Consumer]struct{}),
-		values:            NewValueStore(),
 		maxBufferDuration: cfg.MaxBufferDuration,
 		journalDir:        cfg.JournalDir,
 		replicaMode:       cfg.ReplicaMode,
@@ -376,7 +378,7 @@ func NewBroker(cfg BrokerConfig) *Broker {
 	}
 
 	if len(cfg.VirtualDevices) > 0 && !cfg.ReplicaMode {
-		b.virtualDevices = NewVirtualDeviceManager(b.queueTx, b.devices, cfg.Logger, cfg.ClaimHeartbeat, cfg.ProductInfoHeartbeat)
+		b.virtualDevices = NewVirtualDeviceManager(b.queueTx, b.state.devices, cfg.Logger, cfg.ClaimHeartbeat, cfg.ProductInfoHeartbeat)
 		for _, vdc := range cfg.VirtualDevices {
 			b.virtualDevices.Add(vdc)
 		}
@@ -502,7 +504,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 	bus := frame.Bus
 
 	// Track per-source packet stats for all frames (local and wire).
-	newSource := b.devices.RecordPacket(bus, src, frame.Timestamp, len(frame.Data))
+	newSource := b.state.devices.RecordPacket(bus, src, frame.Timestamp, len(frame.Data))
 
 	// Device discovery: decode address claims and product info for the
 	// device registry, send ISO requests for wire frames only (local frames
@@ -518,7 +520,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 			name := binary.LittleEndian.Uint64(frame.Data[:8])
 			isOurClaim = b.virtualDevices.HandleBusClaim(src, name)
 		}
-		if dev, evictedSrc, evicted := b.devices.HandleAddressClaim(bus, src, frame.Data); dev != nil {
+		if dev, evictedSrc, evicted := b.state.devices.HandleAddressClaim(bus, src, frame.Data); dev != nil {
 			b.devicesAdded.Add(1)
 			b.logger.Info("device discovered",
 				"bus", bus,
@@ -531,7 +533,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 				b.devicesRemoved.Add(1)
 				b.logger.Info("evicted stale device (same NAME, old address)",
 					"bus", bus, "old_src", evictedSrc, "new_src", src)
-				b.values.RemoveSource(bus, evictedSrc)
+				b.state.values.RemoveSource(bus, evictedSrc)
 				b.fanOutDeviceRemoved(bus, evictedSrc)
 			}
 			b.fanOutDevice(dev)
@@ -540,7 +542,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 				// complete in /devices without waiting for an ISO
 				// request from another device on the bus.
 				if prodData := b.virtualDevices.ProductInfoPayload(src); prodData != nil {
-					b.devices.HandleProductInfo(bus, src, prodData)
+					b.state.devices.HandleProductInfo(bus, src, prodData)
 				}
 			} else if !b.replicaMode {
 				b.sendISORequest(bus, src, 126996)
@@ -553,7 +555,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 			b.virtualDevices.HandleISORequest(frame.Header.Destination, reqPGN, src)
 		}
 	case 126996:
-		if dev := b.devices.HandleProductInfo(bus, src, frame.Data); dev != nil {
+		if dev := b.state.devices.HandleProductInfo(bus, src, frame.Data); dev != nil {
 			b.logger.Info("product info",
 				"bus", bus,
 				"src", dev.Source,
@@ -636,7 +638,7 @@ func (b *Broker) handleFrame(frame RxFrame) {
 	b.lastFrameNano.Store(frame.Timestamp.UnixNano())
 
 	// Track last-seen value per (bus, source, PGN).
-	b.values.Record(bus, frame.Header.Source, frame.Header.PGN, frame.Timestamp, frame.Data, seq)
+	b.state.values.Record(bus, frame.Header.Source, frame.Header.PGN, frame.Timestamp, frame.Data, seq)
 
 	// Fan out to connected clients (filters checked per-session)
 	b.fanOut(bus, frame.Header, jsonBytes)
@@ -677,14 +679,14 @@ func (b *Broker) Subscribe(filter *EventFilter) (*subscriber, func()) {
 		ch:     make(chan []byte, 128),
 		filter: filter,
 	}
-	b.subscriberMu.Lock()
-	b.subscribers[sub] = struct{}{}
-	b.subscriberMu.Unlock()
+	b.state.subscriberMu.Lock()
+	b.state.subscribers[sub] = struct{}{}
+	b.state.subscriberMu.Unlock()
 
 	cleanup := func() {
-		b.subscriberMu.Lock()
-		delete(b.subscribers, sub)
-		b.subscriberMu.Unlock()
+		b.state.subscriberMu.Lock()
+		delete(b.state.subscribers, sub)
+		b.state.subscriberMu.Unlock()
 	}
 	return sub, cleanup
 }
@@ -692,9 +694,9 @@ func (b *Broker) Subscribe(filter *EventFilter) (*subscriber, func()) {
 // fanOut sends pre-serialized JSON to all ephemeral subscribers,
 // skipping those whose filter doesn't match.
 func (b *Broker) fanOut(bus string, header CANHeader, data []byte) {
-	b.subscriberMu.RLock()
-	for sub := range b.subscribers {
-		if !sub.filter.matches(bus, header, b.devices) {
+	b.state.subscriberMu.RLock()
+	for sub := range b.state.subscribers {
+		if !sub.filter.matches(bus, header, b.state.devices) {
 			continue
 		}
 		select {
@@ -702,7 +704,7 @@ func (b *Broker) fanOut(bus string, header CANHeader, data []byte) {
 		default:
 		}
 	}
-	b.subscriberMu.RUnlock()
+	b.state.subscriberMu.RUnlock()
 }
 
 // fanOutDevice sends a device discovery event to all ephemeral subscribers.
@@ -720,14 +722,14 @@ func (b *Broker) fanOutDevice(dev *Device) {
 		return
 	}
 
-	b.subscriberMu.RLock()
-	for sub := range b.subscribers {
+	b.state.subscriberMu.RLock()
+	for sub := range b.state.subscribers {
 		select {
 		case sub.ch <- jsonBytes:
 		default:
 		}
 	}
-	b.subscriberMu.RUnlock()
+	b.state.subscriberMu.RUnlock()
 }
 
 // fanOutDeviceRemoved sends a device_removed event to all ephemeral subscribers.
@@ -747,14 +749,14 @@ func (b *Broker) fanOutDeviceRemoved(bus string, src uint8) {
 		return
 	}
 
-	b.subscriberMu.RLock()
-	for sub := range b.subscribers {
+	b.state.subscriberMu.RLock()
+	for sub := range b.state.subscribers {
 		select {
 		case sub.ch <- jsonBytes:
 		default:
 		}
 	}
-	b.subscriberMu.RUnlock()
+	b.state.subscriberMu.RUnlock()
 }
 
 // CreateSession creates or retrieves a client session.
@@ -770,14 +772,14 @@ func (b *Broker) CreateSession(id string, bufferTimeout time.Duration, filter *E
 		filter = nil
 	}
 
-	b.sessionMu.Lock()
-	defer b.sessionMu.Unlock()
+	b.state.sessionMu.Lock()
+	defer b.state.sessionMu.Unlock()
 
 	b.mu.RLock()
 	seq := b.head - 1
 	b.mu.RUnlock()
 
-	if s, ok := b.sessions[id]; ok {
+	if s, ok := b.state.sessions[id]; ok {
 		s.BufferTimeout = bufferTimeout
 		s.Filter = filter
 		s.LastActivity = time.Now()
@@ -793,32 +795,32 @@ func (b *Broker) CreateSession(id string, bufferTimeout time.Duration, filter *E
 		LastActivity:  time.Now(),
 		Filter:        filter,
 	}
-	b.sessions[id] = s
+	b.state.sessions[id] = s
 	return s, seq
 }
 
 // GetSession returns a session by ID, or nil if not found.
 func (b *Broker) GetSession(id string) *ClientSession {
-	b.sessionMu.RLock()
-	defer b.sessionMu.RUnlock()
-	return b.sessions[id]
+	b.state.sessionMu.RLock()
+	defer b.state.sessionMu.RUnlock()
+	return b.state.sessions[id]
 }
 
 // TouchSession updates the LastActivity timestamp for a session.
 func (b *Broker) TouchSession(id string) {
-	b.sessionMu.Lock()
-	defer b.sessionMu.Unlock()
-	if s, ok := b.sessions[id]; ok {
+	b.state.sessionMu.Lock()
+	defer b.state.sessionMu.Unlock()
+	if s, ok := b.state.sessions[id]; ok {
 		s.LastActivity = time.Now()
 	}
 }
 
 // AckSession updates the cursor for a session.
 func (b *Broker) AckSession(id string, seq uint64) error {
-	b.sessionMu.Lock()
-	defer b.sessionMu.Unlock()
+	b.state.sessionMu.Lock()
+	defer b.state.sessionMu.Unlock()
 
-	s, ok := b.sessions[id]
+	s, ok := b.state.sessions[id]
 	if !ok {
 		return fmt.Errorf("session not found: %s", id)
 	}
@@ -833,14 +835,14 @@ func (b *Broker) expireDevices() {
 		return
 	}
 	cutoff := time.Now().Add(-b.deviceIdleTimeout)
-	evicted := b.devices.ExpireIdle(cutoff)
+	evicted := b.state.devices.ExpireIdle(cutoff)
 	for _, key := range evicted {
 		b.devicesRemoved.Add(1)
 		b.logger.Info("expired idle device", "bus", key.Bus, "src", key.Source)
 		if b.alerts != nil {
 			b.alerts.FireDeviceRemoved(key.Source, nil)
 		}
-		b.values.RemoveSource(key.Bus, key.Source)
+		b.state.values.RemoveSource(key.Bus, key.Source)
 		b.fanOutDeviceRemoved(key.Bus, key.Source)
 	}
 }
@@ -849,7 +851,7 @@ func (b *Broker) expireDevices() {
 // address claim but no product info yet. Handles the case where the
 // initial burst of requests on startup gets lost on the CAN bus.
 func (b *Broker) retryProductInfo() {
-	for _, bs := range b.devices.SourcesMissingProductInfo() {
+	for _, bs := range b.state.devices.SourcesMissingProductInfo() {
 		b.sendISORequest(bs.Bus, bs.Source, 126996)
 	}
 }
@@ -859,13 +861,13 @@ func (b *Broker) retryProductInfo() {
 func (b *Broker) expireSessions() {
 	now := time.Now()
 
-	b.sessionMu.Lock()
-	defer b.sessionMu.Unlock()
+	b.state.sessionMu.Lock()
+	defer b.state.sessionMu.Unlock()
 
-	for id, s := range b.sessions {
+	for id, s := range b.state.sessions {
 		if now.Sub(s.LastActivity) > s.BufferTimeout {
 			b.logger.Info("expiring client session", "client", id)
-			delete(b.sessions, id)
+			delete(b.state.sessions, id)
 		}
 	}
 }
@@ -914,14 +916,14 @@ func (b *Broker) SetAlerts(am *AlertManager) {
 
 // notifyConsumers does a non-blocking send to each consumer's notify channel.
 func (b *Broker) notifyConsumers() {
-	b.consumerMu.RLock()
-	for c := range b.consumers {
+	b.state.consumerMu.RLock()
+	for c := range b.state.consumers {
 		select {
 		case c.notify <- struct{}{}:
 		default:
 		}
 	}
-	b.consumerMu.RUnlock()
+	b.state.consumerMu.RUnlock()
 }
 
 // readEntry reads a single ring entry under RLock. Returns false if the seq
@@ -950,20 +952,21 @@ func (b *Broker) ringRange() (tail, head uint64) {
 
 // removeConsumer removes a consumer from the registry.
 func (b *Broker) removeConsumer(c *Consumer) {
-	b.consumerMu.Lock()
-	delete(b.consumers, c)
-	b.consumerMu.Unlock()
+	b.state.consumerMu.Lock()
+	delete(b.state.consumers, c)
+	b.state.consumerMu.Unlock()
 }
 
 // Devices returns the broker's device registry.
 func (b *Broker) Devices() *DeviceRegistry {
-	return b.devices
+	return b.state.devices
 }
 
 // Values returns the broker's last-values store.
 func (b *Broker) Values() *ValueStore {
-	return b.values
+	return b.state.values
 }
+
 
 // VirtualDevices returns the broker's virtual device manager, or nil if disabled.
 func (b *Broker) VirtualDevices() *VirtualDeviceManager {
@@ -995,18 +998,18 @@ func (b *Broker) Stats() BrokerStats {
 	ringCap := b.ringMask + 1
 	b.mu.RUnlock()
 
-	b.sessionMu.RLock()
-	sessions := len(b.sessions)
-	b.sessionMu.RUnlock()
+	b.state.sessionMu.RLock()
+	sessions := len(b.state.sessions)
+	b.state.sessionMu.RUnlock()
 
-	b.subscriberMu.RLock()
-	subscribers := len(b.subscribers)
-	b.subscriberMu.RUnlock()
+	b.state.subscriberMu.RLock()
+	subscribers := len(b.state.subscribers)
+	b.state.subscriberMu.RUnlock()
 
-	b.consumerMu.RLock()
-	consumers := len(b.consumers)
+	b.state.consumerMu.RLock()
+	consumers := len(b.state.consumers)
 	var maxLag uint64
-	for c := range b.consumers {
+	for c := range b.state.consumers {
 		cursor := c.Cursor()
 		if head > cursor {
 			if lag := head - cursor; lag > maxLag {
@@ -1014,7 +1017,7 @@ func (b *Broker) Stats() BrokerStats {
 			}
 		}
 	}
-	b.consumerMu.RUnlock()
+	b.state.consumerMu.RUnlock()
 
 	var lastFrame time.Time
 	if nano := b.lastFrameNano.Load(); nano != 0 {
@@ -1030,7 +1033,7 @@ func (b *Broker) Stats() BrokerStats {
 		ActiveSessions:    sessions,
 		ActiveSubscribers: subscribers,
 		ActiveConsumers:   consumers,
-		DeviceCount:       len(b.devices.Snapshot()),
+		DeviceCount:       len(b.state.devices.Snapshot()),
 		JournalDrops:      b.journalDrops.Load(),
 		DevicesAdded:      b.devicesAdded.Load(),
 		DevicesRemoved:    b.devicesRemoved.Load(),

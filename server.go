@@ -155,7 +155,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		ClientID: session.ID,
 		Seq:      seq,
 		Cursor:   session.Cursor,
-		Devices:  s.broker.devices.Snapshot(),
+		Devices:  s.broker.Devices().Snapshot(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -388,7 +388,7 @@ func (s *Server) checkSendPolicy(w http.ResponseWriter, bus string, pgn uint32, 
 	var dstNAME uint64
 	var nameKnown bool
 	if dst != 0xFF {
-		if dev := s.broker.devices.Get(bus, dst); dev != nil {
+		if dev := s.broker.Devices().Get(bus, dst); dev != nil {
 			dstNAME = dev.NAME
 			nameKnown = true
 		}
@@ -524,7 +524,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 // GET /devices
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(s.broker.devices.SnapshotJSON()); err != nil {
+	if _, err := w.Write(s.broker.Devices().SnapshotJSON()); err != nil {
 		s.logger.Error("failed to write devices response", "error", err)
 	}
 }
@@ -538,7 +538,7 @@ func (s *Server) handleValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(s.broker.values.SnapshotJSON(s.broker.devices, filter)); err != nil {
+	if _, err := w.Write(s.broker.Values().SnapshotJSON(s.broker.Devices(), filter)); err != nil {
 		s.logger.Error("failed to write values response", "error", err)
 	}
 }
@@ -552,7 +552,7 @@ func (s *Server) handleDecodedValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(s.broker.values.DecodedSnapshotJSON(s.broker.devices, filter)); err != nil {
+	if _, err := w.Write(s.broker.Values().DecodedSnapshotJSON(s.broker.Devices(), filter)); err != nil {
 		s.logger.Error("failed to write decoded values response", "error", err)
 	}
 }
