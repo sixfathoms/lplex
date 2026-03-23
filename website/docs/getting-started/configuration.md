@@ -30,6 +30,9 @@ interface = can0
 # Multi-bus: list of CAN interfaces (overrides 'interface' when set)
 # interfaces = ["can0", "can1"]
 
+# Use in-memory loopback buses instead of SocketCAN (for development on macOS)
+# loopback = false
+
 # HTTP listen port
 port = 8089
 
@@ -172,6 +175,7 @@ replication {
 |---|---|---|---|
 | `-interface` | `interface` | `can0` | SocketCAN interface (single bus) |
 | `-interfaces` | `interfaces` | (empty) | Comma-separated CAN interfaces for multi-bus (overrides `-interface`) |
+| `-loopback` | `loopback` | `false` | Use in-memory loopback buses instead of SocketCAN (for macOS development) |
 | `-port` | `port` | `8089` | HTTP listen port |
 | `-max-buffer-duration` | `max-buffer-duration` | `PT5M` | Max buffer timeout for sessions |
 | `-ring-size` | `ring-size` | `65536` | Ring buffer entries (power of 2) |

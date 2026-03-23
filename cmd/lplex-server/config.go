@@ -30,6 +30,7 @@ var configToFlag = map[string]string{
 	"journal.archive.command":           "journal-archive-command",
 	"journal.archive.trigger":           "journal-archive-trigger",
 	"ring-size":                      "ring-size",
+	"loopback":                       "loopback",
 	"device.idle-timeout":            "device-idle-timeout",
 	"send.enabled":                   "send-enabled",
 	"virtual-device.enabled":                "virtual-device",

@@ -12,11 +12,11 @@ This page walks through the internal design of lplex for contributors who want t
 The Broker is the heart of lplex. It runs in a single goroutine and owns all mutable frame routing state. This eliminates locks on the hot path.
 
 ```
-  CANReader (can0) ──┐
+  CANBus (can0) ─────┐
                      │  rxFrames   ┌─────────────────────────────────────────────────┐
-  CANReader (can1) ──┼──────────> │              Broker goroutine                    │
+  CANBus (can1) ─────┼──────────> │              Broker goroutine                    │
                      │  (channel)  │  1. Assign monotonic sequence number             │
-  CANReader (canN) ──┘             │  2. Pre-serialize frame as JSON (incl. bus tag)  │
+  CANBus (canN) ─────┘             │  2. Pre-serialize frame as JSON (incl. bus tag)  │
                                    │  3. Append to ring buffer                        │
                                    │  4. Update device registry (if PGN 60928/126996)│
                                    │  5. Update value store (last frame per src+PGN)  │
@@ -29,10 +29,14 @@ The Broker is the heart of lplex. It runs in a single goroutine and owns all mut
                                         txFrames   │              │  txFrames
                                         (per-bus)  │              │  (per-bus)
                                                    v              v
-                                           CANWriter (can0)  CANWriter (can1) ...
+                                           CANBus (can0)     CANBus (can1)    ...
 ```
 
-In multi-bus setups, each CAN interface gets its own CANReader and CANWriter goroutine. All readers feed into the single shared `rxFrames` channel. Each frame carries a `bus` tag identifying its origin interface. TX frames are routed to the correct per-bus CANWriter based on the target bus.
+In multi-bus setups, each CAN interface gets its own `CANBus` instance. All readers feed into the single shared `rxFrames` channel. Each frame carries a `bus` tag identifying its origin interface. TX frames are routed to the correct bus's `WriteFrames` based on the target bus.
+
+CAN I/O is abstracted behind the `CANBus` interface, which has two implementations:
+- **`SocketCANBus`**: Production implementation using Linux SocketCAN. Wraps `CANReader` (with fast-packet reassembly) and `CANWriter` (with fast-packet fragmentation and TX pacing).
+- **`LoopbackBus`**: In-memory loopback for testing and development on platforms without SocketCAN (e.g. macOS). Transmitted frames are echoed back as received frames, matching SocketCAN's kernel echo behavior. Enable with `-loopback` flag.
 
 **Why single-goroutine?** It makes the broker simple to reason about. All state mutations happen in one place. Consumers and HTTP handlers read shared state through RLock (ring buffer) or RWMutex (device registry, value store).
 
