@@ -80,6 +80,7 @@ func init() {
 	rootCmd.AddCommand(simulateCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(tailCmd)
+	rootCmd.AddCommand(dashboardCmd)
 }
 
 func main() {
