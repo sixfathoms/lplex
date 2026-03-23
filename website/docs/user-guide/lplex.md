@@ -190,6 +190,32 @@ lplex tail --last 100
 lplex tail --decode --pgn 129025
 ```
 
+## Dashboard
+
+`lplex dashboard` (alias: `lplex dash`) launches an interactive terminal UI showing live boat data. It polls the server periodically and displays a consolidated view of your NMEA 2000 network.
+
+**What it shows:**
+- Device table (discovered devices on the bus)
+- Decoded sensor values: GPS position, SOG/COG, depth, wind, heading, engine RPM, battery
+- PGN activity summary
+
+Press `q` or `Ctrl+C` to quit.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--refresh` | `1s` | How often to poll the server for updated data |
+
+```bash
+# Auto-discover server via mDNS
+lplex dashboard
+
+# Connect to a specific server
+lplex dash --server http://inuc1.local:8089
+
+# Slower refresh rate
+lplex dash --refresh 2s
+```
+
 ## Journal replay
 
 Replay a recorded journal file instead of connecting to a live server:

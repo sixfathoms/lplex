@@ -160,7 +160,7 @@ lplex-cloud process
 | `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANReader`, `CANWriter`, `JournalWriter`, `JournalKeeper`, `DeviceRegistry`, `ValueStore`, `FastPacketAssembler`, `ChangeTracker`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, `EventLog`, filters, ring buffer. Embeddable by external Go services. |
 | `cmd/lplex-server/` | Boat server: flag parsing, HOCON config, signal handling, mDNS registration, wires broker + CAN I/O + HTTP + optional replication |
 | `cmd/lplex-cloud/` | Cloud server: gRPC + HTTP servers, InstanceManager, mTLS, HOCON config |
-| `cmd/lplex/` | Multi-subcommand CLI: `dump` (streaming/replay), `tail` (simple live follow with optional replay), `simulate` (journal replay through full HTTP server), `inspect` (journal inspection), `verify` (journal integrity verification), `doctor` (system diagnostics), `devices`, `values`, `send`, `request`, `switches`. Uses cobra. Pretty-print, device table, PGN decoding (`--decode`), change tracking (`--changes`), display filter expressions (`--where`), auto-reconnect. |
+| `cmd/lplex/` | Multi-subcommand CLI: `dump` (streaming/replay), `tail` (simple live follow with optional replay), `dashboard` (interactive TUI with live data), `simulate` (journal replay through full HTTP server), `inspect` (journal inspection), `verify` (journal integrity verification), `doctor` (system diagnostics), `devices`, `values`, `send`, `request`, `switches`. Uses cobra. Pretty-print, device table, PGN decoding (`--decode`), change tracking (`--changes`), display filter expressions (`--where`), auto-reconnect. |
 | `cmd/pgngen/` | Code generator: reads `.pgn` DSL files, outputs Go structs/decoders/encoders, Protobuf, JSON Schema |
 | `lplexc/` | Public Go client library: Subscribe, Devices, Send, Session, mDNS discovery |
 | `filter/` | BPF-inspired display filter expressions for `lplex dump --where`. Lexer, recursive-descent parser, AST, and evaluator with reflection-based field access on decoded PGN structs. Supports header fields (`pgn`, `src`, `dst`, `prio`), decoded struct fields by JSON tag, and lookup sub-accessors (`register.name`). |
@@ -318,3 +318,5 @@ Both binaries share the same retention/archive flags: `-journal-retention-max-ag
 - `go.opentelemetry.io/otel` - OpenTelemetry distributed tracing (OTLP/gRPC exporter, HTTP + gRPC instrumentation)
 - `github.com/coder/websocket` - WebSocket transport for bidirectional client communication
 - `github.com/eclipse/paho.mqtt.golang` - MQTT client for bridge publishing to Home Assistant, Node-RED, etc.
+- `github.com/charmbracelet/bubbletea` - Terminal UI framework for interactive dashboard
+- `github.com/charmbracelet/lipgloss` - Style definitions for terminal UI rendering
