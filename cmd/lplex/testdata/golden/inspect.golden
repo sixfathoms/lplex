@@ -1,0 +1,19 @@
+File: /test/test-20250615T120000.000Z.lpj (4.0 KB)
+
+Header:
+  Magic:       LPJ
+  Version:     2
+  BlockSize:   4096
+  Compression: none (0)
+
+Blocks: 1
+
+  #         OFFSET      BASE SEQ  BLOCK SIZE  FRAMES   DEVS  BASE TIME (UTC)
+  ----  ----------  ------------  ----------  ------  -----  ----------------------------
+  0             16             0        4096       5      0  2025-06-15T12:00:00Z
+
+
+Time Span:
+  First: 2025-06-15T12:00:00Z
+  Last:  2025-06-15T12:00:00Z
+  Span:  0s
