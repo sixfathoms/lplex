@@ -13,7 +13,7 @@ func TestValueStoreRecordAndSnapshot(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(3, 129025, ts, []byte{0xaa, 0xbb}, 100)
+	vs.Record("",3, 129025, ts, []byte{0xaa, 0xbb}, 100)
 
 	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
@@ -44,8 +44,8 @@ func TestValueStoreOverwrite(t *testing.T) {
 	t0 := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	t1 := t0.Add(5 * time.Second)
 
-	vs.Record(1, 129025, t0, []byte{0x01}, 1)
-	vs.Record(1, 129025, t1, []byte{0x02}, 2)
+	vs.Record("",1, 129025, t0, []byte{0x01}, 1)
+	vs.Record("",1, 129025, t1, []byte{0x02}, 2)
 
 	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
@@ -68,8 +68,8 @@ func TestValueStoreMultipleSourcesSamePGN(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(1, 129025, ts, []byte{0x01}, 1)
-	vs.Record(5, 129025, ts, []byte{0x05}, 2)
+	vs.Record("",1, 129025, ts, []byte{0x01}, 1)
+	vs.Record("",5, 129025, ts, []byte{0x05}, 2)
 
 	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 2 {
@@ -94,13 +94,13 @@ func TestValueStoreDeviceResolution(t *testing.T) {
 	name |= uint64(229) << 21 // Garmin
 	name |= uint64(12345)
 	binary.LittleEndian.PutUint64(claim, name)
-	reg.HandleAddressClaim(3, claim)
+	reg.HandleAddressClaim("",3, claim)
 
 	prodPayload := buildProductInfoPayload(4242, "GPS 19x", "4.80", "1.0", "SN-001")
-	reg.HandleProductInfo(3, prodPayload)
+	reg.HandleProductInfo("",3, prodPayload)
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(3, 129025, ts, []byte{0xaa}, 1)
+	vs.Record("",3, 129025, ts, []byte{0xaa}, 1)
 
 	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
@@ -123,7 +123,7 @@ func TestValueStoreUnknownDevice(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(99, 129025, ts, []byte{0xff}, 1)
+	vs.Record("",99, 129025, ts, []byte{0xff}, 1)
 
 	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
@@ -166,8 +166,8 @@ func TestValueStoreMultiplePGNsSameSource(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(1, 129026, ts, []byte{0x01}, 1) // COG/SOG
-	vs.Record(1, 129025, ts, []byte{0x02}, 2) // Position
+	vs.Record("",1, 129026, ts, []byte{0x01}, 1) // COG/SOG
+	vs.Record("",1, 129025, ts, []byte{0x02}, 2) // Position
 
 	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
@@ -190,7 +190,7 @@ func TestValueStoreSnapshotJSONShape(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(3, 129025, ts, []byte{0xaa, 0xbb, 0xcc, 0xdd}, 12345)
+	vs.Record("",3, 129025, ts, []byte{0xaa, 0xbb, 0xcc, 0xdd}, 12345)
 
 	jsonBytes := vs.SnapshotJSON(reg, nil)
 
@@ -211,10 +211,10 @@ func TestValueStoreStatsOnlyDeviceShowsEmpty(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	// Device has RecordPacket (stats-only, NAME=0) but no address claim.
-	reg.RecordPacket(42, time.Now(), 8)
+	reg.RecordPacket("",42, time.Now(), 8)
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(42, 129025, ts, []byte{0x01}, 1)
+	vs.Record("",42, 129025, ts, []byte{0x01}, 1)
 
 	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
@@ -231,9 +231,9 @@ func TestValueStoreSnapshotFilterByPGN(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(1, 129025, ts, []byte{0x01}, 1) // Position
-	vs.Record(1, 129026, ts, []byte{0x02}, 2) // COG/SOG
-	vs.Record(2, 129025, ts, []byte{0x03}, 3) // Position from another device
+	vs.Record("",1, 129025, ts, []byte{0x01}, 1) // Position
+	vs.Record("",1, 129026, ts, []byte{0x02}, 2) // COG/SOG
+	vs.Record("",2, 129025, ts, []byte{0x03}, 3) // Position from another device
 
 	snap := vs.Snapshot(reg, &EventFilter{PGNs: []uint32{129025}})
 	if len(snap) != 2 {
@@ -259,7 +259,7 @@ func TestValueStoreSnapshotFilterByManufacturer(t *testing.T) {
 	name |= uint64(229) << 21 // Garmin manufacturer code
 	name |= uint64(1)
 	binary.LittleEndian.PutUint64(claim, name)
-	reg.HandleAddressClaim(1, claim)
+	reg.HandleAddressClaim("",1, claim)
 
 	// Register Simrad (code 1857) at source 2.
 	claim2 := make([]byte, 8)
@@ -267,11 +267,11 @@ func TestValueStoreSnapshotFilterByManufacturer(t *testing.T) {
 	name2 |= uint64(1857) << 21
 	name2 |= uint64(2)
 	binary.LittleEndian.PutUint64(claim2, name2)
-	reg.HandleAddressClaim(2, claim2)
+	reg.HandleAddressClaim("",2, claim2)
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(1, 129025, ts, []byte{0x01}, 1)
-	vs.Record(2, 129025, ts, []byte{0x02}, 2)
+	vs.Record("",1, 129025, ts, []byte{0x01}, 1)
+	vs.Record("",2, 129025, ts, []byte{0x02}, 2)
 
 	snap := vs.Snapshot(reg, &EventFilter{Manufacturers: []string{"Garmin"}})
 	if len(snap) != 1 {
@@ -292,12 +292,12 @@ func TestValueStoreSnapshotFilterByPGNAndManufacturer(t *testing.T) {
 	name |= uint64(229) << 21
 	name |= uint64(1)
 	binary.LittleEndian.PutUint64(claim, name)
-	reg.HandleAddressClaim(1, claim)
+	reg.HandleAddressClaim("",1, claim)
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(1, 129025, ts, []byte{0x01}, 1)
-	vs.Record(1, 129026, ts, []byte{0x02}, 2)
-	vs.Record(2, 129025, ts, []byte{0x03}, 3) // unknown device
+	vs.Record("",1, 129025, ts, []byte{0x01}, 1)
+	vs.Record("",1, 129026, ts, []byte{0x02}, 2)
+	vs.Record("",2, 129025, ts, []byte{0x03}, 3) // unknown device
 
 	snap := vs.Snapshot(reg, &EventFilter{
 		PGNs:          []uint32{129025},
@@ -329,7 +329,7 @@ func TestValueStoreDecodedSnapshot(t *testing.T) {
 	lonRaw := int32(-1223321000)
 	binary.LittleEndian.PutUint32(posData[0:4], uint32(latRaw))
 	binary.LittleEndian.PutUint32(posData[4:8], uint32(lonRaw))
-	vs.Record(1, 129025, ts, posData, 10)
+	vs.Record("",1, 129025, ts, posData, 10)
 
 	snap := vs.DecodedSnapshot(reg, nil)
 	if len(snap) != 1 {
@@ -373,7 +373,7 @@ func TestValueStoreDecodedSnapshotUnknownPGN(t *testing.T) {
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	// Use a PGN unlikely to be in the registry.
-	vs.Record(1, 999999, ts, []byte{0x01, 0x02}, 1)
+	vs.Record("",1, 999999, ts, []byte{0x01, 0x02}, 1)
 
 	snap := vs.DecodedSnapshot(reg, nil)
 	if len(snap) != 0 {
@@ -403,14 +403,14 @@ func TestValueStoreDecodedSnapshotWithFilter(t *testing.T) {
 	lonRaw2 := int32(-200000000)
 	binary.LittleEndian.PutUint32(posData[0:4], uint32(latRaw2))
 	binary.LittleEndian.PutUint32(posData[4:8], uint32(lonRaw2))
-	vs.Record(1, 129025, ts, posData, 1)
+	vs.Record("",1, 129025, ts, posData, 1)
 
 	windData := make([]byte, 8)
 	windData[0] = 0                                     // sid
 	binary.LittleEndian.PutUint16(windData[1:3], 550)   // speed 5.5 m/s
 	binary.LittleEndian.PutUint16(windData[3:5], 12345) // angle
 	windData[5] = 2                                     // apparent
-	vs.Record(1, 130306, ts, windData, 2)
+	vs.Record("",1, 130306, ts, windData, 2)
 
 	snap := vs.DecodedSnapshot(reg, &EventFilter{PGNs: []uint32{129025}})
 	if len(snap) != 1 {
@@ -429,11 +429,11 @@ func TestValueStoreRemoveSource(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(1, 129025, ts, []byte{0x01}, 1)
-	vs.Record(1, 129026, ts, []byte{0x02}, 2)
-	vs.Record(5, 129025, ts, []byte{0x03}, 3)
+	vs.Record("",1, 129025, ts, []byte{0x01}, 1)
+	vs.Record("",1, 129026, ts, []byte{0x02}, 2)
+	vs.Record("",5, 129025, ts, []byte{0x03}, 3)
 
-	vs.RemoveSource(1)
+	vs.RemoveSource("",1)
 
 	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
@@ -449,10 +449,10 @@ func TestValueStoreRemoveSourceNonexistent(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(1, 129025, ts, []byte{0x01}, 1)
+	vs.Record("",1, 129025, ts, []byte{0x01}, 1)
 
 	// Removing a source that doesn't exist should be a no-op.
-	vs.RemoveSource(99)
+	vs.RemoveSource("",99)
 
 	snap := vs.Snapshot(reg, nil)
 	if len(snap) != 1 {
@@ -465,7 +465,7 @@ func TestValueStoreSnapshotFilterMatchesNothing(t *testing.T) {
 	reg := NewDeviceRegistry()
 
 	ts := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	vs.Record(1, 129025, ts, []byte{0x01}, 1)
+	vs.Record("",1, 129025, ts, []byte{0x01}, 1)
 
 	snap := vs.Snapshot(reg, &EventFilter{PGNs: []uint32{60928}})
 	if len(snap) != 0 {

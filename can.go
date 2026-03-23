@@ -11,6 +11,7 @@ import (
 
 // CANReader reads frames from SocketCAN, reassembles fast-packets,
 // and sends completed frames to the broker's rxFrames channel.
+// The iface name (e.g. "can0") is used as the Bus tag on each frame.
 func CANReader(ctx context.Context, iface string, rxFrames chan<- RxFrame, logger *slog.Logger) error {
 	conn, err := socketcan.DialContext(ctx, "can", iface)
 	if err != nil {
@@ -69,7 +70,7 @@ func CANReader(ctx context.Context, iface string, rxFrames chan<- RxFrame, logge
 		}
 
 		select {
-		case rxFrames <- RxFrame{Timestamp: now, Header: header, Data: data}:
+		case rxFrames <- RxFrame{Timestamp: now, Header: header, Data: data, Bus: iface}:
 		case <-ctx.Done():
 			return ctx.Err()
 		}

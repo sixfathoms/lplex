@@ -40,6 +40,20 @@ lplex dump --server http://inuc1.local:8089
 curl -N http://inuc1.local:8089/events
 ```
 
+### Multi-bus filtering
+
+In multi-bus setups (multiple CAN interfaces), you can filter streams by bus name using the `bus` query parameter:
+
+```bash
+# Only frames from can1
+curl -N "http://inuc1.local:8089/events?bus=can1"
+
+# Combine with PGN filter
+curl -N "http://inuc1.local:8089/events?bus=can0&pgn=129025"
+```
+
+The same `bus` parameter works on the WebSocket endpoint (`/ws?bus=can0`). The `bus` field also appears in each frame's JSON so clients can distinguish which interface a frame arrived on.
+
 ## Buffered mode
 
 For reliable delivery with replay. The server keeps a cursor for your session and replays missed frames on reconnect.

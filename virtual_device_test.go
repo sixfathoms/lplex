@@ -29,7 +29,7 @@ func newTestVDM() *testVDM {
 func (t *testVDM) registerDevice(src uint8, name uint64) {
 	data := make([]byte, 8)
 	putUint64LE(data, name)
-	t.registry.HandleAddressClaim(src, data)
+	t.registry.HandleAddressClaim("", src, data)
 }
 
 func putUint64LE(b []byte, v uint64) {

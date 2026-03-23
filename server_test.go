@@ -340,7 +340,7 @@ func TestDevices(t *testing.T) {
 	var name uint64
 	name |= uint64(229) << 21 // Garmin
 	binary.LittleEndian.PutUint64(data, name)
-	b.devices.HandleAddressClaim(1, data)
+	b.devices.HandleAddressClaim("", 1, data)
 
 	req := httptest.NewRequest("GET", "/devices", nil)
 	w := httptest.NewRecorder()
@@ -1118,7 +1118,7 @@ func TestSendRuleNAMEWithDevice(t *testing.T) {
 	// Register a device at source 10 with a known NAME.
 	nameBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(nameBytes, 0x001c6e4000200000)
-	b.devices.HandleAddressClaim(10, nameBytes)
+	b.devices.HandleAddressClaim("", 10, nameBytes)
 
 	rules, _ := ParseSendRules([]string{"pgn:59904 name:001c6e4000200000"})
 	srv := NewServer(b, b.logger, SendPolicy{Enabled: true, Rules: rules})
@@ -1168,7 +1168,7 @@ func TestSendRuleOrderedEvaluation(t *testing.T) {
 
 	nameBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(nameBytes, 0x001c6e4000200000)
-	b.devices.HandleAddressClaim(10, nameBytes)
+	b.devices.HandleAddressClaim("", 10, nameBytes)
 
 	// Allow PGN 59904 to specific device, allow broadcast PGN 59904, deny everything else.
 	rules, _ := ParseSendRules([]string{

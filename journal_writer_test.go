@@ -723,8 +723,8 @@ func TestJournalProductInfoRoundTrip(t *testing.T) {
 	devices := NewDeviceRegistry()
 	claimData := make([]byte, 8)
 	binary.LittleEndian.PutUint64(claimData, nameA)
-	devices.HandleAddressClaim(10, claimData)
-	devices.HandleProductInfo(10, makeProductInfo(4242, "GNX 120", "5.20", "1.0.3", "SN12345"))
+	devices.HandleAddressClaim("",10, claimData)
+	devices.HandleProductInfo("",10, makeProductInfo(4242, "GNX 120", "5.20", "1.0.3", "SN12345"))
 
 	frames := []RxFrame{
 		makeFrame(base, 129025, 10, []byte{1, 2, 3, 4, 5, 6, 7, 8}),
@@ -806,8 +806,8 @@ func TestJournalProductInfoInBlockChange(t *testing.T) {
 	// Pre-register the device so HandleProductInfo works.
 	claimData := make([]byte, 8)
 	binary.LittleEndian.PutUint64(claimData, nameA)
-	devices.HandleAddressClaim(5, claimData)
-	devices.HandleProductInfo(5, makeProductInfo(9999, "Pilot", "2.0", "3.1", "XYZ"))
+	devices.HandleAddressClaim("",5, claimData)
+	devices.HandleProductInfo("",5, makeProductInfo(9999, "Pilot", "2.0", "3.1", "XYZ"))
 
 	frames := []RxFrame{
 		makeFrame(base, 129025, 10, []byte{1, 2, 3, 4, 5, 6, 7, 8}),

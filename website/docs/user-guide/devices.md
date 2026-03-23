@@ -59,11 +59,16 @@ The NAME must be a 64-bit hex value. Lower values have higher priority in addres
 
 Heartbeat intervals are configurable via `-virtual-device-claim-heartbeat` (default `60s`) and `-virtual-device-product-info-heartbeat` (default `5m`). See [Configuration](../getting-started/configuration.md) for all options.
 
+## Multi-bus device keying
+
+In multi-bus setups (multiple CAN interfaces), devices are keyed by **(bus, source address)** rather than source address alone. This means two devices on different buses can share the same source address without conflicting. The `bus` field appears in device JSON responses to identify which interface each device was discovered on.
+
 ## Device table fields
 
 | Field | Source | Description |
 |---|---|---|
 | `src` | CAN header | Current source address (0-253) |
+| `bus` | CAN interface | Bus name (e.g. `"can0"`). Present in multi-bus setups. |
 | `name` | PGN 60928 | 64-bit ISO 11783 NAME (hex string) |
 | `manufacturer` | PGN 60928 | Manufacturer name (resolved from code) |
 | `manufacturer_code` | PGN 60928 | Raw manufacturer code |

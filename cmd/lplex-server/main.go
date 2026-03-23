@@ -27,7 +27,8 @@ var (
 )
 
 func main() {
-	iface := flag.String("interface", "can0", "SocketCAN interface name")
+	iface := flag.String("interface", "can0", "SocketCAN interface name (for single-bus; use -interfaces for multi-bus)")
+	ifacesStr := flag.String("interfaces", "", "Comma-separated SocketCAN interface names for multi-bus (e.g. can0,can1)")
 	port := flag.Int("port", 8089, "HTTP listen port")
 	maxBufDur := flag.String("max-buffer-duration", "PT5M", "Max client buffer duration (ISO 8601, e.g. PT5M)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
@@ -297,23 +298,87 @@ func main() {
 
 	go broker.Run()
 
-	go func() {
-		if err := lplex.CANReader(ctx, *iface, broker.RxFrames(), logger); err != nil {
-			if ctx.Err() == nil {
-				logger.Error("CAN reader failed", "error", err)
-				cancel()
+	// Resolve interface list: -interfaces takes priority over -interface.
+	var ifaces []string
+	if *ifacesStr != "" {
+		for _, s := range strings.Split(*ifacesStr, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				ifaces = append(ifaces, s)
 			}
 		}
-	}()
+	} else {
+		ifaces = []string{*iface}
+	}
 
-	go func() {
-		if err := lplex.CANWriter(ctx, *iface, broker.TxFrames(), logger); err != nil {
-			if ctx.Err() == nil {
-				logger.Error("CAN writer failed", "error", err)
-				cancel()
+	// Start CAN readers (one per interface, all feed into the same broker).
+	for _, canIface := range ifaces {
+		canIface := canIface // capture for goroutine
+		go func() {
+			if err := lplex.CANReader(ctx, canIface, broker.RxFrames(), logger); err != nil {
+				if ctx.Err() == nil {
+					logger.Error("CAN reader failed", "error", err, "interface", canIface)
+					cancel()
+				}
 			}
+		}()
+	}
+
+	// Start TX dispatcher: routes TxRequests from the broker to the correct
+	// CAN interface based on the Bus field. Empty Bus = first interface.
+	if len(ifaces) == 1 {
+		// Single bus: direct writer, no routing needed.
+		go func() {
+			if err := lplex.CANWriter(ctx, ifaces[0], broker.TxFrames(), logger); err != nil {
+				if ctx.Err() == nil {
+					logger.Error("CAN writer failed", "error", err, "interface", ifaces[0])
+					cancel()
+				}
+			}
+		}()
+	} else {
+		// Multi-bus: per-interface TX channels with a dispatcher goroutine.
+		txChans := make(map[string]chan lplex.TxRequest, len(ifaces))
+		for _, canIface := range ifaces {
+			ch := make(chan lplex.TxRequest, 64)
+			txChans[canIface] = ch
+			canIface := canIface
+			go func() {
+				if err := lplex.CANWriter(ctx, canIface, ch, logger); err != nil {
+					if ctx.Err() == nil {
+						logger.Error("CAN writer failed", "error", err, "interface", canIface)
+					}
+				}
+			}()
 		}
-	}()
+		defaultBus := ifaces[0]
+		go func() {
+			for req := range broker.TxFrames() {
+				bus := req.Bus
+				if bus == "" {
+					bus = defaultBus
+				}
+				if ch, ok := txChans[bus]; ok {
+					select {
+					case ch <- req:
+					default:
+					}
+				} else {
+					logger.Warn("TX for unknown bus, routing to default", "bus", bus, "default", defaultBus)
+					if ch, ok := txChans[defaultBus]; ok {
+						select {
+						case ch <- req:
+						default:
+						}
+					}
+				}
+			}
+			// Close all per-interface channels when the broker's TX channel closes.
+			for _, ch := range txChans {
+				close(ch)
+			}
+		}()
+	}
 
 	// Set up alert manager if webhook is configured.
 	dedupWindow, err := time.ParseDuration(*alertDedupWindow)
@@ -457,7 +522,7 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("HTTP server starting", "addr", addr, "interface", *iface, "version", version)
+		logger.Info("HTTP server starting", "addr", addr, "interfaces", ifaces, "version", version)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTP server failed", "error", err)
 			cancel()

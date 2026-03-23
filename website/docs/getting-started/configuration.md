@@ -24,8 +24,11 @@ Both `lplex-server` and `lplex-cloud` support [HOCON](https://github.com/lightbe
 ### Full annotated config
 
 ```hocon
-# CAN interface name
+# CAN interface name (single bus)
 interface = can0
+
+# Multi-bus: list of CAN interfaces (overrides 'interface' when set)
+# interfaces = ["can0", "can1"]
 
 # HTTP listen port
 port = 8089
@@ -167,7 +170,8 @@ replication {
 
 | Flag | HOCON Path | Default | Description |
 |---|---|---|---|
-| `-interface` | `interface` | `can0` | SocketCAN interface |
+| `-interface` | `interface` | `can0` | SocketCAN interface (single bus) |
+| `-interfaces` | `interfaces` | (empty) | Comma-separated CAN interfaces for multi-bus (overrides `-interface`) |
 | `-port` | `port` | `8089` | HTTP listen port |
 | `-max-buffer-duration` | `max-buffer-duration` | `PT5M` | Max buffer timeout for sessions |
 | `-ring-size` | `ring-size` | `65536` | Ring buffer entries (power of 2) |
