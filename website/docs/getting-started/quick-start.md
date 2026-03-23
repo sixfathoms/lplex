@@ -115,6 +115,16 @@ Or force JSON mode explicitly:
 lplex dump --server http://inuc1.local:8089 --json --decode
 ```
 
+## Offline development
+
+If you don't have a live CAN bus, you can replay a recorded journal file through a full HTTP server using `lplex simulate`:
+
+```bash
+lplex simulate --file recording.lpj
+```
+
+This starts a server on port 8090 with all standard endpoints (`/events`, `/ws`, `/devices`, `/values`, `/history`), so you can develop and test clients without a boat. See [lplex simulate](/user-guide/lplex#simulation) for details.
+
 ## What's next
 
 - [Configuration](/getting-started/configuration) for all server options
