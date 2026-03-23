@@ -515,6 +515,10 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tx queue full", http.StatusServiceUnavailable)
 		return
 	}
+	s.logger.Info("send", "component", "audit",
+		"client_ip", r.RemoteAddr,
+		"pgn", req.PGN, "src", src, "dst", req.Dst,
+		"prio", req.Prio, "data", req.Data, "bus", req.Bus)
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -573,6 +577,10 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	s.logger.Info("query", "component", "audit",
+		"client_ip", r.RemoteAddr,
+		"pgn", req.PGN, "dst", req.Dst, "bus", req.Bus,
+		"timeout", timeout)
 
 	// Wait for a response frame.
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
