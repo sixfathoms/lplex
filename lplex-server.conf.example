@@ -14,6 +14,11 @@ interface = can0
 # TX frames are echoed back as RX frames (matching SocketCAN kernel echo).
 # loopback = false
 
+# API key for HTTP authentication. When set, all requests must include
+# the key via "Authorization: Bearer <key>" or "X-API-Key: <key>" header.
+# Health endpoints (/healthz, /livez, /readyz, /metrics) are exempt.
+# api-key = "your-secret-key-here"
+
 # HTTP listen port
 port = 8089
 

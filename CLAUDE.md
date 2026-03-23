@@ -304,6 +304,8 @@ lplex-server has send policy flags to gate the `/send` and `/query` endpoints: `
 
 Both binaries support `-device-idle-timeout` (default `5m`, `0` = disabled) to remove devices that haven't been seen within the timeout. HOCON path: `device.idle-timeout`. When a device is evicted (either by idle expiry or by NAME dedup on address change), its ValueStore entries are cleaned up and a `device_removed` event is sent to subscribers.
 
+lplex-server supports optional API key authentication via `-api-key` (HOCON path: `api-key`). When set, all HTTP requests must include the key via `Authorization: Bearer <key>` or `X-API-Key: <key>` header. Health endpoints (`/healthz`, `/livez`, `/readyz`, `/metrics`) are exempt.
+
 Both binaries support `-otel-endpoint` (OTLP gRPC collector endpoint, empty = disabled) and `-otel-sample-ratio` (0.0-1.0, default 1.0) for distributed tracing. When enabled, traces propagate via W3C Trace Context through HTTP (otelhttp middleware) and gRPC (otelgrpc interceptors) for end-to-end observability across boat → cloud replication.
 
 Both binaries share the same retention/archive flags: `-journal-retention-max-age`, `-journal-retention-min-keep`, `-journal-retention-max-size`, `-journal-retention-soft-pct`, `-journal-retention-overflow-policy`, `-journal-archive-command`, `-journal-archive-trigger`. HOCON paths: `journal.retention.max-age`, `journal.retention.min-keep`, `journal.retention.max-size`, `journal.retention.soft-pct`, `journal.retention.overflow-policy`, `journal.archive.command`, `journal.archive.trigger`. See [`lplex-server.conf.example`](lplex-server.conf.example) and [`lplex-cloud.conf.example`](lplex-cloud.conf.example).

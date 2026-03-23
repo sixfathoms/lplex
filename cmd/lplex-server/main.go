@@ -79,6 +79,7 @@ func main() {
 	mqttQoS := flag.Int("mqtt-qos", 0, "MQTT quality of service (0, 1, or 2)")
 	mqttUsername := flag.String("mqtt-username", "", "MQTT broker username")
 	mqttPassword := flag.String("mqtt-password", "", "MQTT broker password")
+	apiKey := flag.String("api-key", "", "API key for HTTP authentication (empty = no auth)")
 	flag.Parse()
 
 	if *showVersion {
@@ -206,6 +207,10 @@ func main() {
 		os.Exit(1)
 	}
 	srv := lplex.NewServer(broker, logger, sendPolicy)
+	if *apiKey != "" {
+		srv.SetAPIKey(*apiKey)
+		logger.Info("API key authentication enabled")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

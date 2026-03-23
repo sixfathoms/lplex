@@ -27,9 +27,11 @@ type Server struct {
 	logger     *slog.Logger
 	mux        *http.ServeMux
 	sendPolicy sendpolicy.SendPolicy
+	apiKey     string // if non-empty, all requests must authenticate
 }
 
 // NewServer creates a new HTTP server wired to the given broker.
+// Use SetAPIKey to enable authentication.
 func NewServer(broker *Broker, logger *slog.Logger, policy sendpolicy.SendPolicy) *Server {
 	s := &Server{
 		broker:     broker,
@@ -51,6 +53,13 @@ func NewServer(broker *Broker, logger *slog.Logger, policy sendpolicy.SendPolicy
 	return s
 }
 
+// SetAPIKey enables API key authentication. When set, all HTTP requests
+// must include the key via either the Authorization header (Bearer token)
+// or the X-API-Key header. Health/liveness endpoints are exempt.
+func (s *Server) SetAPIKey(key string) {
+	s.apiKey = key
+}
+
 // HandleFunc registers an additional HTTP handler on the server's mux.
 func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
 	s.mux.HandleFunc(pattern, handler)
@@ -67,6 +76,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// API key authentication (skip for health/liveness/readiness endpoints).
+	if s.apiKey != "" && !isHealthEndpoint(r.URL.Path) {
+		if !s.checkAPIKey(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
 	// WebSocket upgrades require http.Hijacker; bypass compression and
 	// tracing wrappers that strip it.
 	if r.Header.Get("Upgrade") == "websocket" {
@@ -78,6 +94,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return r.Method + " " + r.URL.Path
 		}),
 	).ServeHTTP(w, r)
+}
+
+// checkAPIKey validates the API key from the request. Supports both
+// "Authorization: Bearer <key>" and "X-API-Key: <key>" headers.
+func (s *Server) checkAPIKey(r *http.Request) bool {
+	// Check Authorization: Bearer <key>
+	if auth := r.Header.Get("Authorization"); len(auth) > 7 && auth[:7] == "Bearer " {
+		return auth[7:] == s.apiKey
+	}
+	// Check X-API-Key: <key>
+	if key := r.Header.Get("X-API-Key"); key != "" {
+		return key == s.apiKey
+	}
+	return false
+}
+
+// isHealthEndpoint returns true for health/liveness/readiness endpoints
+// that should be accessible without authentication.
+func isHealthEndpoint(path string) bool {
+	return path == "/healthz" || path == "/livez" || path == "/readyz" || path == "/metrics"
 }
 
 // clientIDPattern validates client IDs: alphanumeric, hyphens, underscores, 1-64 chars.
