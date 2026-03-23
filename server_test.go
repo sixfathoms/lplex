@@ -1208,3 +1208,87 @@ func TestSendRuleOrderedEvaluation(t *testing.T) {
 		t.Fatalf("denied PGN: got %d, want 403", w.Code)
 	}
 }
+
+func TestAPIKeyAuthRejectsUnauthenticated(t *testing.T) {
+	b := newTestBroker()
+	go b.Run(context.Background())
+	defer b.CloseRx()
+
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{})
+	srv.SetAPIKey("test-secret-key")
+
+	// Request without API key should be rejected.
+	req := httptest.NewRequest("GET", "/devices", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("no key: got %d, want 401", w.Code)
+	}
+
+	// Request with wrong key should be rejected.
+	req = httptest.NewRequest("GET", "/devices", nil)
+	req.Header.Set("X-API-Key", "wrong-key")
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("wrong key: got %d, want 401", w.Code)
+	}
+}
+
+func TestAPIKeyAuthAcceptsBearerToken(t *testing.T) {
+	b := newTestBroker()
+	go b.Run(context.Background())
+	defer b.CloseRx()
+
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{})
+	srv.SetAPIKey("test-secret-key")
+
+	// Authorization: Bearer <key>
+	req := httptest.NewRequest("GET", "/devices", nil)
+	req.Header.Set("Authorization", "Bearer test-secret-key")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("bearer token: got %d, want 200", w.Code)
+	}
+}
+
+func TestAPIKeyAuthAcceptsXAPIKey(t *testing.T) {
+	b := newTestBroker()
+	go b.Run(context.Background())
+	defer b.CloseRx()
+
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{})
+	srv.SetAPIKey("test-secret-key")
+
+	// X-API-Key header
+	req := httptest.NewRequest("GET", "/devices", nil)
+	req.Header.Set("X-API-Key", "test-secret-key")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("x-api-key: got %d, want 200", w.Code)
+	}
+}
+
+func TestAPIKeyAuthExemptsHealthEndpoints(t *testing.T) {
+	b := newTestBroker()
+	go b.Run(context.Background())
+	defer b.CloseRx()
+
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{})
+	srv.SetAPIKey("test-secret-key")
+	srv.HandleFunc("GET /healthz", HealthHandler(HealthConfig{Broker: b}))
+	srv.HandleFunc("GET /livez", LivenessHandler())
+	srv.HandleFunc("GET /metrics", MetricsHandler(b, nil, nil))
+
+	// Health endpoints should work without auth.
+	for _, path := range []string{"/healthz", "/livez", "/metrics"} {
+		req := httptest.NewRequest("GET", path, nil)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("%s without auth: got %d, want 200", path, w.Code)
+		}
+	}
+}

@@ -47,6 +47,7 @@ var configToFlag = map[string]string{
 	"replication.max-live-lag":               "replication-max-live-lag",
 	"replication.lag-check-interval":         "replication-lag-check-interval",
 	"replication.min-lag-reconnect-interval": "replication-min-lag-reconnect-interval",
+	"api-key":                               "api-key",
 	"health.bus-silence-threshold":           "bus-silence-threshold",
 }
 

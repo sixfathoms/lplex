@@ -217,6 +217,7 @@ replication {
 | `-mqtt-qos` | `mqtt.qos` | `0` | MQTT QoS level (0, 1, or 2) |
 | `-mqtt-username` | `mqtt.username` | (empty) | MQTT broker username |
 | `-mqtt-password` | `mqtt.password` | (empty) | MQTT broker password |
+| `-api-key` | `api-key` | (empty) | API key for HTTP authentication (empty = no auth) |
 
 ## lplex-cloud
 
