@@ -843,15 +843,19 @@ func TestReplicationLiveLagDetection(t *testing.T) {
 		RingSize: 65536,
 		Logger:   logger,
 	})
-	go boatBroker.Run(context.Background())
-	defer boatBroker.CloseRx()
+	brokerCtx, brokerCancel := context.WithCancel(context.Background())
+	go boatBroker.Run(brokerCtx)
+	defer func() {
+		brokerCancel() // stop feedFrames goroutine and broker before closing channel
+		boatBroker.CloseRx()
+	}()
 
 	// Feed more than DefaultMaxLiveLag frames before starting replication so
 	// the consumer will start at seq 1 and immediately be behind.
 	feedFrames(boatBroker, int(DefaultMaxLiveLag)+5000)
 	waitForSeq(t, boatBroker, DefaultMaxLiveLag+5000)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(brokerCtx, 30*time.Second)
 	defer cancel()
 
 	done := make(chan error, 1)
