@@ -65,6 +65,7 @@ func main() {
 	ringSize := flag.Int("ring-size", 65536, "Ring buffer size in entries (must be power of 2)")
 	busSilenceTimeout := flag.String("bus-silence-timeout", "", "Alert when no CAN frames received for this duration (ISO 8601, e.g. PT30S)")
 	configFile := flag.String("config", "", "Path to HOCON config file (default: ./lplex-server.conf, /etc/lplex/lplex-server.conf)")
+	validateConfig := flag.Bool("validate-config", false, "Parse and validate config, then exit")
 	otelEndpoint := flag.String("otel-endpoint", "", "OTLP gRPC collector endpoint for distributed tracing (e.g. localhost:4317)")
 	otelSampleRatio := flag.Float64("otel-sample-ratio", 1.0, "Trace sampling ratio (0.0-1.0, default: 1.0 = sample all)")
 	alertWebhookURL := flag.String("alert-webhook-url", "", "HTTP POST endpoint for alert notifications (empty = disabled)")
@@ -93,6 +94,24 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+	}
+
+	// Validate-config mode: parse everything, report errors, then exit.
+	if *validateConfig {
+		exitCode := runValidateConfig(cfgPath,
+			*maxBufDur, *deviceIdleTimeout, *journalBlockSize, *ringSize,
+			*journalRotateDur, *journalCompression,
+			*retentionMaxAge, *retentionMinKeep, *retentionMaxSize,
+			*retentionSoftPct, *retentionOverflowPolicy,
+			*archiveCommand, *archiveTriggerStr,
+			*busSilenceTimeout, *busSilenceThreshold,
+			*alertDedupWindow,
+			*claimHeartbeatStr, *productInfoHeartbeatStr,
+			*sendEnabled, *sendRulesStr,
+			*virtualDeviceEnabled, *virtualDeviceName,
+			*replMinLagReconnect,
+		)
+		os.Exit(exitCode)
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))

@@ -312,6 +312,16 @@ sudo journalctl -u lplex-server -f
 sudo systemctl restart lplex-server
 ```
 
+## Config validation
+
+`lplex-server -validate-config` parses and validates the configuration without starting the server. It works with `-config path` or auto-discovered config files, and checks all durations, sizes, enum values, send rules, and virtual device config. Each setting is reported as `[OK]`, `[FAIL]`, or `[WARN]`.
+
+Exit code 0 means the config is valid; exit code 1 means errors were found.
+
+```bash
+lplex-server -validate-config -config /etc/lplex/lplex-server.conf
+```
+
 ## Duration format
 
 All duration values use [ISO 8601 duration format](https://en.wikipedia.org/wiki/ISO_8601#Durations):
