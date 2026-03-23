@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -231,7 +232,8 @@ func (c *Consumer) readFromJournal(ctx context.Context) (*Frame, error) {
 					c.closeJournal()
 					return nil, nil
 				}
-				return nil, ErrFallenBehind
+				return nil, fmt.Errorf("%w: %w", ErrFallenBehind,
+					&SequenceGapError{ExpectedSeq: c.cursor, ActualSeq: seq})
 			}
 
 			entry := c.jReader.Frame()

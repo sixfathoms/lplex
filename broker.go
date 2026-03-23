@@ -825,7 +825,7 @@ func (b *Broker) AckSession(id string, seq uint64) error {
 
 	s, ok := b.state.sessions[id]
 	if !ok {
-		return fmt.Errorf("session not found: %s", id)
+		return &SessionNotFoundError{SessionID: id}
 	}
 	s.Cursor = seq
 	s.LastActivity = time.Now()
