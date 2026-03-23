@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/sixfathoms/lplex"
+	"github.com/sixfathoms/lplex/keeper"
 	pb "github.com/sixfathoms/lplex/proto/replication/v1"
+	"github.com/sixfathoms/lplex/sendpolicy"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc"
@@ -157,15 +159,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	var keeper *lplex.JournalKeeper
+	var jk *keeper.JournalKeeper
 	if keeperCfg != nil {
-		keeper = lplex.NewJournalKeeper(*keeperCfg)
-		keeper.SetOnPauseChange(func(dir lplex.KeeperDir, paused bool) {
+		jk = keeper.NewJournalKeeper(*keeperCfg)
+		jk.SetOnPauseChange(func(dir keeper.KeeperDir, paused bool) {
 			im.SetInstancePaused(dir.InstanceID, paused)
 		})
-		im.SetOnRotate(func(instanceID string, rf lplex.RotatedFile) {
+		im.SetOnRotate(func(instanceID string, rf keeper.RotatedFile) {
 			rf.InstanceID = instanceID
-			keeper.Send(rf)
+			jk.Send(rf)
 		})
 	}
 
@@ -184,11 +186,11 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	if keeper != nil {
+	if jk != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			keeper.Run(ctx)
+			jk.Run(ctx)
 		}()
 		logger.Info("journal keeper enabled",
 			"max_age", *retentionMaxAge,
@@ -442,7 +444,7 @@ func registerCloudHTTP(mux *http.ServeMux, im *lplex.InstanceManager, replServer
 			return
 		}
 
-		srv := lplex.NewServer(broker, logger, lplex.SendPolicy{})
+		srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{})
 		srv.HandleEphemeralSSE(w, r)
 	})
 
@@ -535,7 +537,7 @@ func buildKeeperConfig(
 	softPct int, overflowPolicyStr string,
 	archiveCmd, archiveTriggerStr string,
 	logger *slog.Logger,
-) (*lplex.KeeperConfig, error) {
+) (*keeper.KeeperConfig, error) {
 	var maxAge, minKeep time.Duration
 	var err error
 
@@ -552,12 +554,12 @@ func buildKeeperConfig(
 		}
 	}
 
-	archiveTrigger, err := lplex.ParseArchiveTrigger(archiveTriggerStr)
+	archiveTrigger, err := keeper.ParseArchiveTrigger(archiveTriggerStr)
 	if err != nil {
 		return nil, err
 	}
 
-	overflowPolicy, err := lplex.ParseOverflowPolicy(overflowPolicyStr)
+	overflowPolicy, err := keeper.ParseOverflowPolicy(overflowPolicyStr)
 	if err != nil {
 		return nil, err
 	}
@@ -566,17 +568,17 @@ func buildKeeperConfig(
 		return nil, nil
 	}
 
-	return &lplex.KeeperConfig{
-		DirFunc: func() []lplex.KeeperDir {
+	return &keeper.KeeperConfig{
+		DirFunc: func() []keeper.KeeperDir {
 			instancesDir := filepath.Join(dataDir, "instances")
 			entries, err := os.ReadDir(instancesDir)
 			if err != nil {
 				return nil
 			}
-			var dirs []lplex.KeeperDir
+			var dirs []keeper.KeeperDir
 			for _, e := range entries {
 				if e.IsDir() {
-					dirs = append(dirs, lplex.KeeperDir{
+					dirs = append(dirs, keeper.KeeperDir{
 						Dir:        filepath.Join(instancesDir, e.Name(), "journal"),
 						InstanceID: e.Name(),
 					})

@@ -1,4 +1,4 @@
-package lplex
+package sendpolicy
 
 import (
 	"fmt"

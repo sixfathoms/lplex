@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/sixfathoms/lplex/sendpolicy"
 )
 
 func TestHistoryEndpoint(t *testing.T) {
@@ -34,7 +36,7 @@ func TestHistoryEndpoint(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	srv := NewServer(b, slog.Default(), SendPolicy{})
+	srv := NewServer(b, slog.Default(), sendpolicy.SendPolicy{})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -95,7 +97,7 @@ func TestHistoryPGNFilter(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	srv := NewServer(b, slog.Default(), SendPolicy{})
+	srv := NewServer(b, slog.Default(), sendpolicy.SendPolicy{})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -129,7 +131,7 @@ func TestHistoryMissingFrom(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	srv := NewServer(b, slog.Default(), SendPolicy{})
+	srv := NewServer(b, slog.Default(), sendpolicy.SendPolicy{})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -154,7 +156,7 @@ func TestHistoryNoJournal(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	srv := NewServer(b, slog.Default(), SendPolicy{})
+	srv := NewServer(b, slog.Default(), sendpolicy.SendPolicy{})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -179,7 +181,7 @@ func TestHistoryEmptyDir(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	srv := NewServer(b, slog.Default(), SendPolicy{})
+	srv := NewServer(b, slog.Default(), sendpolicy.SendPolicy{})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -227,7 +229,7 @@ func TestHistoryDownsample(t *testing.T) {
 	defer b.CloseRx()
 	drainTxFrame(b, time.Second)
 
-	srv := NewServer(b, slog.Default(), SendPolicy{})
+	srv := NewServer(b, slog.Default(), sendpolicy.SendPolicy{})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

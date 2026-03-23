@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sixfathoms/lplex/sendpolicy"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -25,11 +26,11 @@ type Server struct {
 	broker     *Broker
 	logger     *slog.Logger
 	mux        *http.ServeMux
-	sendPolicy SendPolicy
+	sendPolicy sendpolicy.SendPolicy
 }
 
 // NewServer creates a new HTTP server wired to the given broker.
-func NewServer(broker *Broker, logger *slog.Logger, policy SendPolicy) *Server {
+func NewServer(broker *Broker, logger *slog.Logger, policy sendpolicy.SendPolicy) *Server {
 	s := &Server{
 		broker:     broker,
 		logger:     logger,

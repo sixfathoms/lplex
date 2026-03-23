@@ -13,6 +13,7 @@ import (
 	"time"
 
 	pb "github.com/sixfathoms/lplex/proto/replication/v1"
+	"github.com/sixfathoms/lplex/sendpolicy"
 	"google.golang.org/grpc"
 )
 
@@ -52,7 +53,7 @@ func startCloudHTTP(t *testing.T, im *InstanceManager, replServer *ReplicationSe
 			http.Error(w, "instance not found or broker not running", http.StatusNotFound)
 			return
 		}
-		srv := NewServer(broker, logger, SendPolicy{})
+		srv := NewServer(broker, logger, sendpolicy.SendPolicy{})
 		srv.HandleEphemeralSSE(w, r)
 	})
 

@@ -7,26 +7,26 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sixfathoms/lplex"
+	"github.com/sixfathoms/lplex/changetracker"
 	"github.com/sixfathoms/lplex/filter"
 	"github.com/sixfathoms/lplex/lplexc"
 	"github.com/sixfathoms/lplex/pgn"
 )
 
-func changeTag(ct lplex.ChangeEventType, diffBytes, fullBytes int) string {
+func changeTag(ct changetracker.ChangeEventType, diffBytes, fullBytes int) string {
 	switch ct {
-	case lplex.Snapshot:
+	case changetracker.Snapshot:
 		return ansiGreen + "[snapshot]" + ansiReset + " "
-	case lplex.Delta:
+	case changetracker.Delta:
 		return fmt.Sprintf("%s[delta %d/%dB]%s ", ansiYellow, diffBytes, fullBytes, ansiReset)
-	case lplex.Idle:
+	case changetracker.Idle:
 		return ansiDim + "[idle]    " + ansiReset + " "
 	default:
 		return ""
 	}
 }
 
-func formatFrame(w *bufio.Writer, f *lplexc.Frame, dm *deviceMap, decode bool, preDecoded any, ct lplex.ChangeEventType, diffBytes, fullBytes int) {
+func formatFrame(w *bufio.Writer, f *lplexc.Frame, dm *deviceMap, decode bool, preDecoded any, ct changetracker.ChangeEventType, diffBytes, fullBytes int) {
 	ts := f.Ts
 	if t, err := time.Parse(time.RFC3339Nano, f.Ts); err == nil {
 		ts = t.Local().Format("15:04:05.000")
@@ -206,7 +206,7 @@ func (a *annotatedDecoded) MarshalJSON() ([]byte, error) {
 }
 
 // writeJSONFrame writes a frame as a JSON line, optionally with decoded fields.
-func writeJSONFrame(w *bufio.Writer, f *lplexc.Frame, decode bool, preDecoded any, ct lplex.ChangeEventType, diffBytes, fullBytes int) {
+func writeJSONFrame(w *bufio.Writer, f *lplexc.Frame, decode bool, preDecoded any, ct changetracker.ChangeEventType, diffBytes, fullBytes int) {
 	if !decode && ct == 0 {
 		fmt.Fprintf(w, "{\"seq\":%d,\"ts\":\"%s\",\"prio\":%d,\"pgn\":%d,\"src\":%d,\"dst\":%d,\"data\":\"%s\"}\n",
 			f.Seq, f.Ts, f.Prio, f.PGN, f.Src, f.Dst, f.Data)
@@ -233,7 +233,7 @@ func writeJSONFrame(w *bufio.Writer, f *lplexc.Frame, decode bool, preDecoded an
 	if ct != 0 {
 		jf.Change = ct.String()
 	}
-	if ct == lplex.Delta {
+	if ct == changetracker.Delta {
 		jf.DiffBytes = diffBytes
 		jf.FullBytes = fullBytes
 	}
@@ -251,7 +251,7 @@ func writeJSONFrame(w *bufio.Writer, f *lplexc.Frame, decode bool, preDecoded an
 	_ = w.WriteByte('\n')
 }
 
-func formatIdleEvent(w *bufio.Writer, ev lplex.ChangeEvent, dm *deviceMap) {
+func formatIdleEvent(w *bufio.Writer, ev changetracker.ChangeEvent, dm *deviceMap) {
 	ts := ev.Timestamp.Local().Format("15:04:05.000")
 
 	srcLabel := fmt.Sprintf("[%d]", ev.Source)
@@ -277,7 +277,7 @@ func formatIdleEvent(w *bufio.Writer, ev lplex.ChangeEvent, dm *deviceMap) {
 	_ = w.WriteByte('\n')
 }
 
-func writeJSONIdleEvent(w *bufio.Writer, ev lplex.ChangeEvent) {
+func writeJSONIdleEvent(w *bufio.Writer, ev changetracker.ChangeEvent) {
 	type jsonIdle struct {
 		Change string `json:"change"`
 		Ts     string `json:"ts"`

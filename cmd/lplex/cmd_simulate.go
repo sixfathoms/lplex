@@ -13,6 +13,7 @@ import (
 
 	"github.com/sixfathoms/lplex"
 	"github.com/sixfathoms/lplex/journal"
+	"github.com/sixfathoms/lplex/sendpolicy"
 	"github.com/spf13/cobra"
 )
 
@@ -72,7 +73,7 @@ func runSimulate(cmd *cobra.Command, _ []string) error {
 	go broker.Run()
 
 	// Disable send (no real CAN bus to transmit on).
-	srv := lplex.NewServer(broker, logger, lplex.SendPolicy{Enabled: false})
+	srv := lplex.NewServer(broker, logger, sendpolicy.SendPolicy{Enabled: false})
 
 	addr := fmt.Sprintf(":%d", simPort)
 	httpServer := &http.Server{

@@ -1,4 +1,4 @@
-package lplex
+package changetracker
 
 import (
 	"errors"
@@ -59,8 +59,8 @@ type trackedPair struct {
 	idleEmitted bool
 }
 
-// ChangeTrackerConfig configures the ChangeTracker.
-type ChangeTrackerConfig struct {
+// Config configures the ChangeTracker.
+type Config struct {
 	// DefaultMethod is the diff method used for PGNs without a specific override.
 	// Nil defaults to ByteMaskDiff.
 	DefaultMethod DiffMethod
@@ -88,14 +88,14 @@ type ChangeTrackerConfig struct {
 // change events. Not goroutine-safe; designed for single-goroutine callers
 // (like the broker's handleFrame).
 type ChangeTracker struct {
-	cfg   ChangeTrackerConfig
+	cfg   Config
 	pairs map[trackerKey]*trackedPair
 }
 
 // NewChangeTracker creates a ChangeTracker with the given configuration.
 // Automatically wires FieldToleranceDiff for any PGN in the registry that
 // declares field-level tolerances, unless an explicit method is already set.
-func NewChangeTracker(cfg ChangeTrackerConfig) *ChangeTracker {
+func NewChangeTracker(cfg Config) *ChangeTracker {
 	if cfg.DefaultIdleTimeout == 0 {
 		cfg.DefaultIdleTimeout = 5 * time.Second
 	}

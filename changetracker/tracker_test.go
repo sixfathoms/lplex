@@ -1,4 +1,4 @@
-package lplex
+package changetracker
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestChangeTracker_FirstFrame_Snapshot(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{})
+	ct := NewChangeTracker(Config{})
 	ts := time.Now()
 	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 
@@ -30,7 +30,7 @@ func TestChangeTracker_FirstFrame_Snapshot(t *testing.T) {
 }
 
 func TestChangeTracker_UnchangedFrame_Nil(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{})
+	ct := NewChangeTracker(Config{})
 	ts := time.Now()
 	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 
@@ -42,7 +42,7 @@ func TestChangeTracker_UnchangedFrame_Nil(t *testing.T) {
 }
 
 func TestChangeTracker_ChangedFrame_Delta(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{})
+	ct := NewChangeTracker(Config{})
 	ts := time.Now()
 	data1 := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 	data2 := []byte{0x01, 0xFF, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
@@ -61,7 +61,7 @@ func TestChangeTracker_ChangedFrame_Delta(t *testing.T) {
 }
 
 func TestChangeTracker_MultipleSources_Independent(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{})
+	ct := NewChangeTracker(Config{})
 	ts := time.Now()
 	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 
@@ -83,7 +83,7 @@ func TestChangeTracker_MultipleSources_Independent(t *testing.T) {
 func TestChangeTracker_SubKey_Independent(t *testing.T) {
 	// Simulate Victron register multiplexing on PGN 61184.
 	// Sub-key extracted from bytes 2-3 (register_id as uint16 LE).
-	ct := NewChangeTracker(ChangeTrackerConfig{
+	ct := NewChangeTracker(Config{
 		SubKeys: map[uint32]SubKeyFunc{
 			61184: func(data []byte) uint64 {
 				if len(data) < 4 {
@@ -129,7 +129,7 @@ func TestChangeTracker_SubKey_Independent(t *testing.T) {
 }
 
 func TestChangeTracker_DataLengthChange_Snapshot(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{})
+	ct := NewChangeTracker(Config{})
 	ts := time.Now()
 
 	ct.Process(ts, 10, 127250, []byte{0x01, 0x02, 0x03}, 1)
@@ -140,7 +140,7 @@ func TestChangeTracker_DataLengthChange_Snapshot(t *testing.T) {
 }
 
 func TestChangeTracker_IdleDetection(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{
+	ct := NewChangeTracker(Config{
 		DefaultIdleTimeout: 100 * time.Millisecond,
 	})
 	ts := time.Now()
@@ -168,7 +168,7 @@ func TestChangeTracker_IdleDetection(t *testing.T) {
 }
 
 func TestChangeTracker_IdleEmittedOnce(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{
+	ct := NewChangeTracker(Config{
 		DefaultIdleTimeout: 100 * time.Millisecond,
 	})
 	ts := time.Now()
@@ -190,7 +190,7 @@ func TestChangeTracker_IdleEmittedOnce(t *testing.T) {
 }
 
 func TestChangeTracker_ActivityResetsIdle(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{
+	ct := NewChangeTracker(Config{
 		DefaultIdleTimeout: 100 * time.Millisecond,
 	})
 	ts := time.Now()
@@ -223,7 +223,7 @@ func TestChangeTracker_ActivityResetsIdle(t *testing.T) {
 func TestChangeTracker_IdleTimeoutFromRegistry(t *testing.T) {
 	// PGN 127250 (Vessel Heading) has Interval=100ms in the registry.
 	// With multiplier=3, timeout should be 300ms.
-	ct := NewChangeTracker(ChangeTrackerConfig{
+	ct := NewChangeTracker(Config{
 		IdleMultiplier:     3,
 		DefaultIdleTimeout: 10 * time.Second,
 	})
@@ -246,7 +246,7 @@ func TestChangeTracker_IdleTimeoutFromRegistry(t *testing.T) {
 }
 
 func TestChangeTracker_IdleTimeoutOverride(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{
+	ct := NewChangeTracker(Config{
 		DefaultIdleTimeout: 10 * time.Second,
 		IdleTimeouts: map[uint32]time.Duration{
 			127250: 50 * time.Millisecond,
@@ -266,7 +266,7 @@ func TestChangeTracker_IdleTimeoutOverride(t *testing.T) {
 
 func TestChangeTracker_IdleTimeoutFallback(t *testing.T) {
 	// PGN 99999 is not in the registry, so it falls back to default.
-	ct := NewChangeTracker(ChangeTrackerConfig{
+	ct := NewChangeTracker(Config{
 		DefaultIdleTimeout: 200 * time.Millisecond,
 	})
 	ts := time.Now()
@@ -286,7 +286,7 @@ func TestChangeTracker_IdleTimeoutFallback(t *testing.T) {
 }
 
 func TestChangeTracker_Reset(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{})
+	ct := NewChangeTracker(Config{})
 	ts := time.Now()
 	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 
@@ -309,7 +309,7 @@ func TestChangeTracker_Reset(t *testing.T) {
 
 func TestChangeTracker_CustomDiffMethod(t *testing.T) {
 	// Use FieldToleranceDiff for PGN 127250 to suppress small heading changes.
-	ct := NewChangeTracker(ChangeTrackerConfig{
+	ct := NewChangeTracker(Config{
 		Methods: map[uint32]DiffMethod{
 			127250: &FieldToleranceDiff{
 				PGN: 127250,
@@ -410,7 +410,7 @@ func TestChangeReplayer_IdlePreservesState(t *testing.T) {
 
 func TestChangeTracker_EndToEnd_RoundTrip(t *testing.T) {
 	// Full end-to-end: tracker produces events, replayer reconstructs data.
-	ct := NewChangeTracker(ChangeTrackerConfig{})
+	ct := NewChangeTracker(Config{})
 	r := NewChangeReplayer(nil, nil)
 
 	frames := []struct {
@@ -451,7 +451,7 @@ func TestChangeTracker_EndToEnd_WithSubKeys(t *testing.T) {
 		return uint64(binary.LittleEndian.Uint16(data[2:4]))
 	}
 
-	ct := NewChangeTracker(ChangeTrackerConfig{
+	ct := NewChangeTracker(Config{
 		SubKeys: map[uint32]SubKeyFunc{61184: subKeyFn},
 	})
 	r := NewChangeReplayer(nil, map[uint32]SubKeyFunc{61184: subKeyFn})
@@ -493,7 +493,7 @@ func TestChangeTracker_EndToEnd_WithSubKeys(t *testing.T) {
 }
 
 func TestChangeTracker_Remove(t *testing.T) {
-	ct := NewChangeTracker(ChangeTrackerConfig{})
+	ct := NewChangeTracker(Config{})
 	ts := time.Now()
 	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 

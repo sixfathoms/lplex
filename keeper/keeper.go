@@ -1,4 +1,4 @@
-package lplex
+package keeper
 
 import (
 	"bufio"
@@ -107,8 +107,8 @@ type JournalKeeper struct {
 	logger   *slog.Logger
 
 	// archive retry state
-	pending  []pendingFile
-	backoff  time.Duration
+	pending []pendingFile
+	backoff time.Duration
 
 	// per-directory pause state (overflow policy = pause-recording)
 	paused map[string]bool

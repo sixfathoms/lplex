@@ -156,12 +156,15 @@ lplex-cloud process
 
 | Package | Owns |
 |---|---|
-| `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANBus` (interface), `SocketCANBus`, `LoopbackBus`, `CANReader`, `CANWriter`, `JournalWriter`, `JournalKeeper`, `DeviceRegistry`, `ValueStore`, `FastPacketAssembler`, `ChangeTracker`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, `EventLog`, filters, ring buffer. Embeddable by external Go services. |
+| `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANBus` (interface), `SocketCANBus`, `LoopbackBus`, `CANReader`, `CANWriter`, `JournalWriter`, `DeviceRegistry`, `ValueStore`, `FastPacketAssembler`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, `EventLog`, filters, ring buffer. Embeddable by external Go services. |
 | `cmd/lplex-server/` | Boat server: flag parsing, HOCON config, signal handling, mDNS registration, wires broker + CAN I/O + HTTP + optional replication |
 | `cmd/lplex-cloud/` | Cloud server: gRPC + HTTP servers, InstanceManager, mTLS, HOCON config |
 | `cmd/lplex/` | Multi-subcommand CLI: `dump` (streaming/replay), `tail` (simple live follow with optional replay), `dashboard` (interactive TUI with live data), `simulate` (journal replay through full HTTP server), `inspect` (journal inspection), `verify` (journal integrity verification), `doctor` (system diagnostics), `completion` (shell completion scripts for bash/zsh/fish/powershell), `devices`, `values`, `send`, `request`, `switches`. Uses cobra. Pretty-print, device table, PGN decoding (`--decode`), change tracking (`--changes`), display filter expressions (`--where`), auto-reconnect. |
 | `cmd/pgngen/` | Code generator: reads `.pgn` DSL files, outputs Go structs/decoders/encoders, Protobuf, JSON Schema |
 | `lplexc/` | Public Go client library: Subscribe, Devices, Send, Session, mDNS discovery |
+| `sendpolicy/` | `SendPolicy`, `SendRule`, `PGNMatcher`, rule DSL parser and evaluator for `/send` and `/query` gating |
+| `changetracker/` | `ChangeTracker`, `Config`, `ChangeEvent`, `DiffMethod`, `ByteMaskDiff`, `FieldToleranceDiff`, `SubKeyFunc`, `ChangeReplayer`. Per-(source, PGN, subkey) change tracking with idle timeout and tolerance-aware diffing. |
+| `keeper/` | `JournalKeeper`, `KeeperConfig`, `KeeperDir`, `RotatedFile`, `ArchiveTrigger`, `OverflowPolicy`. Retention algorithm (max-age/min-keep/max-size with soft/hard thresholds), archive script execution, marker file tracking, per-directory pause state. |
 | `filter/` | BPF-inspired display filter expressions for `lplex dump --where`. Lexer, recursive-descent parser, AST, and evaluator with reflection-based field access on decoded PGN structs. Supports header fields (`pgn`, `src`, `dst`, `prio`), decoded struct fields by JSON tag, and lookup sub-accessors (`register.name`). |
 | `canbus/` | Public CAN ID parsing (`CANHeader`, `ParseCANID`, `BuildCANID`) and ISO NAME decoding |
 | `journal/` | Public journal format: `Device`, `Reader` (with opt-in block prefetch via `EnablePrefetch`), `CompressionType`, block constants, length-prefixed string helpers |
@@ -181,7 +184,6 @@ lplex-cloud process
 | `decode_sse.go` | `injectDecoded`, adds decoded PGN fields to pre-serialized frame JSON. Used by `/events?decode=true`, `/ws?decode=true`, and `/history?decode=true`. |
 | `history.go` | `handleHistory`, `GET /history` endpoint for querying journal files by time range with PGN/source/interval filters and optional decode. Returns JSON array of matching frames. |
 | `mqtt.go` | `MQTTBridge`, `MQTTBridgeConfig`, publishes CAN frames to an MQTT broker. Subscribes to the broker's frame stream and publishes to `{prefix}/frames` topics. Auto-reconnect via paho MQTT client. |
-| `send_policy.go` | `SendPolicy`, `SendRule`, `PGNMatcher`, `ParseSendRule`, `ParseSendRules`, rule DSL parser and evaluator for `/send` and `/query` gating |
 | `can_bus.go` | `CANBus` interface (`ReadFrames`, `WriteFrames`, `Name`), `SocketCANBus` (wraps `CANReader`/`CANWriter`), `LoopbackBus` (in-memory echo for testing/macOS dev) |
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
@@ -196,9 +198,6 @@ lplex-cloud process
 | `replication_events.go` | `EventLog`, `ReplicationEvent`, `ReplicationEventType`, per-instance ring buffer (1024 entries) for diagnostic events (live start/stop, backfill start/stop, block received, checkpoint) |
 | `replication_server.go` | `ReplicationServer`, `InstanceManager` (including `SetOnRotate`), `InstanceState`, `InstanceStatus`, `InstanceSummary`, gRPC handlers (Handshake, Live, Backfill), mTLS verification, state persistence, event recording |
 | `block_writer.go` | `BlockWriter`, `BlockWriterConfig` (including `OnRotate` callback), raw block append to journal files with file rotation |
-| `journal_keeper.go` | `JournalKeeper`, `KeeperConfig`, `KeeperDir`, `RotatedFile`, `ArchiveTrigger`, `OverflowPolicy`, retention algorithm (max-age/min-keep/max-size with soft/hard thresholds and overflow policy), archive script execution (JSONL protocol), marker file tracking, retry with exponential backoff, per-directory pause state |
-| `change_diff.go` | `DiffMethod` interface, `ByteMaskDiff` (byte-level bitmask diff), `FieldToleranceDiff` (field-level tolerance-aware diff using PGN decode + reflection), `SubKeyFunc` for multiplexed PGN sub-keying |
-| `change_tracker.go` | `ChangeTracker`, `ChangeTrackerConfig`, `ChangeEvent`, `ChangeEventType` (Snapshot/Delta/Idle), per-(source, PGN, subkey) state tracking, idle timeout detection, auto-wires `FieldToleranceDiff` from `pgn.Registry` tolerances. `ChangeReplayer` reconstructs full packets from compact deltas. |
 | `values.go` | `ValueStore`, `DeviceValues`, `PGNValue`, last-seen frame tracking per (bus, source, PGN) tuple, snapshot with device resolution, `RemoveSource` for cleanup on device eviction |
 | `doc.go` | Package documentation with embedding example |
 
