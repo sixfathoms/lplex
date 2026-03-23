@@ -201,3 +201,72 @@ func TestHistoryEmptyDir(t *testing.T) {
 		t.Errorf("expected empty result, got %d frames", len(result))
 	}
 }
+
+func TestHistoryDownsample(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	// Write 20 frames at 100ms intervals (2 seconds total)
+	var frames []RxFrame
+	for i := range 20 {
+		frames = append(frames, makeFrameWithSeq(
+			base.Add(time.Duration(i)*100*time.Millisecond),
+			129025, 10,
+			[]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0},
+			uint64(i+1),
+		))
+	}
+	writeJournalFrames(t, dir, frames)
+
+	b := NewBroker(BrokerConfig{
+		RingSize:          16,
+		MaxBufferDuration: time.Minute,
+		JournalDir:        dir,
+	})
+	go b.Run()
+	defer b.CloseRx()
+	drainTxFrame(b, time.Second)
+
+	srv := NewServer(b, slog.Default(), SendPolicy{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	from := base.Format(time.RFC3339)
+	to := base.Add(3 * time.Second).Format(time.RFC3339)
+
+	// Without downsampling: should get all 20 frames
+	resp, err := http.Get(ts.URL + "/history?from=" + from + "&to=" + to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var allFrames []historyFrame
+	_ = json.NewDecoder(resp.Body).Decode(&allFrames)
+	_ = resp.Body.Close()
+
+	// With 1s downsampling: should get at most 2-3 frames (one per second bucket)
+	resp, err = http.Get(ts.URL + "/history?from=" + from + "&to=" + to + "&interval=1s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var downsampled []historyFrame
+	if err := json.NewDecoder(resp.Body).Decode(&downsampled); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(downsampled) >= len(allFrames) {
+		t.Errorf("downsampled (%d) should be fewer than all frames (%d)", len(downsampled), len(allFrames))
+	}
+	if len(downsampled) == 0 {
+		t.Error("expected non-empty downsampled result")
+	}
+	// With 1s interval over 2s of data, expect ~2 frames
+	if len(downsampled) > 3 {
+		t.Errorf("expected at most 3 downsampled frames, got %d", len(downsampled))
+	}
+}
