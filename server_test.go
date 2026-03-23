@@ -1209,6 +1209,37 @@ func TestSendRuleOrderedEvaluation(t *testing.T) {
 	}
 }
 
+func TestSendRateLimiting(t *testing.T) {
+	b := newTestBroker()
+	go b.Run(context.Background())
+	defer b.CloseRx()
+	drainTxFrame(b, time.Second)
+
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true})
+	// Allow 2 requests/sec with burst of 2.
+	srv.SetSendRateLimit(2, 2)
+
+	body := `{"pgn":59904,"dst":255,"prio":6,"data":"01f001"}`
+
+	// First 2 requests should succeed (burst).
+	for i := range 2 {
+		req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("request %d: got %d, want 202", i, w.Code)
+		}
+	}
+
+	// Third request should be rate-limited.
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("rate-limited request: got %d, want 429", w.Code)
+	}
+}
+
 func TestAPIKeyAuthRejectsUnauthenticated(t *testing.T) {
 	b := newTestBroker()
 	go b.Run(context.Background())

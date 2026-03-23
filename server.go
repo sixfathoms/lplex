@@ -13,6 +13,7 @@ import (
 
 	"github.com/sixfathoms/lplex/sendpolicy"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"golang.org/x/time/rate"
 )
 
 // SSE framing bytes, pre-allocated to avoid per-write allocations.
@@ -23,11 +24,12 @@ var (
 
 // Server handles HTTP API requests for lplex.
 type Server struct {
-	broker     *Broker
-	logger     *slog.Logger
-	mux        *http.ServeMux
-	sendPolicy sendpolicy.SendPolicy
-	apiKey     string // if non-empty, all requests must authenticate
+	broker      *Broker
+	logger      *slog.Logger
+	mux         *http.ServeMux
+	sendPolicy  sendpolicy.SendPolicy
+	apiKey      string        // if non-empty, all requests must authenticate
+	sendLimiter *rate.Limiter // if non-nil, rate-limits /send and /query
 }
 
 // NewServer creates a new HTTP server wired to the given broker.
@@ -58,6 +60,14 @@ func NewServer(broker *Broker, logger *slog.Logger, policy sendpolicy.SendPolicy
 // or the X-API-Key header. Health/liveness endpoints are exempt.
 func (s *Server) SetAPIKey(key string) {
 	s.apiKey = key
+}
+
+// SetSendRateLimit enables rate limiting on the /send and /query endpoints.
+// rps is the sustained requests per second; burst is the maximum burst size.
+func (s *Server) SetSendRateLimit(rps float64, burst int) {
+	if rps > 0 {
+		s.sendLimiter = rate.NewLimiter(rate.Limit(rps), burst)
+	}
 }
 
 // HandleFunc registers an additional HTTP handler on the server's mux.
@@ -452,6 +462,10 @@ func (s *Server) checkSendPolicy(w http.ResponseWriter, bus string, pgn uint32, 
 
 // POST /send
 func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
+	if s.sendLimiter != nil && !s.sendLimiter.Allow() {
+		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
 	var req struct {
 		PGN  uint32 `json:"pgn"`
 		Src  uint8  `json:"src"`
@@ -497,6 +511,10 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 // Sends an ISO Request (PGN 59904) asking devices to transmit the specified PGN,
 // then waits for a matching response and returns the value.
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
+	if s.sendLimiter != nil && !s.sendLimiter.Allow() {
+		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
 	var req struct {
 		PGN     uint32 `json:"pgn"`
 		Dst     uint8  `json:"dst"`

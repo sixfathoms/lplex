@@ -80,6 +80,8 @@ func main() {
 	mqttUsername := flag.String("mqtt-username", "", "MQTT broker username")
 	mqttPassword := flag.String("mqtt-password", "", "MQTT broker password")
 	apiKey := flag.String("api-key", "", "API key for HTTP authentication (empty = no auth)")
+	sendRateLimit := flag.Float64("send-rate-limit", 0, "Max requests/sec for /send and /query (0 = unlimited)")
+	sendRateBurst := flag.Int("send-rate-burst", 10, "Max burst size for /send rate limiter")
 	flag.Parse()
 
 	if *showVersion {
@@ -210,6 +212,10 @@ func main() {
 	if *apiKey != "" {
 		srv.SetAPIKey(*apiKey)
 		logger.Info("API key authentication enabled")
+	}
+	if *sendRateLimit > 0 {
+		srv.SetSendRateLimit(*sendRateLimit, *sendRateBurst)
+		logger.Info("send rate limiting enabled", "rps", *sendRateLimit, "burst", *sendRateBurst)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
