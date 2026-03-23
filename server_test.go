@@ -1209,6 +1209,36 @@ func TestSendRuleOrderedEvaluation(t *testing.T) {
 	}
 }
 
+func TestReadOnlyMode(t *testing.T) {
+	b := newTestBroker()
+	go b.Run(context.Background())
+	defer b.CloseRx()
+	drainTxFrame(b, time.Second)
+
+	// Send policy is enabled, but read-only overrides it.
+	srv := NewServer(b, b.logger, sendpolicy.SendPolicy{Enabled: true})
+	srv.SetReadOnly(true)
+
+	body := `{"pgn":59904,"dst":255,"prio":6,"data":"01f001"}`
+	req := httptest.NewRequest("POST", "/send", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("/send in read-only: got %d, want 403", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "read-only") {
+		t.Errorf("expected read-only message, got %q", w.Body.String())
+	}
+
+	// GET endpoints should still work.
+	req = httptest.NewRequest("GET", "/devices", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("/devices in read-only: got %d, want 200", w.Code)
+	}
+}
+
 func TestSendRateLimiting(t *testing.T) {
 	b := newTestBroker()
 	go b.Run(context.Background())

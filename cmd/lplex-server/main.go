@@ -80,6 +80,7 @@ func main() {
 	mqttUsername := flag.String("mqtt-username", "", "MQTT broker username")
 	mqttPassword := flag.String("mqtt-password", "", "MQTT broker password")
 	apiKey := flag.String("api-key", "", "API key for HTTP authentication (empty = no auth)")
+	readOnly := flag.Bool("read-only", false, "Disable /send and /query entirely (defense in depth)")
 	sendRateLimit := flag.Float64("send-rate-limit", 0, "Max requests/sec for /send and /query (0 = unlimited)")
 	sendRateBurst := flag.Int("send-rate-burst", 10, "Max burst size for /send rate limiter")
 	flag.Parse()
@@ -209,6 +210,10 @@ func main() {
 		os.Exit(1)
 	}
 	srv := lplex.NewServer(broker, logger, sendPolicy)
+	if *readOnly {
+		srv.SetReadOnly(true)
+		logger.Info("read-only mode enabled (/send and /query disabled)")
+	}
 	if *apiKey != "" {
 		srv.SetAPIKey(*apiKey)
 		logger.Info("API key authentication enabled")
