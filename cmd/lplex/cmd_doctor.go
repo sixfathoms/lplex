@@ -22,21 +22,24 @@ import (
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Check system and server health",
-	Long: `Run diagnostic checks on the local system and lplex server.
+	Long: `Run diagnostic checks against an lplex server.
+
+Checks the remote lplex server for reachability, device discovery, and
+health status. Can also optionally check local CAN interfaces (when run
+on the boat) and journal directory health.
 
 Checks include:
   - Platform and OS
-  - SocketCAN kernel module (Linux only)
-  - CAN interface status (Linux only)
-  - lplex server reachability
-  - Server device count and frame activity
-  - Journal directory writable and disk space
-  - Replication connectivity
+  - lplex server reachability (mDNS or --server)
+  - Server device count (warns if no devices discovered)
+  - Server health (/healthz endpoint)
+  - CAN interface status (only if --interfaces specified or auto-detected on Linux)
+  - Journal directory writable and disk space (only if --journal-dir specified)
 
 Examples:
   lplex doctor
   lplex doctor --server http://inuc1.local:8089
-  lplex doctor --journal-dir /var/log/lplex`,
+  lplex doctor --server http://inuc1.local:8089 --journal-dir /var/log/lplex`,
 	RunE: runDoctor,
 }
 
@@ -72,30 +75,20 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// Platform check.
 	results = append(results, checkPlatform())
 
-	// CAN checks (Linux only).
-	if runtime.GOOS == "linux" {
-		results = append(results, checkCANModule())
-		ifaces := detectCANInterfaces()
-		if doctorInterfaces != "" {
-			ifaces = strings.Split(doctorInterfaces, ",")
+	// CAN and journal checks only when explicitly requested via flags, or
+	// when running on the boat itself (Linux with CAN interfaces present).
+	// The lplex CLI typically runs on a remote laptop, not the boat.
+	if doctorInterfaces != "" {
+		for _, iface := range strings.Split(doctorInterfaces, ",") {
+			results = append(results, checkCANInterface(strings.TrimSpace(iface)))
 		}
-		if len(ifaces) > 0 {
+	} else if runtime.GOOS == "linux" {
+		if ifaces := detectCANInterfaces(); len(ifaces) > 0 {
+			results = append(results, checkCANModule())
 			for _, iface := range ifaces {
-				results = append(results, checkCANInterface(strings.TrimSpace(iface)))
+				results = append(results, checkCANInterface(iface))
 			}
-		} else {
-			results = append(results, checkResult{
-				name:   "CAN interfaces",
-				status: "warn",
-				detail: "no CAN interfaces found",
-			})
 		}
-	} else {
-		results = append(results, checkResult{
-			name:   "CAN interfaces",
-			status: "skip",
-			detail: fmt.Sprintf("SocketCAN not available on %s", runtime.GOOS),
-		})
 	}
 
 	// Server reachability.
