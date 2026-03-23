@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sixfathoms/lplex/lplexc"
@@ -36,7 +37,7 @@ func TestExtractValue(t *testing.T) {
 		if result == "" {
 			t.Fatal("expected GPS data")
 		}
-		if !contains(result, "latitude") || !contains(result, "longitude") {
+		if !strings.Contains(result, "latitude") || !strings.Contains(result, "longitude") {
 			t.Fatalf("expected latitude and longitude, got: %s", result)
 		}
 	})
@@ -63,11 +64,11 @@ func TestExtractValue(t *testing.T) {
 	})
 }
 
-func TestDashModelView(t *testing.T) {
-	// Verify the model renders without panicking.
+func TestDashModelViewOverview(t *testing.T) {
 	m := dashModel{
-		width:  80,
-		height: 40,
+		width:     80,
+		height:    40,
+		activeTab: tabOverview,
 		devices: []lplexc.Device{
 			{Src: 1, Manufacturer: "Garmin", ModelID: "GNX 120", PacketCount: 12345},
 			{Src: 2, Manufacturer: "Victron", ModelID: "BMV-712", PacketCount: 6789},
@@ -85,33 +86,75 @@ func TestDashModelView(t *testing.T) {
 
 	output := m.View()
 
-	// Check key sections are present.
-	checks := []string{"Devices", "Live Values", "PGN Activity", "Garmin", "GNX 120", "Position Rapid Update", "latitude"}
+	checks := []string{"Live Values", "PGN Activity", "Position Rapid Update", "latitude", "Overview", "Devices"}
 	for _, check := range checks {
-		if !contains(output, check) {
-			t.Errorf("expected %q in output", check)
+		if !strings.Contains(output, check) {
+			t.Errorf("expected %q in overview tab output", check)
+		}
+	}
+}
+
+func TestDashModelViewDevicesTab(t *testing.T) {
+	m := dashModel{
+		width:     100,
+		height:    40,
+		activeTab: tabDevices,
+		devices: []lplexc.Device{
+			{Src: 1, Manufacturer: "Garmin", ModelID: "GNX 120", ModelSerial: "SN12345", PacketCount: 12345, ByteCount: 98765},
+			{Src: 2, Manufacturer: "Victron", ModelID: "BMV-712", ModelSerial: "V001", PacketCount: 6789, ByteCount: 54321},
+		},
+	}
+
+	output := m.View()
+
+	checks := []string{"Devices", "Garmin", "GNX 120", "SN12345", "12345", "Victron", "BMV-712", "Manufacturer", "Packets", "Bytes"}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("expected %q in devices tab output", check)
 		}
 	}
 }
 
 func TestDashModelViewEmpty(t *testing.T) {
-	// Verify empty state renders without panicking.
-	m := dashModel{width: 80, height: 40}
+	m := dashModel{width: 80, height: 40, activeTab: tabOverview}
 	output := m.View()
-	if !contains(output, "no devices") {
-		t.Error("expected 'no devices' message")
+	if !strings.Contains(output, "no decoded values") {
+		t.Error("expected 'no decoded values' message on empty overview")
+	}
+
+	m.activeTab = tabDevices
+	output = m.View()
+	if !strings.Contains(output, "no devices") {
+		t.Error("expected 'no devices' message on empty devices tab")
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && containsStr(s, substr)
+func TestDashTabSwitching(t *testing.T) {
+	m := dashModel{width: 80, height: 40, activeTab: tabOverview}
+
+	// Tab key cycles forward.
+	if m.activeTab != tabOverview {
+		t.Fatal("should start on overview")
+	}
+	m.activeTab = (m.activeTab + 1) % tabCount
+	if m.activeTab != tabDevices {
+		t.Fatal("tab should switch to devices")
+	}
+	m.activeTab = (m.activeTab + 1) % tabCount
+	if m.activeTab != tabOverview {
+		t.Fatal("tab should wrap to overview")
+	}
 }
 
-func containsStr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+func TestTruncate(t *testing.T) {
+	if truncate("short", 10) != "short" {
+		t.Fatal("short string should not be truncated")
 	}
-	return false
+	result := truncate("a very long string", 10)
+	if len(result) > 10 {
+		t.Fatalf("truncated string too long: %d chars, got '%s'", len(result), result)
+	}
+	if !strings.HasSuffix(result, "...") {
+		t.Fatalf("expected '...' suffix, got '%s'", result)
+	}
 }

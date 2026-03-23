@@ -21,10 +21,12 @@ var dashboardCmd = &cobra.Command{
 	Aliases: []string{"dash"},
 	Short:   "Interactive TUI showing live boat data",
 	Long: `Interactive terminal dashboard showing live device table, frame rates,
-GPS position, and decoded sensor values — all in one view.
+GPS position, and decoded sensor values in a tabbed interface.
 
-Polls the lplex server periodically and displays an auto-refreshing
-terminal UI. Press 'q' or Ctrl+C to quit.
+Tab 1 (Overview): decoded sensor values and PGN activity summary.
+Tab 2 (Devices): full live device table with packet statistics.
+
+Use Tab/Shift+Tab or 1/2 to switch tabs. Press 'q' or Ctrl+C to quit.
 
 Examples:
   lplex dashboard
@@ -39,6 +41,16 @@ func init() {
 	dashboardCmd.Flags().DurationVar(&dashRefresh, "refresh", 1*time.Second, "refresh interval")
 }
 
+// --- Tab definitions ---
+
+const (
+	tabOverview = iota
+	tabDevices
+	tabCount
+)
+
+var tabNames = [tabCount]string{"Overview", "Devices"}
+
 // --- Bubbletea model ---
 
 type dashModel struct {
@@ -51,6 +63,7 @@ type dashModel struct {
 	width      int
 	height     int
 	lastUpdate time.Time
+	activeTab  int
 }
 
 type tickMsg time.Time
@@ -99,6 +112,14 @@ func (m dashModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			m.cancel()
 			return m, tea.Quit
+		case "tab":
+			m.activeTab = (m.activeTab + 1) % tabCount
+		case "shift+tab":
+			m.activeTab = (m.activeTab + tabCount - 1) % tabCount
+		case "1":
+			m.activeTab = tabOverview
+		case "2":
+			m.activeTab = tabDevices
 		}
 
 	case tea.WindowSizeMsg:
@@ -131,8 +152,26 @@ func (m dashModel) View() string {
 	}
 
 	var b strings.Builder
+	maxW := min(m.width, 100)
 
-	// Header
+	// Header with tabs
+	m.renderHeader(&b, maxW)
+
+	// Active tab content
+	switch m.activeTab {
+	case tabOverview:
+		m.renderOverview(&b, maxW)
+	case tabDevices:
+		m.renderDevicesTab(&b, maxW)
+	}
+
+	// Footer
+	m.renderFooter(&b)
+
+	return b.String()
+}
+
+func (m dashModel) renderHeader(b *strings.Builder, maxW int) {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
 	b.WriteString(headerStyle.Render("lplex dashboard"))
 	if m.err != nil {
@@ -140,44 +179,31 @@ func (m dashModel) View() string {
 		b.WriteString("  " + errStyle.Render(m.err.Error()))
 	}
 	b.WriteString("\n")
-	b.WriteString(strings.Repeat("─", min(m.width, 80)))
-	b.WriteString("\n\n")
 
-	// Devices section
-	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
-	b.WriteString(sectionStyle.Render("Devices"))
-	fmt.Fprintf(&b, " (%d)\n", len(m.devices))
+	// Tab bar
+	activeStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Underline(true)
+	inactiveStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 
-	if len(m.devices) > 0 {
-		fmt.Fprintf(&b, "  %-4s %-20s %-16s %-10s\n", "Src", "Manufacturer", "Model", "Packets")
-		fmt.Fprintf(&b, "  %-4s %-20s %-16s %-10s\n", "───", "────────────", "─────", "───────")
-		devs := m.devices
-		sort.Slice(devs, func(i, j int) bool { return devs[i].Src < devs[j].Src })
-		maxDevs := 10
-		if len(devs) < maxDevs {
-			maxDevs = len(devs)
+	for i, name := range tabNames {
+		if i > 0 {
+			b.WriteString("  ")
 		}
-		for _, d := range devs[:maxDevs] {
-			mfr := d.Manufacturer
-			if len(mfr) > 20 {
-				mfr = mfr[:17] + "..."
-			}
-			model := d.ModelID
-			if len(model) > 16 {
-				model = model[:13] + "..."
-			}
-			fmt.Fprintf(&b,"  %-4d %-20s %-16s %-10d\n", d.Src, mfr, model, d.PacketCount)
+		label := fmt.Sprintf(" %d:%s ", i+1, name)
+		if i == m.activeTab {
+			b.WriteString(activeStyle.Render(label))
+		} else {
+			b.WriteString(inactiveStyle.Render(label))
 		}
-		if len(devs) > maxDevs {
-			fmt.Fprintf(&b,"  ... and %d more\n", len(devs)-maxDevs)
-		}
-	} else {
-		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-		b.WriteString("  " + dimStyle.Render("no devices discovered") + "\n")
 	}
 	b.WriteString("\n")
+	b.WriteString(strings.Repeat("─", maxW))
+	b.WriteString("\n\n")
+}
 
-	// Decoded values — extract key navigation/engine data
+func (m dashModel) renderOverview(b *strings.Builder, _ int) {
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+
+	// Live Values
 	b.WriteString(sectionStyle.Render("Live Values"))
 	b.WriteString("\n")
 
@@ -214,9 +240,9 @@ func (m dashModel) View() string {
 	}
 	b.WriteString("\n")
 
-	// PGN summary — show frame rates from decoded values
+	// PGN Activity
 	b.WriteString(sectionStyle.Render("PGN Activity"))
-	b.WriteString("\n")
+	fmt.Fprintf(b, " (%d devices)\n", len(m.devices))
 
 	type pgnEntry struct {
 		pgn  uint32
@@ -243,8 +269,8 @@ func (m dashModel) View() string {
 	sort.Slice(pgns, func(i, j int) bool { return pgns[i].pgn < pgns[j].pgn })
 
 	if len(pgns) > 0 {
-		fmt.Fprintf(&b,"  %-8s %-35s %s\n", "PGN", "Description", "Sources")
-		fmt.Fprintf(&b,"  %-8s %-35s %s\n", "───", "───────────", "───────")
+		fmt.Fprintf(b, "  %-8s %-35s %s\n", "PGN", "Description", "Sources")
+		fmt.Fprintf(b, "  %-8s %-35s %s\n", "───", "───────────", "───────")
 		maxPGNs := 15
 		if len(pgns) < maxPGNs {
 			maxPGNs = len(pgns)
@@ -254,27 +280,63 @@ func (m dashModel) View() string {
 			if len(desc) > 35 {
 				desc = desc[:32] + "..."
 			}
-			fmt.Fprintf(&b,"  %-8d %-35s %d\n", p.pgn, desc, p.srcs)
+			fmt.Fprintf(b, "  %-8d %-35s %d\n", p.pgn, desc, p.srcs)
 		}
 		if len(pgns) > maxPGNs {
-			fmt.Fprintf(&b,"  ... and %d more PGNs\n", len(pgns)-maxPGNs)
+			fmt.Fprintf(b, "  ... and %d more PGNs\n", len(pgns)-maxPGNs)
 		}
 	} else {
 		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 		b.WriteString("  " + dimStyle.Render("no PGN data") + "\n")
 	}
 	b.WriteString("\n")
+}
 
-	// Footer
+func (m dashModel) renderDevicesTab(b *strings.Builder, _ int) {
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	b.WriteString(sectionStyle.Render("Devices"))
+	fmt.Fprintf(b, " (%d)\n", len(m.devices))
+
+	if len(m.devices) == 0 {
+		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+		b.WriteString("  " + dimStyle.Render("no devices discovered") + "\n\n")
+		return
+	}
+
+	fmt.Fprintf(b, "  %-4s %-18s %-14s %-14s %-10s %-10s\n",
+		"Src", "Manufacturer", "Model", "Serial", "Packets", "Bytes")
+	fmt.Fprintf(b, "  %-4s %-18s %-14s %-14s %-10s %-10s\n",
+		"───", "────────────", "─────", "──────", "───────", "─────")
+
+	devs := make([]lplexc.Device, len(m.devices))
+	copy(devs, m.devices)
+	sort.Slice(devs, func(i, j int) bool { return devs[i].Src < devs[j].Src })
+
+	for _, d := range devs {
+		mfr := truncate(d.Manufacturer, 18)
+		model := truncate(d.ModelID, 14)
+		serial := truncate(d.ModelSerial, 14)
+		fmt.Fprintf(b, "  %-4d %-18s %-14s %-14s %-10d %-10d\n",
+			d.Src, mfr, model, serial, d.PacketCount, d.ByteCount)
+	}
+	b.WriteString("\n")
+}
+
+func (m dashModel) renderFooter(b *strings.Builder) {
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	updated := "never"
 	if !m.lastUpdate.IsZero() {
 		updated = m.lastUpdate.Format("15:04:05")
 	}
-	b.WriteString(dimStyle.Render(fmt.Sprintf("Updated %s  |  Refresh %s  |  Press 'q' to quit", updated, dashRefresh)))
+	b.WriteString(dimStyle.Render(fmt.Sprintf("Updated %s  |  Refresh %s  |  Tab/1/2: switch  |  'q': quit", updated, dashRefresh)))
 	b.WriteString("\n")
+}
 
-	return b.String()
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 // extractValue looks for specific fields in decoded values and formats them.
