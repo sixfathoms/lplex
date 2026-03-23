@@ -177,7 +177,8 @@ lplex-cloud process
 | `consumer.go` | `Consumer`, `Frame`, `ErrFallenBehind`, pull-based tiered reader (journal -> ring -> live), journal fallback with file discovery, seq-based seeking, and block-level prefetch |
 | `server.go` | `Server`, HTTP handlers, ephemeral + buffered SSE streaming, filter query param parsing, ISO 8601 duration parser, last-values endpoint, on-demand PGN query (`POST /query` via ISO Request PGN 59904), WebSocket upgrade bypass for compression/tracing wrappers |
 | `websocket.go` | `HandleWebSocket`, bidirectional WebSocket transport (`GET /ws`). Streams filtered CAN frames to client, accepts `send` messages for CAN bus transmission. Same filter params as `/events`. |
-| `history.go` | `handleHistory`, `GET /history` endpoint for querying journal files by time range with PGN/source filters. Returns JSON array of matching frames. |
+| `decode_sse.go` | `injectDecoded`, adds decoded PGN fields to pre-serialized frame JSON. Used by `/events?decode=true`, `/ws?decode=true`, and `/history?decode=true`. |
+| `history.go` | `handleHistory`, `GET /history` endpoint for querying journal files by time range with PGN/source/interval filters and optional decode. Returns JSON array of matching frames. |
 | `mqtt.go` | `MQTTBridge`, `MQTTBridgeConfig`, publishes CAN frames to an MQTT broker. Subscribes to the broker's frame stream and publishes to `{prefix}/frames` topics. Auto-reconnect via paho MQTT client. |
 | `send_policy.go` | `SendPolicy`, `SendRule`, `PGNMatcher`, `ParseSendRule`, `ParseSendRules`, rule DSL parser and evaluator for `/send` and `/query` gating |
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |

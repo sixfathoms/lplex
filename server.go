@@ -235,6 +235,8 @@ func (s *Server) HandleEphemeralSSE(w http.ResponseWriter, r *http.Request) {
 	sub, cleanup := s.broker.Subscribe(filter)
 	defer cleanup()
 
+	decode := r.URL.Query().Get("decode") == "true"
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -249,6 +251,9 @@ func (s *Server) HandleEphemeralSSE(w http.ResponseWriter, r *http.Request) {
 		case data, ok := <-sub.ch:
 			if !ok {
 				return
+			}
+			if decode {
+				data = injectDecoded(data)
 			}
 			w.Write(sseDataPrefix) //nolint:errcheck
 			w.Write(data)          //nolint:errcheck

@@ -40,6 +40,8 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 
+	decode := r.URL.Query().Get("decode") == "true"
+
 	sub, cleanup := s.broker.Subscribe(filter)
 	defer cleanup()
 
@@ -50,10 +52,10 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	go s.wsReadLoop(ctx, cancel, conn)
 
 	// Write loop: fan out CAN frames to the client
-	s.wsWriteLoop(ctx, conn, sub)
+	s.wsWriteLoop(ctx, conn, sub, decode)
 }
 
-func (s *Server) wsWriteLoop(ctx context.Context, conn *websocket.Conn, sub *subscriber) {
+func (s *Server) wsWriteLoop(ctx context.Context, conn *websocket.Conn, sub *subscriber, decode bool) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -61,6 +63,9 @@ func (s *Server) wsWriteLoop(ctx context.Context, conn *websocket.Conn, sub *sub
 		case data, ok := <-sub.ch:
 			if !ok {
 				return
+			}
+			if decode {
+				data = injectDecoded(data)
 			}
 			msg := wsMessage{Type: "frame", Data: data}
 			b, err := json.Marshal(msg)
