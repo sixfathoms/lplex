@@ -58,6 +58,7 @@ Queries journal files for historical CAN frames within a time range. Requires jo
 | `pgn` | uint32 | no | Filter by PGN (repeatable) |
 | `src` | uint8 | no | Filter by source address (repeatable) |
 | `limit` | int | no | Max frames to return (default: 10000) |
+| `interval` | duration | no | Downsample interval (e.g., `1s`, `5s`, `PT1M`). Keeps one frame per (source, PGN) per time bucket. |
 
 **Response:** `Content-Type: application/json`
 
@@ -76,6 +77,9 @@ curl "http://inuc1.local:8089/history?from=$(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)&
 
 # All frames from a specific time range
 curl "http://inuc1.local:8089/history?from=2026-03-06T10:00:00Z&to=2026-03-06T11:00:00Z&limit=1000"
+
+# Downsample GPS to 1 reading per second (reduces 10Hz to 1Hz)
+curl "http://inuc1.local:8089/history?from=2026-03-06T10:00:00Z&to=2026-03-06T11:00:00Z&pgn=129025&interval=1s"
 ```
 
 ---

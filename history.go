@@ -21,6 +21,9 @@ import (
 //   - pgn: filter by PGN (repeatable)
 //   - src: filter by source address (repeatable)
 //   - limit: max frames to return (default: 10000)
+//   - interval: downsample interval (e.g., "1s", "5s", "PT1M"); keeps one
+//     frame per (source, PGN) per interval, reducing bandwidth for
+//     high-frequency PGNs
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if s.broker.journalDir == "" {
 		http.Error(w, "journaling is not enabled", http.StatusServiceUnavailable)
@@ -95,6 +98,25 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		limit = v
 	}
 
+	// Parse optional downsample interval
+	var interval time.Duration
+	if intervalStr := q.Get("interval"); intervalStr != "" {
+		// Try Go duration first (e.g., "1s", "5s", "1m")
+		interval, err = time.ParseDuration(intervalStr)
+		if err != nil {
+			// Try ISO 8601 duration
+			interval, err = ParseISO8601Duration(intervalStr)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("invalid interval: %s", intervalStr), http.StatusBadRequest)
+				return
+			}
+		}
+		if interval <= 0 {
+			http.Error(w, "interval must be positive", http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Discover journal files
 	files, err := filepath.Glob(filepath.Join(s.broker.journalDir, "*.lpj"))
 	if err != nil {
@@ -109,7 +131,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	frames := queryJournalFiles(files, fromTime, toTime, pgns, srcs, limit)
+	frames := queryJournalFiles(files, fromTime, toTime, pgns, srcs, limit, interval)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(frames); err != nil {
@@ -127,22 +149,30 @@ type historyFrame struct {
 	Data string `json:"data"`
 }
 
-func queryJournalFiles(files []string, from, to time.Time, pgns map[uint32]bool, srcs map[uint8]bool, limit int) []historyFrame {
+// downsampleKey identifies a unique (source, PGN) pair for downsampling.
+type downsampleKey struct {
+	Src uint8
+	PGN uint32
+}
+
+func queryJournalFiles(files []string, from, to time.Time, pgns map[uint32]bool, srcs map[uint8]bool, limit int, interval time.Duration) []historyFrame {
 	var result []historyFrame
+	// Track the last emitted bucket per (src, pgn) for downsampling
+	lastBucket := make(map[downsampleKey]int64)
 
 	for _, path := range files {
 		if len(result) >= limit {
 			break
 		}
 
-		frames := queryOneFile(path, from, to, pgns, srcs, limit-len(result))
+		frames := queryOneFile(path, from, to, pgns, srcs, limit-len(result), interval, lastBucket)
 		result = append(result, frames...)
 	}
 
 	return result
 }
 
-func queryOneFile(path string, from, to time.Time, pgns map[uint32]bool, srcs map[uint8]bool, maxFrames int) []historyFrame {
+func queryOneFile(path string, from, to time.Time, pgns map[uint32]bool, srcs map[uint8]bool, maxFrames int, interval time.Duration, lastBucket map[downsampleKey]int64) []historyFrame {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
@@ -189,6 +219,16 @@ func queryOneFile(path string, from, to time.Time, pgns map[uint32]bool, srcs ma
 		// Apply source filter
 		if srcs != nil && !srcs[header.Source] {
 			continue
+		}
+
+		// Apply downsampling: keep one frame per (src, pgn) per time bucket
+		if interval > 0 {
+			bucket := entry.Timestamp.UnixNano() / int64(interval)
+			key := downsampleKey{Src: header.Source, PGN: header.PGN}
+			if last, ok := lastBucket[key]; ok && last == bucket {
+				continue // already emitted a frame for this key in this bucket
+			}
+			lastBucket[key] = bucket
 		}
 
 		frame := historyFrame{
