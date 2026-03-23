@@ -46,6 +46,7 @@ func NewServer(broker *Broker, logger *slog.Logger, policy SendPolicy) *Server {
 	s.mux.HandleFunc("GET /devices", s.handleDevices)
 	s.mux.HandleFunc("GET /values", s.handleValues)
 	s.mux.HandleFunc("GET /values/decoded", s.handleDecodedValues)
+	s.mux.HandleFunc("GET /history", s.handleHistory)
 	return s
 }
 
