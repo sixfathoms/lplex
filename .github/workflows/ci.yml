@@ -32,6 +32,22 @@ jobs:
       - name: Test
         run: go test ./... -v -count=1 -race
 
+      - name: Test with coverage
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+
+      - name: Coverage summary
+        run: |
+          go tool cover -func=coverage.out | tail -1
+          echo "---"
+          go tool cover -func=coverage.out | sort -k3 -t$'\t' -rn | head -20
+
+      - name: Upload coverage profile
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-profile
+          path: coverage.out
+          retention-days: 30
+
       - name: Vet
         run: go vet ./...
 
