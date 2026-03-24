@@ -1,0 +1,12 @@
+apiVersion: v2
+name: lplex-cloud
+description: NMEA 2000 cloud replication server for lplex
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/sixfathoms/lplex
+sources:
+  - https://github.com/sixfathoms/lplex
+maintainers:
+  - name: Six Fathoms
+    url: https://github.com/sixfathoms

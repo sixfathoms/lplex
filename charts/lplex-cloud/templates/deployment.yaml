@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lplex-cloud.fullname" . }}
+  labels:
+    {{- include "lplex-cloud.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "lplex-cloud.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "lplex-cloud.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "lplex-cloud.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -grpc-listen=:{{ .Values.config.grpcPort }}
+            - -http-listen=:{{ .Values.config.httpPort }}
+            - -data-dir=/data
+            - -ring-size={{ .Values.config.ringSize }}
+            - -device-idle-timeout={{ .Values.config.deviceIdleTimeout }}
+            {{- if .Values.config.journal.rotateDuration }}
+            - -journal-rotate-duration={{ .Values.config.journal.rotateDuration }}
+            {{- end }}
+            {{- if .Values.config.journal.retention.maxAge }}
+            - -journal-retention-max-age={{ .Values.config.journal.retention.maxAge }}
+            {{- end }}
+            {{- if .Values.config.journal.retention.maxSize }}
+            - -journal-retention-max-size={{ .Values.config.journal.retention.maxSize }}
+            {{- end }}
+            {{- if .Values.tlsSecret.name }}
+            - -tls-cert=/tls/tls.crt
+            - -tls-key=/tls/tls.key
+            - -tls-client-ca=/tls/ca.crt
+            {{- end }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.config.grpcPort }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.config.httpPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            {{- if .Values.tlsSecret.name }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "lplex-cloud.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.tlsSecret.name }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tlsSecret.name }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

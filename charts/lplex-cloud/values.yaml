@@ -1,0 +1,100 @@
+# Default values for lplex-cloud.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/sixfathoms/lplex-cloud
+  pullPolicy: IfNotPresent
+  tag: ""  # defaults to Chart.appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# lplex-cloud configuration
+config:
+  # gRPC listen address for boat connections
+  grpcPort: 9443
+  # HTTP listen address for dashboard/API
+  httpPort: 8080
+  # Ring buffer size per instance (power of 2)
+  ringSize: 65536
+  # Device idle timeout (0 = disabled)
+  deviceIdleTimeout: "5m"
+
+  # TLS for gRPC (mTLS with boat clients)
+  tls:
+    # Client CA certificate for verifying boat mTLS certs
+    clientCA: ""
+    # Server certificate
+    cert: ""
+    # Server private key
+    key: ""
+
+  # Journal retention
+  journal:
+    rotateDuration: "PT1H"
+    retention:
+      maxAge: "P90D"
+      maxSize: 0
+      softPct: 80
+      overflowPolicy: "delete-unarchived"
+
+  # Archive (optional)
+  archive:
+    command: ""
+    trigger: ""
+
+# Persistent volume for instance state and journals
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 50Gi
+
+# TLS secrets (create separately or use cert-manager)
+tlsSecret:
+  # Name of existing Kubernetes Secret containing tls.crt, tls.key, ca.crt
+  name: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+service:
+  type: ClusterIP
+  grpcPort: 9443
+  httpPort: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: lplex-cloud.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podSecurityContext:
+  fsGroup: 65534
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  readOnlyRootFilesystem: true
