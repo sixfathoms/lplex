@@ -1,0 +1,16 @@
+# Logrotate configuration for lplex-server.
+# lplex-server logs to stdout via slog (captured by systemd journal),
+# but this config handles any file-based logging or redirected output.
+
+/var/log/lplex-server.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 root adm
+    postrotate
+        systemctl reload lplex-server > /dev/null 2>&1 || true
+    endscript
+}
