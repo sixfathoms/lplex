@@ -1,0 +1,555 @@
+openapi: 3.1.0
+info:
+  title: lplex API
+  description: |
+    CAN bus HTTP bridge for NMEA 2000. Streams real-time CAN frames via SSE
+    or WebSocket, with session management, filtering, and replay from journal files.
+  version: 0.1.0
+  license:
+    name: MIT
+    url: https://github.com/sixfathoms/lplex/blob/main/LICENSE
+
+servers:
+  - url: http://localhost:8089
+    description: Local lplex-server
+
+tags:
+  - name: streaming
+    description: Real-time frame streaming (SSE and WebSocket)
+  - name: sessions
+    description: Buffered client session management
+  - name: transmit
+    description: CAN bus transmission
+  - name: data
+    description: Device and value queries
+  - name: history
+    description: Historical journal queries
+  - name: health
+    description: Health and monitoring endpoints
+
+paths:
+  /events:
+    get:
+      tags: [streaming]
+      summary: Ephemeral SSE stream
+      description: |
+        Stream CAN frames in real-time via Server-Sent Events. No session
+        state; frames are not buffered. Supports filtering by PGN, source,
+        manufacturer, instance, bus, and device name.
+      parameters:
+        - $ref: '#/components/parameters/pgn'
+        - $ref: '#/components/parameters/excludePgn'
+        - $ref: '#/components/parameters/src'
+        - $ref: '#/components/parameters/manufacturer'
+        - $ref: '#/components/parameters/instance'
+        - $ref: '#/components/parameters/name'
+        - $ref: '#/components/parameters/bus'
+        - $ref: '#/components/parameters/decode'
+      responses:
+        '200':
+          description: SSE stream of CAN frames
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/Frame'
+
+  /ws:
+    get:
+      tags: [streaming]
+      summary: WebSocket bidirectional stream
+      description: |
+        Bidirectional WebSocket transport. Streams filtered CAN frames to the
+        client and accepts `send` messages for CAN bus transmission. Same
+        filter parameters as /events.
+      parameters:
+        - $ref: '#/components/parameters/pgn'
+        - $ref: '#/components/parameters/excludePgn'
+        - $ref: '#/components/parameters/src'
+        - $ref: '#/components/parameters/manufacturer'
+        - $ref: '#/components/parameters/instance'
+        - $ref: '#/components/parameters/name'
+        - $ref: '#/components/parameters/bus'
+        - $ref: '#/components/parameters/decode'
+      responses:
+        '101':
+          description: WebSocket upgrade
+
+  /clients/{clientId}:
+    put:
+      tags: [sessions]
+      summary: Create or update a buffered session
+      description: |
+        Creates a buffered client session with the given ID. The session
+        tracks a cursor position and buffers frames for the specified
+        timeout duration.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{1,64}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                buffer_timeout:
+                  type: string
+                  description: ISO 8601 duration for buffer window (e.g. PT5M)
+                  example: PT5M
+                pgn:
+                  type: array
+                  items:
+                    type: integer
+                manufacturer:
+                  type: string
+                bus:
+                  type: string
+      responses:
+        '200':
+          description: Session created or updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cursor:
+                    type: integer
+                    description: Current sequence position
+        '400':
+          description: Invalid request
+
+  /clients/{clientId}/events:
+    get:
+      tags: [sessions]
+      summary: Buffered SSE stream
+      description: |
+        Stream frames for a buffered session. Replays any buffered frames
+        since the last ACK, then continues with live frames.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/decode'
+      responses:
+        '200':
+          description: SSE stream of CAN frames
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/Frame'
+        '404':
+          description: Session not found
+
+  /clients/{clientId}/ack:
+    put:
+      tags: [sessions]
+      summary: Acknowledge frames
+      description: Advances the session cursor to the given sequence number.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seq]
+              properties:
+                seq:
+                  type: integer
+                  description: Sequence number to acknowledge through
+      responses:
+        '200':
+          description: ACK accepted
+        '404':
+          description: Session not found
+
+  /send:
+    post:
+      tags: [transmit]
+      summary: Send a CAN frame
+      description: |
+        Transmit a CAN frame on the bus. Requires send to be enabled via
+        configuration. Subject to send policy rules and rate limiting.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendRequest'
+      responses:
+        '202':
+          description: Frame queued for transmission
+        '403':
+          description: Send disabled, policy denied, or read-only mode
+        '429':
+          description: Rate limit exceeded
+        '503':
+          description: TX queue full
+
+  /query:
+    post:
+      tags: [transmit]
+      summary: Query a PGN value
+      description: |
+        Sends an ISO Request (PGN 59904) to the bus and waits for a
+        matching response frame.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pgn]
+              properties:
+                pgn:
+                  type: integer
+                  description: PGN to request
+                dst:
+                  type: integer
+                  description: Destination address (0xFF for broadcast)
+                  default: 255
+                timeout:
+                  type: string
+                  description: ISO 8601 timeout duration
+                  default: PT2S
+                bus:
+                  type: string
+                  description: Target CAN interface
+      responses:
+        '200':
+          description: Response frame received
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Frame'
+        '403':
+          description: Send disabled or policy denied
+        '429':
+          description: Rate limit exceeded
+        '504':
+          description: Timeout waiting for response
+
+  /devices:
+    get:
+      tags: [data]
+      summary: List discovered devices
+      description: Returns all devices discovered on the CAN bus via address claims.
+      responses:
+        '200':
+          description: Device list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Device'
+
+  /values:
+    get:
+      tags: [data]
+      summary: Last-seen values
+      description: Returns the most recent frame for each (source, PGN) pair.
+      responses:
+        '200':
+          description: Value map
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /values/decoded:
+    get:
+      tags: [data]
+      summary: Last-seen values with PGN decoding
+      description: Same as /values but with decoded PGN fields included.
+      responses:
+        '200':
+          description: Decoded value map
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /history:
+    get:
+      tags: [history]
+      summary: Query historical frames
+      description: |
+        Query journal files for historical frames by time range, with
+        optional PGN/source filtering and downsampling.
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Start time (RFC 3339)
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: End time (RFC 3339)
+        - name: pgn
+          in: query
+          schema:
+            type: string
+          description: Comma-separated PGN filter
+        - name: src
+          in: query
+          schema:
+            type: string
+          description: Comma-separated source filter
+        - name: interval
+          in: query
+          schema:
+            type: string
+          description: Downsampling interval (ISO 8601, e.g. PT1S)
+        - name: decode
+          in: query
+          schema:
+            type: boolean
+          description: Include decoded PGN fields
+      responses:
+        '200':
+          description: Array of matching frames
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Frame'
+
+  /healthz:
+    get:
+      tags: [health]
+      summary: Health check
+      description: Combined health status including broker, bus silence, and replication.
+      responses:
+        '200':
+          description: Healthy
+        '503':
+          description: Unhealthy
+
+  /livez:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      description: Always returns 200 if the process is running.
+      responses:
+        '200':
+          description: Alive
+
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      description: Returns 200 when the server is ready to accept traffic.
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready
+
+  /metrics:
+    get:
+      tags: [health]
+      summary: Prometheus metrics
+      description: Prometheus text format metrics for broker, journal, and replication.
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /replication/status:
+    get:
+      tags: [health]
+      summary: Replication status
+      description: Current replication client status (only available when replication is configured).
+      responses:
+        '200':
+          description: Replication status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplicationStatus'
+
+components:
+  parameters:
+    pgn:
+      name: pgn
+      in: query
+      schema:
+        type: string
+      description: Comma-separated PGN filter (e.g. 129025,130310)
+    excludePgn:
+      name: exclude_pgn
+      in: query
+      schema:
+        type: string
+      description: Comma-separated PGNs to exclude
+    src:
+      name: src
+      in: query
+      schema:
+        type: string
+      description: Comma-separated source address filter
+    manufacturer:
+      name: manufacturer
+      in: query
+      schema:
+        type: string
+      description: Filter by manufacturer name (e.g. Garmin)
+    instance:
+      name: instance
+      in: query
+      schema:
+        type: string
+      description: Filter by device instance
+    name:
+      name: name
+      in: query
+      schema:
+        type: string
+      description: Filter by device name
+    bus:
+      name: bus
+      in: query
+      schema:
+        type: string
+      description: Filter by CAN bus name (e.g. can0)
+    decode:
+      name: decode
+      in: query
+      schema:
+        type: boolean
+      description: Include decoded PGN fields in output
+
+  schemas:
+    Frame:
+      type: object
+      properties:
+        seq:
+          type: integer
+          description: Monotonic sequence number
+        ts:
+          type: string
+          format: date-time
+          description: Frame timestamp
+        prio:
+          type: integer
+          description: CAN priority (0-7)
+        pgn:
+          type: integer
+          description: Parameter Group Number
+        src:
+          type: integer
+          description: Source address (0-255)
+        dst:
+          type: integer
+          description: Destination address (0xFF for broadcast)
+        bus:
+          type: string
+          description: CAN bus name
+        data:
+          type: string
+          description: Hex-encoded frame payload
+        decoded:
+          type: object
+          description: Decoded PGN fields (when decode=true)
+
+    SendRequest:
+      type: object
+      required: [pgn, data]
+      properties:
+        pgn:
+          type: integer
+          description: PGN to send
+        src:
+          type: integer
+          description: Source address (0 = use virtual device)
+        dst:
+          type: integer
+          description: Destination address
+          default: 255
+        prio:
+          type: integer
+          description: CAN priority
+          default: 6
+        data:
+          type: string
+          description: Hex-encoded payload
+        bus:
+          type: string
+          description: Target CAN interface (empty = default)
+
+    Device:
+      type: object
+      properties:
+        source:
+          type: integer
+          description: Source address
+        bus:
+          type: string
+          description: CAN bus name
+        name:
+          type: integer
+          description: 64-bit ISO NAME
+        manufacturer:
+          type: string
+        model_id:
+          type: string
+        software_version:
+          type: string
+        device_class:
+          type: string
+        device_function:
+          type: string
+        device_instance:
+          type: integer
+
+    ReplicationStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        cloud_cursor:
+          type: integer
+        boat_head:
+          type: integer
+        holes:
+          type: integer
+        live_frames_sent:
+          type: integer
+        backfill_blocks_sent:
+          type: integer
+        reconnects:
+          type: integer
+
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+security:
+  - {}
+  - apiKey: []
+  - bearerAuth: []
