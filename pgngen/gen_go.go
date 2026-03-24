@@ -160,7 +160,7 @@ func GenerateGo(s *Schema, pkg string) string {
 			if isNullable(f) {
 				goType = "*" + goType
 			}
-			tag := fmt.Sprintf("`json:%q`", toSnake(f.Name))
+			tag := jsonTag(f)
 			comment := ""
 			if f.Unit != "" {
 				comment = " // " + f.Unit
@@ -499,7 +499,7 @@ func writeVariant(b *strings.Builder, p PGNDef) {
 		if isNullable(f) {
 			goType = "*" + goType
 		}
-		tag := fmt.Sprintf("`json:%q`", toSnake(f.Name))
+		tag := jsonTag(f)
 		comment := ""
 		if f.Unit != "" {
 			comment = " // " + f.Unit
@@ -616,7 +616,7 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 			if isNullable(f) {
 				goType = "*" + goType
 			}
-			tag := fmt.Sprintf("`json:%q`", toSnake(f.Name))
+			tag := jsonTag(f)
 			comment := ""
 			if f.Unit != "" {
 				comment = " // " + f.Unit
@@ -1483,6 +1483,14 @@ func writeBitsStmt(b *strings.Builder, byteOff, bitInByte, bits int, rawExpr str
 	fmt.Fprintf(b, "\t\tv = (v & ^(0x%016X << %d)) | ((%s & 0x%016X) << %d)\n",
 		mask, bitInByte, rawExpr, mask, bitInByte)
 	fmt.Fprintf(b, "\t\tbinary.LittleEndian.PutUint64(data[%d:%d], v)\n\t}\n", byteOff, byteOff+8)
+}
+
+// jsonTag returns the struct tag for a field, adding omitempty for nullable fields.
+func jsonTag(f FieldDef) string {
+	if isNullable(f) {
+		return fmt.Sprintf("`json:\"%s,omitempty\"`", toSnake(f.Name))
+	}
+	return fmt.Sprintf("`json:%q`", toSnake(f.Name))
 }
 
 // isNullable returns true if a field should use a pointer type to represent
