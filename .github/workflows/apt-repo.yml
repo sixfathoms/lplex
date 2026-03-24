@@ -1,0 +1,109 @@
+name: APT Repository
+
+# Rebuild the APT repo whenever a new release is published.
+on:
+  release:
+    types: [published]
+  workflow_dispatch: # allow manual trigger
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  update-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: apt-repo
+          fetch-depth: 0
+        continue-on-error: true
+
+      # If the apt-repo branch doesn't exist yet, create it as an orphan.
+      - name: Initialize apt-repo branch
+        run: |
+          if [ ! -d ".git" ]; then
+            git init
+            git checkout --orphan apt-repo
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}" "https://github.com/${{ github.repository }}.git"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install APT tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev apt-utils
+
+      - name: Download .deb files from all releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p pool
+          # Download all .deb files from all releases
+          gh release list --repo "${{ github.repository }}" --limit 20 --json tagName -q '.[].tagName' | while read -r tag; do
+            gh release download "$tag" --repo "${{ github.repository }}" --pattern "*.deb" --dir pool --skip-existing 2>/dev/null || true
+          done
+          echo "Downloaded .deb files:"
+          ls -la pool/ || echo "(none)"
+
+      - name: Build APT repository
+        run: |
+          # Create directory structure
+          mkdir -p dists/stable/main/binary-amd64
+          mkdir -p dists/stable/main/binary-arm64
+
+          # Generate Packages files for each architecture
+          cd pool
+          for arch in amd64 arm64; do
+            dpkg-scanpackages --arch "$arch" . > "../dists/stable/main/binary-${arch}/Packages" 2>/dev/null || true
+            gzip -9c "../dists/stable/main/binary-${arch}/Packages" > "../dists/stable/main/binary-${arch}/Packages.gz"
+          done
+          cd ..
+
+          # Generate Release file
+          cat > dists/stable/Release <<EOF
+          Origin: sixfathoms
+          Label: lplex
+          Suite: stable
+          Codename: stable
+          Architectures: amd64 arm64
+          Components: main
+          Description: lplex APT repository
+          EOF
+          # Fix indentation (heredoc adds leading spaces)
+          sed -i 's/^          //' dists/stable/Release
+
+          # Add checksums to Release
+          cd dists/stable
+          apt-ftparchive release . >> Release 2>/dev/null || true
+          cd ../..
+
+          # Create a simple index page
+          cat > index.html <<'INDEXEOF'
+          <!DOCTYPE html>
+          <html>
+          <head><title>lplex APT Repository</title></head>
+          <body>
+          <h1>lplex APT Repository</h1>
+          <p>Add this repository to your system:</p>
+          <pre>
+          echo "deb [trusted=yes] https://sixfathoms.github.io/lplex stable main" | sudo tee /etc/apt/sources.list.d/lplex.list
+          sudo apt update
+          sudo apt install lplex
+          </pre>
+          <p><a href="https://github.com/sixfathoms/lplex">GitHub</a></p>
+          </body>
+          </html>
+          INDEXEOF
+          sed -i 's/^          //' index.html
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "Update APT repository for ${{ github.event.release.tag_name || 'manual' }}"
+          git push origin apt-repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
