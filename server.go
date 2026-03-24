@@ -63,6 +63,11 @@ func (s *Server) SetAPIKey(key string) {
 	s.apiKey = key
 }
 
+// SetSendPolicy updates the send policy at runtime (for config reload).
+func (s *Server) SetSendPolicy(policy sendpolicy.SendPolicy) {
+	s.sendPolicy = policy
+}
+
 // SetReadOnly completely disables the /send and /query endpoints, regardless
 // of the send policy. This is a defense-in-depth kill switch.
 func (s *Server) SetReadOnly(readOnly bool) {

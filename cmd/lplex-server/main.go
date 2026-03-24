@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/grandcat/zeroconf"
+	"github.com/gurkankaymak/hocon"
 	"github.com/sixfathoms/lplex"
 	"github.com/sixfathoms/lplex/journal"
 	"github.com/sixfathoms/lplex/keeper"
@@ -228,6 +229,16 @@ func main() {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// SIGHUP reloads config without restarting.
+	hupCh := make(chan os.Signal, 1)
+	signal.Notify(hupCh, syscall.SIGHUP)
+	go func() {
+		for range hupCh {
+			logger.Info("SIGHUP received, reloading config")
+			reloadConfig(cfgPath, srv, logger)
+		}
+	}()
 
 	var wg sync.WaitGroup
 
@@ -711,4 +722,64 @@ func parseSendPolicy(enabled bool, rulesStr string) (sendpolicy.SendPolicy, erro
 		p.Rules = rules
 	}
 	return p, nil
+}
+
+// reloadConfig re-reads the HOCON config file and applies hot-reloadable
+// settings: send rules, API key, read-only mode, and rate limits.
+func reloadConfig(cfgPath string, srv *lplex.Server, logger *slog.Logger) {
+	if cfgPath == "" {
+		logger.Warn("no config file to reload")
+		return
+	}
+
+	cfg, err := hocon.ParseResource(cfgPath)
+	if err != nil {
+		logger.Error("config reload failed: parse error", "path", cfgPath, "error", err)
+		return
+	}
+
+	// Reload send policy.
+	sendEnabled := cfg.GetString("send.enabled") == "true"
+	sendRulesStr := ""
+	if arr := cfg.GetArray("send.rules"); len(arr) > 0 {
+		parts := make([]string, 0, len(arr))
+		for _, elem := range arr {
+			if elem.Type() == hocon.StringType {
+				parts = append(parts, string(elem.(hocon.String)))
+			}
+		}
+		sendRulesStr = strings.Join(parts, ";")
+	}
+	policy, err := parseSendPolicy(sendEnabled, sendRulesStr)
+	if err != nil {
+		logger.Error("config reload: invalid send rules", "error", err)
+	} else {
+		srv.SetSendPolicy(policy)
+		logger.Info("reloaded send policy", "enabled", sendEnabled)
+	}
+
+	// Reload API key.
+	if key := cfg.GetString("api-key"); key != "" {
+		srv.SetAPIKey(key)
+	}
+
+	// Reload read-only mode.
+	srv.SetReadOnly(cfg.GetString("read-only") == "true")
+
+	// Reload rate limits.
+	if rlStr := cfg.GetString("send.rate-limit"); rlStr != "" {
+		if rl, err := strconv.ParseFloat(rlStr, 64); err == nil && rl > 0 {
+			burstStr := cfg.GetString("send.rate-burst")
+			burst := 10
+			if burstStr != "" {
+				if b, err := strconv.Atoi(burstStr); err == nil {
+					burst = b
+				}
+			}
+			srv.SetSendRateLimit(rl, burst)
+			logger.Info("reloaded rate limit", "rps", rl, "burst", burst)
+		}
+	}
+
+	logger.Info("config reloaded", "path", cfgPath)
 }
