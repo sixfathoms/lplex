@@ -49,7 +49,7 @@ brew install sixfathoms/tap/lplex
 
 ## Docker
 
-The Docker image runs on Linux (amd64 and arm64). It includes both `lplex-server` and `lplex-cloud`.
+The Docker image runs on Linux (amd64 and arm64). It includes `lplex-server`, `lplex-cloud`, and the `lplex` client CLI.
 
 ```bash
 # lplex-server (boat server)
@@ -64,11 +64,20 @@ docker run --rm -p 9443:9443 -p 8080:8080 \
   -v /etc/lplex-cloud:/etc/lplex-cloud:ro \
   ghcr.io/sixfathoms/lplex \
   lplex-cloud -data-dir /data/lplex
+
+# Simulate a boat from recorded journal files (no CAN bus needed)
+docker run --rm -p 8090:8090 \
+  -v /path/to/journals:/data:ro \
+  --entrypoint /lplex \
+  ghcr.io/sixfathoms/lplex \
+  simulate --dir /data --exit-when-done
 ```
 
 :::note
 The boat server needs `--network=host` to access the SocketCAN interface on the host.
 :::
+
+See [Simulation & Testing](/user-guide/simulation) for Docker Compose examples and integration testing patterns.
 
 ## Build from source
 

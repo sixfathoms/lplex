@@ -17,6 +17,7 @@ const sidebars: SidebarsConfig = {
       label: 'User Guide',
       items: [
         'user-guide/lplex',
+        'user-guide/simulation',
         'user-guide/streaming',
         'user-guide/filtering',
         'user-guide/journaling',

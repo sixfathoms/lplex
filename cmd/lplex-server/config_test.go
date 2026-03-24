@@ -101,7 +101,7 @@ func TestApplyConfigCLIFlagsWin(t *testing.T) {
 		flag.CommandLine = old
 	})
 
-	if err := applyConfig(path); err != nil {
+	if _, err := applyConfig(path); err != nil {
 		t.Fatalf("applyConfig: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestApplyConfigSendRulesStringArray(t *testing.T) {
 	flag.CommandLine = fs
 	t.Cleanup(func() { flag.CommandLine = old })
 
-	if err := applyConfig(path); err != nil {
+	if _, err := applyConfig(path); err != nil {
 		t.Fatalf("applyConfig: %v", err)
 	}
 
@@ -161,7 +161,7 @@ func TestApplyConfigSendRulesObjectFormat(t *testing.T) {
 	flag.CommandLine = fs
 	t.Cleanup(func() { flag.CommandLine = old })
 
-	if err := applyConfig(path); err != nil {
+	if _, err := applyConfig(path); err != nil {
 		t.Fatalf("applyConfig: %v", err)
 	}
 
@@ -190,7 +190,7 @@ func TestApplyConfigSendRulesObjectNameArray(t *testing.T) {
 	flag.CommandLine = fs
 	t.Cleanup(func() { flag.CommandLine = old })
 
-	if err := applyConfig(path); err != nil {
+	if _, err := applyConfig(path); err != nil {
 		t.Fatalf("applyConfig: %v", err)
 	}
 
@@ -220,7 +220,7 @@ func TestApplyConfigSendRulesMixed(t *testing.T) {
 	flag.CommandLine = fs
 	t.Cleanup(func() { flag.CommandLine = old })
 
-	if err := applyConfig(path); err != nil {
+	if _, err := applyConfig(path); err != nil {
 		t.Fatalf("applyConfig: %v", err)
 	}
 
@@ -250,7 +250,7 @@ func TestApplyConfigSetsUnsetFlags(t *testing.T) {
 		flag.CommandLine = old
 	})
 
-	if err := applyConfig(path); err != nil {
+	if _, err := applyConfig(path); err != nil {
 		t.Fatalf("applyConfig: %v", err)
 	}
 
