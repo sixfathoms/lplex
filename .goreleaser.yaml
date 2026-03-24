@@ -89,6 +89,9 @@ nfpms:
       - src: packaging/lplex-server.default
         dst: /etc/default/lplex-server
         type: config
+      - src: packaging/lplex-server.logrotate
+        dst: /etc/logrotate.d/lplex-server
+        type: config
     scripts:
       postinstall: packaging/postinstall.sh
 
