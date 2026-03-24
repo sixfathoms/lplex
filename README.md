@@ -13,6 +13,7 @@ CAN bus HTTP bridge for NMEA 2000. Reads raw CAN frames from a SocketCAN interfa
 - **[Go client library](#go-client-library-lplexc)** (`lplexc`) with mDNS discovery, subscriptions, device queries, and transmit
 - **[TypeScript client library](#typescript-client-library-sixfathomslplex)** (`@sixfathoms/lplex`) for browsers and Node.js, with CloudClient for lplex-cloud
 - **CAN transmit** via [POST /send](#transmit) with automatic fast-packet fragmentation
+- **InfluxDB sink** for writing decoded PGN values to InfluxDB v2 as time-series data, with buffered writes and configurable flush intervals
 
 ## Installation
 

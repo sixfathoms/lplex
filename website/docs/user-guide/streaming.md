@@ -195,3 +195,67 @@ mqtt:
 - **Auto-reconnect**: the MQTT client automatically reconnects if the broker becomes unavailable, with a 5-second retry interval
 - **Non-blocking**: if the MQTT publish can't keep up with the CAN frame rate, frames are dropped from the subscriber buffer (128 entries) rather than blocking the broker
 - **QoS trade-offs**: QoS 0 has the lowest overhead but no delivery guarantee; QoS 1 ensures delivery but may duplicate messages during reconnection
+
+## InfluxDB sink
+
+lplex can write decoded PGN values to InfluxDB v2 as time-series data, enabling long-term analytics with Grafana, Chronograf, or any InfluxDB-compatible tool.
+
+### Enabling
+
+```bash
+lplex-server -influxdb-url http://localhost:8086 -influxdb-org myorg -influxdb-bucket nmea2k -influxdb-token my-token
+```
+
+### Configuration
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-influxdb-url` | (empty) | InfluxDB server URL. Empty = sink disabled. |
+| `-influxdb-token` | (empty) | InfluxDB v2 authentication token |
+| `-influxdb-org` | (empty) | InfluxDB organization name |
+| `-influxdb-bucket` | (empty) | InfluxDB bucket name |
+| `-influxdb-measurement` | `nmea2k` | Measurement name for all points |
+| `-influxdb-flush-interval` | `10s` | How often buffered points are written |
+| `-influxdb-flush-size` | `1000` | Number of points that trigger an immediate flush |
+
+HOCON paths: `influxdb.url`, `influxdb.token`, `influxdb.org`, `influxdb.bucket`, `influxdb.measurement`, `influxdb.flush-interval`, `influxdb.flush-size`.
+
+### Data model
+
+Each decoded PGN frame produces one InfluxDB point:
+
+- **Measurement**: configurable (default `nmea2k`)
+- **Tags**: `pgn`, `src`, `bus`, optionally `dst` (omitted for broadcast destination 255)
+- **Fields**: all decoded PGN struct fields — floats, integers, booleans, strings, and enum values
+- **Timestamp**: frame timestamp at nanosecond precision
+
+Only PGNs with a decoder in `pgn.Registry` are written. Unknown PGNs are silently skipped.
+
+Example line protocol:
+
+```
+nmea2k,pgn=129025,src=10,bus=can0 latitude=43.075975,longitude=-89.400228 1705320000000000000
+nmea2k,pgn=130306,src=22,bus=can0 wind_speed=4.52,wind_angle=1.23,reference="apparent" 1705320000100000000
+```
+
+### Examples
+
+```bash
+# Local InfluxDB with default measurement name
+lplex-server -influxdb-url http://localhost:8086 \
+  -influxdb-org myorg -influxdb-bucket nmea2k \
+  -influxdb-token my-token
+
+# Custom measurement and faster flushes
+lplex-server -influxdb-url http://influx.local:8086 \
+  -influxdb-org boats -influxdb-bucket sv-adventure \
+  -influxdb-measurement boat_data \
+  -influxdb-flush-interval 5s -influxdb-flush-size 500 \
+  -influxdb-token my-token
+```
+
+### Reliability
+
+- **Buffered writes**: points are batched and flushed periodically or when the buffer reaches `-influxdb-flush-size`, reducing write load on InfluxDB
+- **Non-blocking**: if InfluxDB is unavailable, failed flushes are logged and dropped rather than blocking the broker
+- **Graceful shutdown**: remaining buffered points are flushed on server shutdown

@@ -221,6 +221,13 @@ replication {
 | `-send-rate-limit` | `send.rate-limit` | `0` | Max requests/sec for /send and /query (0 = unlimited) |
 | `-send-rate-burst` | `send.rate-burst` | `10` | Max burst size for /send rate limiter |
 | `-api-key` | `api-key` | (empty) | API key for HTTP authentication (empty = no auth) |
+| `-influxdb-url` | `influxdb.url` | (empty) | InfluxDB server URL (e.g. `http://localhost:8086`). Empty = sink disabled. |
+| `-influxdb-token` | `influxdb.token` | (empty) | InfluxDB v2 authentication token |
+| `-influxdb-org` | `influxdb.org` | (empty) | InfluxDB organization name |
+| `-influxdb-bucket` | `influxdb.bucket` | (empty) | InfluxDB bucket name |
+| `-influxdb-measurement` | `influxdb.measurement` | `nmea2k` | InfluxDB measurement name |
+| `-influxdb-flush-interval` | `influxdb.flush-interval` | `10s` | Buffered write flush interval |
+| `-influxdb-flush-size` | `influxdb.flush-size` | `1000` | Points buffer size before immediate flush |
 
 ## lplex-cloud
 

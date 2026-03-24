@@ -156,7 +156,7 @@ lplex-cloud process
 
 | Package | Owns |
 |---|---|
-| `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANBus` (interface), `SocketCANBus`, `LoopbackBus`, `CANReader`, `CANWriter`, `JournalWriter`, `DeviceRegistry`, `ValueStore`, `FastPacketAssembler`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, `EventLog`, filters, ring buffer. Embeddable by external Go services. |
+| `lplex` (root) | Public core: `Broker`, `Server`, `Consumer`, `CANBus` (interface), `SocketCANBus`, `LoopbackBus`, `CANReader`, `CANWriter`, `JournalWriter`, `DeviceRegistry`, `ValueStore`, `FastPacketAssembler`, `ReplicationClient`, `ReplicationServer`, `InstanceManager`, `HoleTracker`, `BlockWriter`, `EventLog`, `InfluxDBSink`, filters, ring buffer. Embeddable by external Go services. |
 | `cmd/lplex-server/` | Boat server: flag parsing, HOCON config, signal handling, mDNS registration, wires broker + CAN I/O + HTTP + optional replication |
 | `cmd/lplex-cloud/` | Cloud server: gRPC + HTTP servers, InstanceManager, mTLS, HOCON config |
 | `cmd/lplex/` | Multi-subcommand CLI: `dump` (streaming/replay), `tail` (simple live follow with optional replay), `dashboard` (interactive TUI with live data), `simulate` (journal replay through full HTTP server), `inspect` (journal inspection), `verify` (journal integrity verification), `doctor` (system diagnostics), `completion` (shell completion scripts for bash/zsh/fish/powershell), `loadtest` (synthetic CAN traffic generator for stress testing), `devices`, `values`, `send`, `request`, `switches`. Uses cobra. Pretty-print, device table, PGN decoding (`--decode`), change tracking (`--changes`), display filter expressions (`--where`), auto-reconnect. |
@@ -185,6 +185,7 @@ lplex-cloud process
 | `decode_sse.go` | `injectDecoded`, adds decoded PGN fields to pre-serialized frame JSON. Used by `/events?decode=true`, `/ws?decode=true`, and `/history?decode=true`. |
 | `history.go` | `handleHistory`, `GET /history` endpoint for querying journal files by time range with PGN/source/interval filters and optional decode. Returns JSON array of matching frames. |
 | `mqtt.go` | `MQTTBridge`, `MQTTBridgeConfig`, publishes CAN frames to an MQTT broker. Subscribes to the broker's frame stream and publishes to `{prefix}/frames` topics. Auto-reconnect via paho MQTT client. |
+| `influxdb.go` | `InfluxDBSink`, `InfluxDBSinkConfig`, subscribes to broker frame stream, decodes PGNs via `pgn.Registry`, writes decoded field values to InfluxDB v2 as time-series points using line protocol. Buffered writes with configurable flush interval/size. |
 | `can_bus.go` | `CANBus` interface (`ReadFrames`, `WriteFrames`, `Name`), `SocketCANBus` (wraps `CANReader`/`CANWriter`), `LoopbackBus` (in-memory echo for testing/macOS dev) |
 | `can.go` | `CANReader` (SocketCAN rx + fast-packet reassembly), `CANWriter` (SocketCAN tx + fragmentation) |
 | `canid.go` | Thin wrappers re-exporting `canbus.ParseCANID`, `canbus.BuildCANID` |
@@ -311,6 +312,8 @@ lplex-server supports a `-read-only` flag (HOCON: `read-only`) that completely d
 lplex-server supports rate limiting on `/send` and `/query` via `-send-rate-limit` (requests/sec, 0 = unlimited) and `-send-rate-burst` (max burst, default 10). HOCON paths: `send.rate-limit`, `send.rate-burst`. Uses a token bucket algorithm. Returns HTTP 429 when exceeded.
 
 lplex-server supports optional API key authentication via `-api-key` (HOCON path: `api-key`). When set, all HTTP requests must include the key via `Authorization: Bearer <key>` or `X-API-Key: <key>` header. Health endpoints (`/healthz`, `/livez`, `/readyz`, `/metrics`) are exempt.
+
+lplex-server supports an optional InfluxDB time-series sink via `-influxdb-url` (InfluxDB server URL, empty = disabled). When set, the sink subscribes to the broker's frame stream, decodes known PGNs via `pgn.Registry`, and writes decoded field values to InfluxDB v2 using the line protocol write API. Tags: `pgn`, `src`, `bus`, optional `dst`. Fields: decoded PGN struct fields (floats, ints, bools, strings, enums). Additional flags: `-influxdb-token`, `-influxdb-org`, `-influxdb-bucket`, `-influxdb-measurement` (default `nmea2k`), `-influxdb-flush-interval` (default `10s`), `-influxdb-flush-size` (default `1000`). HOCON paths: `influxdb.url`, `influxdb.token`, `influxdb.org`, `influxdb.bucket`, `influxdb.measurement`, `influxdb.flush-interval`, `influxdb.flush-size`.
 
 Both binaries support `-otel-endpoint` (OTLP gRPC collector endpoint, empty = disabled) and `-otel-sample-ratio` (0.0-1.0, default 1.0) for distributed tracing. When enabled, traces propagate via W3C Trace Context through HTTP (otelhttp middleware) and gRPC (otelgrpc interceptors) for end-to-end observability across boat → cloud replication.
 

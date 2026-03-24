@@ -145,6 +145,18 @@ journal {
   }
 }
 
+# InfluxDB time-series sink (comment out to disable)
+# Decodes PGN frames and writes field values to InfluxDB v2.
+# influxdb {
+#   url = "http://localhost:8086"
+#   token = "your-influxdb-token"
+#   org = "my-org"
+#   bucket = "nmea2k"
+#   measurement = "nmea2k"           # measurement name (default: nmea2k)
+#   flush-interval = "10s"           # write buffer flush interval (default: 10s)
+#   flush-size = 1000                # points before immediate flush (default: 1000)
+# }
+
 # Cloud replication (comment out to disable)
 # replication {
 #   target = "lplex.example.com:9443"

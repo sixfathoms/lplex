@@ -52,6 +52,13 @@ var configToFlag = map[string]string{
 	"send.rate-limit":                       "send-rate-limit",
 	"send.rate-burst":                       "send-rate-burst",
 	"health.bus-silence-threshold":           "bus-silence-threshold",
+	"influxdb.url":                           "influxdb-url",
+	"influxdb.token":                         "influxdb-token",
+	"influxdb.org":                           "influxdb-org",
+	"influxdb.bucket":                        "influxdb-bucket",
+	"influxdb.measurement":                   "influxdb-measurement",
+	"influxdb.flush-interval":                "influxdb-flush-interval",
+	"influxdb.flush-size":                    "influxdb-flush-size",
 }
 
 // findConfigFile resolves which config file to use.

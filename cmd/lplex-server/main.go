@@ -74,6 +74,13 @@ func main() {
 	otelSampleRatio := flag.Float64("otel-sample-ratio", 1.0, "Trace sampling ratio (0.0-1.0, default: 1.0 = sample all)")
 	alertWebhookURL := flag.String("alert-webhook-url", "", "HTTP POST endpoint for alert notifications (empty = disabled)")
 	alertDedupWindow := flag.String("alert-dedup-window", "5m", "Suppress duplicate alerts within this window")
+	influxURL := flag.String("influxdb-url", "", "InfluxDB server URL (e.g. http://localhost:8086)")
+	influxToken := flag.String("influxdb-token", "", "InfluxDB authentication token")
+	influxOrg := flag.String("influxdb-org", "", "InfluxDB organization name")
+	influxBucket := flag.String("influxdb-bucket", "", "InfluxDB bucket name")
+	influxMeasurement := flag.String("influxdb-measurement", "nmea2k", "InfluxDB measurement name")
+	influxFlushInterval := flag.String("influxdb-flush-interval", "10s", "InfluxDB write flush interval (e.g. 10s)")
+	influxFlushSize := flag.Int("influxdb-flush-size", 1000, "InfluxDB points buffer size before flush")
 	mqttBrokerURL := flag.String("mqtt-broker", "", "MQTT broker URL for bridge publishing (e.g. tcp://localhost:1883)")
 	mqttTopicPrefix := flag.String("mqtt-topic-prefix", "lplex", "MQTT topic prefix for published frames")
 	mqttClientID := flag.String("mqtt-client-id", "lplex-server", "MQTT client ID")
@@ -496,6 +503,32 @@ func main() {
 			defer wg.Done()
 			if err := bridge.Run(ctx); err != nil && ctx.Err() == nil {
 				logger.Error("MQTT bridge failed", "error", err)
+			}
+		}()
+	}
+
+	// Start InfluxDB sink if configured
+	if *influxURL != "" {
+		flushInterval, err := time.ParseDuration(*influxFlushInterval)
+		if err != nil {
+			logger.Error("invalid influxdb-flush-interval", "value", *influxFlushInterval, "error", err)
+			os.Exit(1)
+		}
+		sink := lplex.NewInfluxDBSink(lplex.InfluxDBSinkConfig{
+			URL:           *influxURL,
+			Token:         *influxToken,
+			Org:           *influxOrg,
+			Bucket:        *influxBucket,
+			Measurement:   *influxMeasurement,
+			FlushInterval: flushInterval,
+			FlushSize:     *influxFlushSize,
+			Logger:        logger,
+		}, broker)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := sink.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("InfluxDB sink failed", "error", err)
 			}
 		}()
 	}
