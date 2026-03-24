@@ -218,6 +218,9 @@ func parseHOCNSlot(obj hocon.Object, index int) (lplex.ClientSlot, error) {
 				return lplex.ClientSlot{}, err
 			}
 			for _, val := range vals {
+				if val > 255 {
+					return lplex.ClientSlot{}, fmt.Errorf("%s.filter.instance: value %d exceeds uint8 range", prefix, val)
+				}
 				fc.Instance = append(fc.Instance, uint8(val))
 			}
 		}
