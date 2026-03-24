@@ -57,7 +57,28 @@ func (s *uintSlice) Type() string { return "uint" }
 var rootCmd = &cobra.Command{
 	Use:   "lplex",
 	Short: "NMEA 2000 CAN bus CLI",
-	Long:  "Multi-tool CLI for interacting with NMEA 2000 CAN bus data via lplex.",
+	Long: `Multi-tool CLI for interacting with NMEA 2000 CAN bus data via lplex.
+
+Configuration file (HOCON format):
+  ~/.config/lplex/lplex.conf
+
+Legacy config paths (checked in order if lplex.conf is absent):
+  ~/.config/lplex/lplexcli.conf
+  ~/.config/lplex/lplexdump.conf
+
+Override with --config. The config file defines named boats, mDNS timeout,
+and global/per-boat PGN and NAME exclusions. Example:
+
+  boats {
+    my-boat {
+      mdns = "inuc1"
+      cloud = "https://lplex.example.com/instances/my-boat"
+      exclude-pgn = [60928]
+    }
+  }
+  mdns-timeout = "5s"
+  exclude-pgn = [126996]
+  exclude-name = ["0x00A3B2C4D5E6F7FF"]`,
 	Version: fmt.Sprintf("%s (commit %s, built %s)", version, commit, date),
 }
 
