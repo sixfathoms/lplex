@@ -4,12 +4,13 @@ After=network.target sys-subsystem-net-devices-can0.device
 BindsTo=sys-subsystem-net-devices-can0.device
 
 [Service]
-Type=simple
+Type=notify
 User=theo
 ExecStart=/usr/bin/lplex-server $LPLEX_ARGS
 EnvironmentFile=-/etc/default/lplex-server
 Restart=on-failure
 RestartSec=5s
+WatchdogSec=30s
 
 [Install]
 WantedBy=multi-user.target

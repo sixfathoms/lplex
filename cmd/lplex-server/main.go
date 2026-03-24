@@ -589,6 +589,32 @@ func main() {
 		logger.Info("mDNS registered", "service", "_lplex._tcp", "port", *port)
 	}
 
+	// Notify systemd that the service is ready.
+	if lplex.SDReady() {
+		logger.Info("systemd notify: READY")
+	}
+
+	// Start watchdog ticker if running under systemd with WatchdogSec.
+	if wd := os.Getenv("WATCHDOG_USEC"); wd != "" {
+		if usec, err := strconv.ParseInt(wd, 10, 64); err == nil && usec > 0 {
+			// Ping at half the watchdog interval.
+			interval := time.Duration(usec) * time.Microsecond / 2
+			go func() {
+				ticker := time.NewTicker(interval)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ticker.C:
+						lplex.SDWatchdog()
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+			logger.Info("watchdog enabled", "interval", interval)
+		}
+	}
+
 	select {
 	case sig := <-sigCh:
 		logger.Info("received signal, shutting down", "signal", sig)
