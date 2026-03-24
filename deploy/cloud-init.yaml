@@ -1,0 +1,101 @@
+#cloud-config
+#
+# Cloud-init configuration for provisioning a new lplex boat server.
+# Works with Ubuntu 22.04+ on x86_64 or arm64.
+#
+# Usage:
+#   - Pass as user-data when creating a VM/instance
+#   - Or apply manually: sudo cloud-init single --name cc_runcmd --frequency once
+#
+# Customize the variables in the runcmd section before deploying.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - can-utils
+  - jq
+  - curl
+
+write_files:
+  # CAN interface configuration (adjust bitrate and interface name as needed)
+  - path: /etc/systemd/network/80-can.network
+    content: |
+      [Match]
+      Name=can0
+
+      [CAN]
+      BitRate=250000
+      RestartSec=100ms
+    permissions: "0644"
+
+  # lplex-server configuration
+  - path: /etc/lplex/lplex-server.conf
+    content: |
+      # CAN interface (adjust for your hardware)
+      interface = can0
+
+      # HTTP API port
+      port = 8089
+
+      # Journal recording
+      journal {
+        dir = /var/log/lplex
+        prefix = nmea2k
+        block-size = 262144
+        compression = zstd
+
+        rotate {
+          duration = PT1H
+        }
+
+        retention {
+          max-age = P30D
+          min-keep = PT24H
+        }
+      }
+
+      # Device idle timeout
+      device {
+        idle-timeout = 5m
+      }
+
+      # Bus silence alerting
+      bus-silence-timeout = PT30S
+
+      # Ring buffer size
+      ring-size = 65536
+    permissions: "0644"
+
+runcmd:
+  # --- Configuration (edit these before deploying) ---
+  - export LPLEX_VERSION="latest"  # or a specific version like "0.2.0"
+  - export LPLEX_ARCH=$(dpkg --print-architecture)  # amd64 or arm64
+
+  # --- Install lplex from GitHub Releases ---
+  - |
+    if [ "$LPLEX_VERSION" = "latest" ]; then
+      LPLEX_VERSION=$(curl -s https://api.github.com/repos/sixfathoms/lplex/releases/latest | jq -r .tag_name | sed 's/^v//')
+    fi
+    echo "Installing lplex ${LPLEX_VERSION} (${LPLEX_ARCH})"
+    curl -fsSL "https://github.com/sixfathoms/lplex/releases/download/v${LPLEX_VERSION}/lplex_${LPLEX_VERSION}_linux_${LPLEX_ARCH}.deb" -o /tmp/lplex.deb
+    dpkg -i /tmp/lplex.deb
+    rm /tmp/lplex.deb
+
+  # --- Set up CAN interface ---
+  - systemctl enable systemd-networkd
+  - systemctl restart systemd-networkd
+
+  # --- Create journal directory ---
+  - mkdir -p /var/log/lplex
+  - chown root:root /var/log/lplex
+
+  # --- Enable and start lplex-server ---
+  - systemctl daemon-reload
+  - systemctl enable lplex-server
+  - systemctl start lplex-server
+
+  # --- Verify ---
+  - sleep 2
+  - systemctl status lplex-server --no-pager || true
+  - echo "lplex boat server provisioning complete"
