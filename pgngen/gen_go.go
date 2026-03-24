@@ -743,21 +743,31 @@ func writeStructFieldDecodes(b *strings.Builder, sd *StructDef, baseVar, entryVa
 		expr := readBitsExprCursor(baseVar, byteOff, bitInByte, f.Bits, f.Signed)
 		if isNullable(f) {
 			unsignedExpr := readBitsExprCursor(baseVar, byteOff, bitInByte, f.Bits, false)
-			sentinel := sentinelHex(f.Bits)
-			fmt.Fprintf(b, "%sif v := %s; v != %s {\n", indent, unsignedExpr, sentinel)
+			sentinel := sentinelHex(f.Bits, f.Signed)
 			if f.Signed {
-				fmt.Fprintf(b, "%s\tf := float64(%s(v))", indent, intGoType(f.Bits))
+				allSet := sentinelHex(f.Bits, false)
+				fmt.Fprintf(b, "%sif v := %s; v != %s && v != %s {\n", indent, unsignedExpr, sentinel, allSet)
 			} else {
-				fmt.Fprintf(b, "%s\tf := float64(v)", indent)
+				fmt.Fprintf(b, "%sif v := %s; v != %s {\n", indent, unsignedExpr, sentinel)
 			}
-			if f.Scale != 0 {
-				fmt.Fprintf(b, " * %s", formatFloat(f.Scale))
+			if f.Type == TypeEnum {
+				fmt.Fprintf(b, "%s\te := %s(v)\n", indent, f.EnumRef)
+				fmt.Fprintf(b, "%s\t%s.%s = &e\n", indent, entryVar, goField)
+			} else {
+				if f.Signed {
+					fmt.Fprintf(b, "%s\tf := float64(%s(v))", indent, intGoType(f.Bits))
+				} else {
+					fmt.Fprintf(b, "%s\tf := float64(v)", indent)
+				}
+				if f.Scale != 0 {
+					fmt.Fprintf(b, " * %s", formatFloat(f.Scale))
+				}
+				if f.Offset != 0 {
+					fmt.Fprintf(b, " + %s", formatFloat(f.Offset))
+				}
+				b.WriteString("\n")
+				fmt.Fprintf(b, "%s\t%s.%s = &f\n", indent, entryVar, goField)
 			}
-			if f.Offset != 0 {
-				fmt.Fprintf(b, " + %s", formatFloat(f.Offset))
-			}
-			b.WriteString("\n")
-			fmt.Fprintf(b, "%s\t%s.%s = &f\n", indent, entryVar, goField)
 			fmt.Fprintf(b, "%s}\n", indent)
 		} else if f.HasScaling() {
 			fmt.Fprintf(b, "%s%s.%s = float64(%s)", indent, entryVar, goField, expr)
@@ -812,21 +822,31 @@ func writeVarStructFieldDecodes(b *strings.Builder, sd *StructDef, offVar, entry
 		expr := readBitsExprCursor(offVar, 0, bitInByte, f.Bits, f.Signed)
 		if isNullable(f) {
 			unsignedExpr := readBitsExprCursor(offVar, 0, bitInByte, f.Bits, false)
-			sentinel := sentinelHex(f.Bits)
-			fmt.Fprintf(b, "%sif v := %s; v != %s {\n", indent, unsignedExpr, sentinel)
+			sentinel := sentinelHex(f.Bits, f.Signed)
 			if f.Signed {
-				fmt.Fprintf(b, "%s\tf := float64(%s(v))", indent, intGoType(f.Bits))
+				allSet := sentinelHex(f.Bits, false)
+				fmt.Fprintf(b, "%sif v := %s; v != %s && v != %s {\n", indent, unsignedExpr, sentinel, allSet)
 			} else {
-				fmt.Fprintf(b, "%s\tf := float64(v)", indent)
+				fmt.Fprintf(b, "%sif v := %s; v != %s {\n", indent, unsignedExpr, sentinel)
 			}
-			if f.Scale != 0 {
-				fmt.Fprintf(b, " * %s", formatFloat(f.Scale))
+			if f.Type == TypeEnum {
+				fmt.Fprintf(b, "%s\te := %s(v)\n", indent, f.EnumRef)
+				fmt.Fprintf(b, "%s\t%s.%s = &e\n", indent, entryVar, goField)
+			} else {
+				if f.Signed {
+					fmt.Fprintf(b, "%s\tf := float64(%s(v))", indent, intGoType(f.Bits))
+				} else {
+					fmt.Fprintf(b, "%s\tf := float64(v)", indent)
+				}
+				if f.Scale != 0 {
+					fmt.Fprintf(b, " * %s", formatFloat(f.Scale))
+				}
+				if f.Offset != 0 {
+					fmt.Fprintf(b, " + %s", formatFloat(f.Offset))
+				}
+				b.WriteString("\n")
+				fmt.Fprintf(b, "%s\t%s.%s = &f\n", indent, entryVar, goField)
 			}
-			if f.Offset != 0 {
-				fmt.Fprintf(b, " + %s", formatFloat(f.Offset))
-			}
-			b.WriteString("\n")
-			fmt.Fprintf(b, "%s\t%s.%s = &f\n", indent, entryVar, goField)
 			fmt.Fprintf(b, "%s}\n", indent)
 		} else if f.HasScaling() {
 			fmt.Fprintf(b, "%s%s.%s = float64(%s)", indent, entryVar, goField, expr)
@@ -1206,23 +1226,35 @@ func writeDecodeField(b *strings.Builder, f FieldDef, goField string) {
 	rawExpr := readBitsExpr(byteOff, bitInByte, f.Bits, f.Signed)
 
 	if isNullable(f) {
-		// Scaled nullable field: read unsigned raw value, check sentinel, assign via pointer.
+		// Nullable field: read unsigned raw value, check sentinel, assign via pointer.
 		rawUnsigned := readBitsExpr(byteOff, bitInByte, f.Bits, false)
-		sentinel := sentinelHex(f.Bits)
-		fmt.Fprintf(b, "\tif v := %s; v != %s {\n", rawUnsigned, sentinel)
+		sentinel := sentinelHex(f.Bits, f.Signed)
 		if f.Signed {
-			fmt.Fprintf(b, "\t\tf := float64(%s(v))", intGoType(f.Bits))
+			// Signed fields: check both the NMEA 2000 "not available" sentinel (max positive,
+			// e.g. 0x7FFF for int16) and all-bits-set (e.g. 0xFFFF) which appears in 0xFF-padded data.
+			allSet := sentinelHex(f.Bits, false)
+			fmt.Fprintf(b, "\tif v := %s; v != %s && v != %s {\n", rawUnsigned, sentinel, allSet)
 		} else {
-			fmt.Fprintf(b, "\t\tf := float64(v)")
+			fmt.Fprintf(b, "\tif v := %s; v != %s {\n", rawUnsigned, sentinel)
 		}
-		if f.Scale != 0 {
-			fmt.Fprintf(b, " * %s", formatFloat(f.Scale))
+		if f.Type == TypeEnum {
+			fmt.Fprintf(b, "\t\te := %s(v)\n", f.EnumRef)
+			fmt.Fprintf(b, "\t\tm.%s = &e\n", goField)
+		} else {
+			if f.Signed {
+				fmt.Fprintf(b, "\t\tf := float64(%s(v))", intGoType(f.Bits))
+			} else {
+				fmt.Fprintf(b, "\t\tf := float64(v)")
+			}
+			if f.Scale != 0 {
+				fmt.Fprintf(b, " * %s", formatFloat(f.Scale))
+			}
+			if f.Offset != 0 {
+				fmt.Fprintf(b, " + %s", formatFloat(f.Offset))
+			}
+			b.WriteString("\n")
+			fmt.Fprintf(b, "\t\tm.%s = &f\n", goField)
 		}
-		if f.Offset != 0 {
-			fmt.Fprintf(b, " + %s", formatFloat(f.Offset))
-		}
-		b.WriteString("\n")
-		fmt.Fprintf(b, "\t\tm.%s = &f\n", goField)
 		b.WriteString("\t}\n")
 	} else if f.HasScaling() {
 		// Scaled non-nullable field (e.g. discriminator with MatchValue): direct assignment.
@@ -1270,25 +1302,29 @@ func writeEncodeField(b *strings.Builder, f FieldDef, goField string) {
 	}
 
 	// Build the raw integer value from the Go field.
-	// Nullable (scaled) fields are *float64; skip encode if nil (data is pre-filled 0xFF).
+	// Nullable fields are pointers; skip encode if nil (data is pre-filled 0xFF).
 	if isNullable(f) {
 		fmt.Fprintf(b, "\tif m.%s != nil {\n", goField)
-		scale := f.Scale
-		if scale == 0 {
-			scale = 1
-		}
 		var rawExpr string
-		if f.Signed {
-			if f.Offset != 0 {
-				rawExpr = fmt.Sprintf("uint64(int64(math.Round((*m.%s - %s) / %s)))", goField, formatFloat(f.Offset), formatFloat(scale))
-			} else {
-				rawExpr = fmt.Sprintf("uint64(int64(math.Round(*m.%s / %s)))", goField, formatFloat(scale))
-			}
+		if f.Type == TypeEnum {
+			rawExpr = fmt.Sprintf("uint64(*m.%s)", goField)
 		} else {
-			if f.Offset != 0 {
-				rawExpr = fmt.Sprintf("uint64(math.Round((*m.%s - %s) / %s))", goField, formatFloat(f.Offset), formatFloat(scale))
+			scale := f.Scale
+			if scale == 0 {
+				scale = 1
+			}
+			if f.Signed {
+				if f.Offset != 0 {
+					rawExpr = fmt.Sprintf("uint64(int64(math.Round((*m.%s - %s) / %s)))", goField, formatFloat(f.Offset), formatFloat(scale))
+				} else {
+					rawExpr = fmt.Sprintf("uint64(int64(math.Round(*m.%s / %s)))", goField, formatFloat(scale))
+				}
 			} else {
-				rawExpr = fmt.Sprintf("uint64(math.Round(*m.%s / %s))", goField, formatFloat(scale))
+				if f.Offset != 0 {
+					rawExpr = fmt.Sprintf("uint64(math.Round((*m.%s - %s) / %s))", goField, formatFloat(f.Offset), formatFloat(scale))
+				} else {
+					rawExpr = fmt.Sprintf("uint64(math.Round(*m.%s / %s))", goField, formatFloat(scale))
+				}
 			}
 		}
 		b.WriteString("\t")
@@ -1449,18 +1485,27 @@ func writeBitsStmt(b *strings.Builder, byteOff, bitInByte, bits int, rawExpr str
 	fmt.Fprintf(b, "\t\tbinary.LittleEndian.PutUint64(data[%d:%d], v)\n\t}\n", byteOff, byteOff+8)
 }
 
-// isNullable returns true if a field should use a pointer type (*float64)
-// to represent NMEA 2000 "data not available" sentinels as nil/null.
-// Currently applies only to scaled fields (decoded as float64), which produce
-// garbage numbers when the sentinel gets scaled (e.g. 0xFFFF * 100 = 6553500).
+// isNullable returns true if a field should use a pointer type to represent
+// NMEA 2000 "data not available" sentinels as nil/null. Applies to scaled
+// fields (where the sentinel produces garbage numbers) and enum fields
+// (where all-bits-set means "not available" per the NMEA 2000 spec).
 func isNullable(f FieldDef) bool {
-	return f.HasScaling() && !f.IsRepeated() && f.MatchValue == nil
+	if f.IsRepeated() || f.MatchValue != nil {
+		return false
+	}
+	return f.HasScaling() || f.Type == TypeEnum
 }
 
-// sentinelHex returns the hex literal for the NMEA 2000 "not available" sentinel
-// for an N-bit unsigned field (all bits set).
-func sentinelHex(bits int) string {
-	val := (uint64(1) << bits) - 1
+// sentinelHex returns the hex literal for the NMEA 2000 "not available" sentinel.
+// For unsigned fields: all bits set (e.g. 0xFFFF for 16-bit).
+// For signed fields: max positive value (e.g. 0x7FFF for 16-bit), per NMEA 2000 spec.
+func sentinelHex(bits int, signed bool) string {
+	var val uint64
+	if signed {
+		val = (uint64(1) << (bits - 1)) - 1
+	} else {
+		val = (uint64(1) << bits) - 1
+	}
 	return fmt.Sprintf("0x%X", val)
 }
 

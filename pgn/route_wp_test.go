@@ -49,12 +49,12 @@ func TestDecodeNavigationRouteWPInformation(t *testing.T) {
 	if wp1.Name != "" {
 		t.Errorf("wp[0].Name = %q, want empty", wp1.Name)
 	}
-	// 0x7FFFFFFF * 1e-7 = 214.7483647 (NMEA "not available" for signed int32).
-	if wp1.Latitude == nil || math.Abs(*wp1.Latitude-214.7483647) > 1e-6 {
-		t.Errorf("wp[0].Latitude = %v, want ~214.7483647", wp1.Latitude)
+	// 0x7FFFFFFF is the NMEA 2000 "not available" sentinel for signed int32.
+	if wp1.Latitude != nil {
+		t.Errorf("wp[0].Latitude = %v, want nil (not-available sentinel)", wp1.Latitude)
 	}
-	if wp1.Longitude == nil || math.Abs(*wp1.Longitude-214.7483647) > 1e-6 {
-		t.Errorf("wp[0].Longitude = %v, want ~214.7483647", wp1.Longitude)
+	if wp1.Longitude != nil {
+		t.Errorf("wp[0].Longitude = %v, want nil (not-available sentinel)", wp1.Longitude)
 	}
 
 	// WP2: destination "End" near San Juan Islands.

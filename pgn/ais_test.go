@@ -54,8 +54,8 @@ func TestAISClassAPositionReportDecode(t *testing.T) {
 	if m.Sog == nil || math.Abs(*m.Sog-8.33) > 0.01 {
 		t.Errorf("sog = %v, want ~8.33", m.Sog)
 	}
-	if m.NavStatus != NavStatusUnderWayUsingEngine {
-		t.Errorf("nav_status = %d, want %d (under_way_using_engine)", m.NavStatus, NavStatusUnderWayUsingEngine)
+	if m.NavStatus == nil || *m.NavStatus != NavStatusUnderWayUsingEngine {
+		t.Errorf("nav_status = %v, want %d (under_way_using_engine)", m.NavStatus, NavStatusUnderWayUsingEngine)
 	}
 	if m.Sid != 0xfe {
 		t.Errorf("sid = 0x%02x, want 0xfe", m.Sid)
@@ -72,8 +72,8 @@ func TestAISClassAPositionReportRoundTrip(t *testing.T) {
 		TimeStamp:          22,
 		Cog:                ptr(2.9158),
 		Heading:            ptr(4.4148),
-		AisTransceiverInfo: AISTransceiverChannelBVdl,
-		NavStatus:          NavStatusUnderWayUsingEngine,
+		AisTransceiverInfo: ptr(AISTransceiverChannelBVdl),
+		NavStatus:          ptr(NavStatusUnderWayUsingEngine),
 		Sid:                0xfe,
 	}
 	data := orig.Encode()
@@ -99,8 +99,8 @@ func TestAISClassAPositionReportRoundTrip(t *testing.T) {
 	if decoded.Heading == nil || math.Abs(*decoded.Heading-*orig.Heading) > 0.001 {
 		t.Errorf("heading = %v, want ~%v", decoded.Heading, orig.Heading)
 	}
-	if decoded.NavStatus != NavStatusUnderWayUsingEngine {
-		t.Errorf("nav_status = %d, want 0", decoded.NavStatus)
+	if decoded.NavStatus == nil || *decoded.NavStatus != NavStatusUnderWayUsingEngine {
+		t.Errorf("nav_status = %v, want 0", decoded.NavStatus)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestAISClassBPositionReportRoundTrip(t *testing.T) {
 		Latitude:           ptr(47.9959),
 		TimeStamp:          23,
 		Cog:                ptr(0.7381),
-		AisTransceiverInfo: AISTransceiverChannelBVdl,
+		AisTransceiverInfo: ptr(AISTransceiverChannelBVdl),
 	}
 	data := orig.Encode()
 	decoded, err := DecodeAISClassBPositionReport(data)

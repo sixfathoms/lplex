@@ -54,7 +54,7 @@ func TestWindDataRoundTrip(t *testing.T) {
 		Sid:           1,
 		WindSpeed:     ptr(5.5),
 		WindAngle:     ptr(1.2345),
-		WindReference: WindReferenceApparent,
+		WindReference: ptr(WindReferenceApparent),
 	}
 	data := orig.Encode()
 	decoded, err := DecodeWindData(data)
@@ -71,8 +71,8 @@ func TestWindDataRoundTrip(t *testing.T) {
 	if decoded.WindAngle == nil || math.Abs(*decoded.WindAngle-1.2345) > 0.0001 {
 		t.Errorf("wind_angle = %v, want ~1.2345", decoded.WindAngle)
 	}
-	if decoded.WindReference != WindReferenceApparent {
-		t.Errorf("wind_reference = %d, want Apparent (%d)", decoded.WindReference, WindReferenceApparent)
+	if decoded.WindReference == nil || *decoded.WindReference != WindReferenceApparent {
+		t.Errorf("wind_reference = %v, want Apparent (%d)", decoded.WindReference, WindReferenceApparent)
 	}
 }
 
@@ -113,7 +113,7 @@ func TestVesselHeadingRoundTrip(t *testing.T) {
 		Heading:           ptr(3.14),
 		Deviation:         ptr(-0.05),
 		Variation:         ptr(0.1),
-		HeadingReference:  HeadingReferenceMagnetic,
+		HeadingReference:  ptr(HeadingReferenceMagnetic),
 	}
 	data := orig.Encode()
 	decoded, err := DecodeVesselHeading(data)
@@ -126,8 +126,8 @@ func TestVesselHeadingRoundTrip(t *testing.T) {
 	if decoded.Deviation == nil || math.Abs(*decoded.Deviation-(-0.05)) > 0.0001 {
 		t.Errorf("deviation = %v, want ~-0.05", decoded.Deviation)
 	}
-	if decoded.HeadingReference != HeadingReferenceMagnetic {
-		t.Errorf("heading_reference = %d, want Magnetic", decoded.HeadingReference)
+	if decoded.HeadingReference == nil || *decoded.HeadingReference != HeadingReferenceMagnetic {
+		t.Errorf("heading_reference = %v, want Magnetic", decoded.HeadingReference)
 	}
 }
 

@@ -2,7 +2,21 @@
 
 pgn 127233 "Man Overboard Notification"
 pgn 127237 "Heading Track Control"
-pgn 127245 "Rudder"
+enum RudderDirectionOrder {
+  0 = "no_order"
+  1 = "starboard"
+  2 = "port"
+}
+
+# PGN 127245 — Rudder
+pgn 127245 "Rudder" interval=100ms {
+  instance         uint8                :8
+  direction_order  RudderDirectionOrder :2
+  _                                     :6
+  angle_order      int16                :16  scale=0.0001 unit="rad"
+  position         int16                :16  scale=0.0001 unit="rad"  tolerance=0.005
+  _                                     :16
+}
 pgn 127252 "Heave"
 pgn 129027 "Position Delta High Precision Rapid Update"
 pgn 129033 "Time and Date"
