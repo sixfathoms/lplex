@@ -113,6 +113,7 @@ brews:
 dockers_v2:
   - ids:
       - lplex-server
+      - lplex
     images:
       - "ghcr.io/sixfathoms/lplex"
     tags:

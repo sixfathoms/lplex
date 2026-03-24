@@ -200,6 +200,7 @@ lplex-cloud process
 | `replication_server.go` | `ReplicationServer`, `InstanceManager` (including `SetOnRotate`), `InstanceState`, `InstanceStatus`, `InstanceSummary`, gRPC handlers (Handshake, Live, Backfill), mTLS verification, state persistence, event recording |
 | `block_writer.go` | `BlockWriter`, `BlockWriterConfig` (including `OnRotate` callback), raw block append to journal files with file rotation |
 | `values.go` | `ValueStore`, `DeviceValues`, `PGNValue`, last-seen frame tracking per (bus, source, PGN) tuple, snapshot with device resolution, `RemoveSource` for cleanup on device eviction |
+| `slots.go` | `ClientSlot`, `ClientSlotConfig`, `SlotFilterConfig`, `ParseClientSlot`, `ApplySlots`, pre-configured client session creation at startup |
 | `doc.go` | Package documentation with embedding example |
 
 ## Client Modes
@@ -311,6 +312,8 @@ lplex-server supports a `-read-only` flag (HOCON: `read-only`) that completely d
 lplex-server supports rate limiting on `/send` and `/query` via `-send-rate-limit` (requests/sec, 0 = unlimited) and `-send-rate-burst` (max burst, default 10). HOCON paths: `send.rate-limit`, `send.rate-burst`. Uses a token bucket algorithm. Returns HTTP 429 when exceeded.
 
 lplex-server supports optional API key authentication via `-api-key` (HOCON path: `api-key`). When set, all HTTP requests must include the key via `Authorization: Bearer <key>` or `X-API-Key: <key>` header. Health endpoints (`/healthz`, `/livez`, `/readyz`, `/metrics`) are exempt.
+
+lplex-server supports pre-configured client slots via HOCON `clients.slots` (array of objects with `id`, `buffer-timeout`, and optional `filter`). Slots create named buffered sessions at startup so clients can connect via `GET /clients/{id}/events` without first calling `PUT /clients/{id}`. The `lplex simulate` command supports the same via `--slots` (JSON array). Slot definitions are parsed by `ParseClientSlot` in `slots.go` and applied via `ApplySlots` after broker creation.
 
 Both binaries support `-otel-endpoint` (OTLP gRPC collector endpoint, empty = disabled) and `-otel-sample-ratio` (0.0-1.0, default 1.0) for distributed tracing. When enabled, traces propagate via W3C Trace Context through HTTP (otelhttp middleware) and gRPC (otelgrpc interceptors) for end-to-end observability across boat → cloud replication.
 

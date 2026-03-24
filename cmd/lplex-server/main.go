@@ -97,8 +97,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+	var cfgResult *configResult
 	if cfgPath != "" {
-		if err := applyConfig(cfgPath); err != nil {
+		var err error
+		cfgResult, err = applyConfig(cfgPath)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
@@ -346,6 +349,11 @@ func main() {
 	}
 
 	go broker.Run(ctx)
+
+	// Apply pre-configured client slots from config.
+	if cfgResult != nil && len(cfgResult.Slots) > 0 {
+		lplex.ApplySlots(broker, cfgResult.Slots, logger)
+	}
 
 	// Resolve interface list: -interfaces takes priority over -interface.
 	var ifaceNames []string

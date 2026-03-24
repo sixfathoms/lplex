@@ -149,6 +149,24 @@ virtual-device {
   product-info-heartbeat = "5m"
 }
 
+clients {
+  # Pre-configured buffered sessions created at startup.
+  # Clients can connect via GET /clients/{id}/events without a prior PUT.
+  slots = [
+    {
+      id = "dashboard"
+      buffer-timeout = "PT5M"
+    }
+    {
+      id = "nav-only"
+      buffer-timeout = "PT2M"
+      filter {
+        pgn = [129025, 129026, 129029]
+      }
+    }
+  ]
+}
+
 replication {
   # Cloud server gRPC address (empty = disabled)
   target = "cloud.example.com:9443"

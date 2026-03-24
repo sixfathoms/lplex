@@ -252,29 +252,22 @@ lplex verify /var/lib/lplex/journal/
 
 ## Simulation
 
-`lplex simulate` replays a journal file through a full HTTP server, simulating a live boat for development and testing. Unlike `lplex dump --file` which outputs frames to stdout, `simulate` starts a real lplex HTTP server that clients can connect to.
+`lplex simulate` replays journal files through a full HTTP server, simulating a live boat for development and testing. Unlike `lplex dump --file` which outputs frames to stdout, `simulate` starts a real lplex HTTP server that clients can connect to.
 
 ```bash
-# Real-time replay on default port 8090
+# Real-time replay of a single file
 lplex simulate --file recording.lpj
 
-# 10x speed on a custom port
-lplex simulate --file recording.lpj --speed 10 --port 8080
+# Replay all journals in a directory
+lplex simulate --dir /var/lib/lplex/journal/
 
-# As fast as possible, looping forever
-lplex simulate --file recording.lpj --speed 0 --loop
+# Fast replay via Docker, exit when done
+docker run --rm -v ./journals:/data:ro -p 8090:8090 \
+  --entrypoint /lplex ghcr.io/sixfathoms/lplex:latest \
+  simulate --dir /data --speed 0 --exit-when-done
 ```
 
-All standard HTTP endpoints are available: `/events`, `/ws`, `/devices`, `/values`, `/history`. Send and query endpoints are disabled since there is no real CAN bus.
-
-| Flag | Default | Description |
-|---|---|---|
-| `--file` | (required) | Path to `.lpj` journal file to replay |
-| `--port` | `8090` | HTTP listen port |
-| `--speed` | `1.0` | Playback speed (0 = fast as possible, 1.0 = real-time, 10 = 10x) |
-| `--start` | (empty) | Seek to this time (RFC 3339) before playing |
-| `--loop` | `false` | Restart from beginning when the journal ends |
-| `--ring-size` | (default) | Ring buffer size for the broker |
+See [Simulation & Testing](/user-guide/simulation) for the full guide, including Docker patterns, integration testing workflows, and all available flags.
 
 ## Diagnostics
 

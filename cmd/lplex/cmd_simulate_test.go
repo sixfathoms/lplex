@@ -176,7 +176,7 @@ func TestSimulateServesEvents(t *testing.T) {
 	// Run replay into broker.
 	replayDone := make(chan error, 1)
 	go func() {
-		replayDone <- replayOnce(ctx, broker, logger)
+		replayDone <- replayAll(ctx, broker, []string{simFile}, logger)
 	}()
 
 	// Wait for replay to finish.
@@ -299,7 +299,7 @@ func TestSimulateLoop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
-	err := replayInto(ctx, broker, logger)
+	err := replayInto(ctx, broker, []string{simFile}, logger)
 	if err != nil && err != context.DeadlineExceeded {
 		t.Fatalf("unexpected error: %v", err)
 	}

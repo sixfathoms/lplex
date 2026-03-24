@@ -117,13 +117,24 @@ lplex dump --server http://inuc1.local:8089 --json --decode
 
 ## Offline development
 
-If you don't have a live CAN bus, you can replay a recorded journal file through a full HTTP server using `lplex simulate`:
+If you don't have a live CAN bus, you can replay recorded journal files through a full HTTP server using `lplex simulate`:
 
 ```bash
+# Replay a single journal file
 lplex simulate --file recording.lpj
+
+# Replay all journals in a directory
+lplex simulate --dir /path/to/journals/
+
+# Or use Docker — no local install needed
+docker run --rm -p 8090:8090 \
+  -v /path/to/journals:/data:ro \
+  --entrypoint /lplex \
+  ghcr.io/sixfathoms/lplex:latest \
+  simulate --dir /data
 ```
 
-This starts a server on port 8090 with all standard endpoints (`/events`, `/ws`, `/devices`, `/values`, `/history`), so you can develop and test clients without a boat. See [lplex simulate](/user-guide/lplex#simulation) for details.
+This starts a server on port 8090 with all standard endpoints (`/events`, `/ws`, `/devices`, `/values`, `/history`), so you can develop and test clients without a boat. Use `--exit-when-done` for CI pipelines. See [Simulation & Testing](/user-guide/simulation) for the full guide.
 
 ## What's next
 

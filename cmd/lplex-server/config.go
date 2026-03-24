@@ -5,9 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/gurkankaymak/hocon"
+	"github.com/sixfathoms/lplex"
 )
 
 // configToFlag maps HOCON config paths to CLI flag names.
@@ -88,12 +90,19 @@ func findConfigFile(configFlag string) (string, error) {
 	return "", nil
 }
 
+// configResult holds values parsed from HOCON that can't be represented as
+// simple flag strings (arrays of structured objects, etc.).
+type configResult struct {
+	Slots []lplex.ClientSlot
+}
+
 // applyConfig parses a HOCON config file and sets any flag values that
 // weren't explicitly provided on the command line. CLI flags always win.
-func applyConfig(path string) error {
+// Returns structured config values that can't be mapped to flags.
+func applyConfig(path string) (*configResult, error) {
 	cfg, err := hocon.ParseResource(path)
 	if err != nil {
-		return fmt.Errorf("parsing config %s: %w", path, err)
+		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}
 
 	// Collect flags the user explicitly set on the command line.
@@ -111,7 +120,7 @@ func applyConfig(path string) error {
 			continue
 		}
 		if err := flag.Set(flagName, val); err != nil {
-			return fmt.Errorf("config key %q (flag -%s): %w", configKey, flagName, err)
+			return nil, fmt.Errorf("config key %q (flag -%s): %w", configKey, flagName, err)
 		}
 	}
 
@@ -127,20 +136,171 @@ func applyConfig(path string) error {
 				case hocon.ObjectType:
 					dsl, err := hoconRuleToDSL(elem.(hocon.Object))
 					if err != nil {
-						return fmt.Errorf("config key send.rules[%d]: %w", i, err)
+						return nil, fmt.Errorf("config key send.rules[%d]: %w", i, err)
 					}
 					parts = append(parts, dsl)
 				default:
-					return fmt.Errorf("config key send.rules[%d]: expected string or object, got %v", i, elem.Type())
+					return nil, fmt.Errorf("config key send.rules[%d]: expected string or object, got %v", i, elem.Type())
 				}
 			}
 			if err := flag.Set("send-rules", strings.Join(parts, ";")); err != nil {
-				return fmt.Errorf("config key send.rules: %w", err)
+				return nil, fmt.Errorf("config key send.rules: %w", err)
 			}
 		}
 	}
 
-	return nil
+	result := &configResult{}
+
+	// Parse clients.slots array.
+	if arr := cfg.GetArray("clients.slots"); len(arr) > 0 {
+		for i, elem := range arr {
+			if elem.Type() != hocon.ObjectType {
+				return nil, fmt.Errorf("config key clients.slots[%d]: expected object, got %v", i, elem.Type())
+			}
+			slot, err := parseHOCNSlot(elem.(hocon.Object), i)
+			if err != nil {
+				return nil, err
+			}
+			result.Slots = append(result.Slots, slot)
+		}
+	}
+
+	return result, nil
+}
+
+// parseHOCNSlot converts a HOCON object into a ClientSlot.
+func parseHOCNSlot(obj hocon.Object, index int) (lplex.ClientSlot, error) {
+	prefix := fmt.Sprintf("clients.slots[%d]", index)
+
+	cfg := lplex.ClientSlotConfig{}
+
+	if v, ok := obj["id"]; ok {
+		cfg.ID = string(v.(hocon.String))
+	} else {
+		return lplex.ClientSlot{}, fmt.Errorf("%s: id is required", prefix)
+	}
+
+	if v, ok := obj["buffer-timeout"]; ok {
+		cfg.BufferTimeout = string(v.(hocon.String))
+	}
+
+	if v, ok := obj["filter"]; ok {
+		if v.Type() != hocon.ObjectType {
+			return lplex.ClientSlot{}, fmt.Errorf("%s.filter: expected object", prefix)
+		}
+		filterObj := v.(hocon.Object)
+		fc := &lplex.SlotFilterConfig{}
+
+		if pgn, ok := filterObj["pgn"]; ok {
+			pgns, err := hoconUint32Array(pgn, prefix+".filter.pgn")
+			if err != nil {
+				return lplex.ClientSlot{}, err
+			}
+			fc.PGN = pgns
+		}
+		if pgn, ok := filterObj["exclude-pgn"]; ok {
+			pgns, err := hoconUint32Array(pgn, prefix+".filter.exclude-pgn")
+			if err != nil {
+				return lplex.ClientSlot{}, err
+			}
+			fc.ExcludePGN = pgns
+		}
+		if v, ok := filterObj["manufacturer"]; ok {
+			strs, err := hoconStringArray(v, prefix+".filter.manufacturer")
+			if err != nil {
+				return lplex.ClientSlot{}, err
+			}
+			fc.Manufacturer = strs
+		}
+		if v, ok := filterObj["instance"]; ok {
+			vals, err := hoconUint32Array(v, prefix+".filter.instance")
+			if err != nil {
+				return lplex.ClientSlot{}, err
+			}
+			for _, val := range vals {
+				if val > 255 {
+					return lplex.ClientSlot{}, fmt.Errorf("%s.filter.instance: value %d exceeds uint8 range", prefix, val)
+				}
+				fc.Instance = append(fc.Instance, uint8(val))
+			}
+		}
+		if v, ok := filterObj["name"]; ok {
+			strs, err := hoconStringArray(v, prefix+".filter.name")
+			if err != nil {
+				return lplex.ClientSlot{}, err
+			}
+			fc.Name = strs
+		}
+		if v, ok := filterObj["exclude-name"]; ok {
+			strs, err := hoconStringArray(v, prefix+".filter.exclude-name")
+			if err != nil {
+				return lplex.ClientSlot{}, err
+			}
+			fc.ExcludeName = strs
+		}
+		if v, ok := filterObj["bus"]; ok {
+			strs, err := hoconStringArray(v, prefix+".filter.bus")
+			if err != nil {
+				return lplex.ClientSlot{}, err
+			}
+			fc.Bus = strs
+		}
+
+		cfg.Filter = fc
+	}
+
+	return lplex.ParseClientSlot(cfg)
+}
+
+// hoconStringArray extracts a string array from a HOCON value (string or array of strings).
+func hoconStringArray(v hocon.Value, path string) ([]string, error) {
+	switch v.Type() {
+	case hocon.StringType:
+		return []string{string(v.(hocon.String))}, nil
+	case hocon.ArrayType:
+		arr := v.(hocon.Array)
+		result := make([]string, len(arr))
+		for i, elem := range arr {
+			if elem.Type() != hocon.StringType {
+				return nil, fmt.Errorf("%s[%d]: expected string", path, i)
+			}
+			result[i] = string(elem.(hocon.String))
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("%s: expected string or array", path)
+	}
+}
+
+// hoconUint32Array extracts a uint32 array from a HOCON value (number/string or array).
+func hoconUint32Array(v hocon.Value, path string) ([]uint32, error) {
+	parseOne := func(elem hocon.Value, elemPath string) (uint32, error) {
+		// Use String() which works for Int, Float, and String types.
+		n, err := strconv.ParseUint(elem.String(), 10, 32)
+		if err != nil {
+			return 0, fmt.Errorf("%s: %w", elemPath, err)
+		}
+		return uint32(n), nil
+	}
+
+	if v.Type() == hocon.ArrayType {
+		arr := v.(hocon.Array)
+		result := make([]uint32, len(arr))
+		for i, elem := range arr {
+			var err error
+			result[i], err = parseOne(elem, fmt.Sprintf("%s[%d]", path, i))
+			if err != nil {
+				return nil, err
+			}
+		}
+		return result, nil
+	}
+
+	n, err := parseOne(v, path)
+	if err != nil {
+		return nil, err
+	}
+	return []uint32{n}, nil
 }
 
 // hoconRuleToDSL converts a HOCON object rule to a DSL string.

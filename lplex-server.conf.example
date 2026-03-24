@@ -145,6 +145,34 @@ journal {
   }
 }
 
+# Pre-configured client slots: create named buffered sessions at startup.
+# Clients can connect to these slots immediately via GET /clients/{id}/events
+# without needing to first PUT /clients/{id}. Useful for testing, Docker
+# containers, and integration environments where clients need known session IDs.
+# clients {
+#   slots = [
+#     {
+#       id = "dashboard"
+#       buffer-timeout = "PT5M"
+#     }
+#     {
+#       id = "nav-only"
+#       buffer-timeout = "PT2M"
+#       filter {
+#         pgn = [129025, 129026, 129029]
+#         bus = ["can0"]
+#       }
+#     }
+#     {
+#       id = "garmin-monitor"
+#       buffer-timeout = "PT10M"
+#       filter {
+#         manufacturer = ["Garmin"]
+#       }
+#     }
+#   ]
+# }
+
 # Cloud replication (comment out to disable)
 # replication {
 #   target = "lplex.example.com:9443"

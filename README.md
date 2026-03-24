@@ -189,6 +189,15 @@ lplex request --pgn 126996 --decode
 
 # Inspect a journal file
 lplex inspect recording.lpj
+
+# Simulate a boat from recorded journals (no CAN bus needed)
+lplex simulate --dir /path/to/journals/
+lplex simulate --file recording.lpj --speed 10
+
+# Docker: simulate from journal files, exit when done
+docker run --rm -p 8090:8090 -v ./journals:/data:ro \
+  --entrypoint /lplex ghcr.io/sixfathoms/lplex:latest \
+  simulate --dir /data --speed 0 --exit-when-done
 ```
 
 ### Go Client Library (`lplexc`)
