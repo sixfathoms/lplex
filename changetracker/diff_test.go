@@ -174,8 +174,8 @@ func TestByteMaskDiff_LengthMismatch(t *testing.T) {
 
 func TestFieldToleranceDiff_WithinTolerance(t *testing.T) {
 	// Build two wind data packets with a tiny heading change within tolerance.
-	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0000), WindReference: pgn.WindReferenceApparent}
-	w2 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0001), WindReference: pgn.WindReferenceApparent}
+	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0000), WindReference: ptr(pgn.WindReferenceApparent)}
+	w2 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0001), WindReference: ptr(pgn.WindReferenceApparent)}
 
 	d := &FieldToleranceDiff{
 		PGN: 130306,
@@ -195,8 +195,8 @@ func TestFieldToleranceDiff_WithinTolerance(t *testing.T) {
 }
 
 func TestFieldToleranceDiff_ExceedsTolerance(t *testing.T) {
-	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: pgn.WindReferenceApparent}
-	w2 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.5), WindReference: pgn.WindReferenceApparent}
+	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: ptr(pgn.WindReferenceApparent)}
+	w2 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.5), WindReference: ptr(pgn.WindReferenceApparent)}
 
 	d := &FieldToleranceDiff{
 		PGN: 130306,
@@ -222,8 +222,8 @@ func TestFieldToleranceDiff_ExceedsTolerance(t *testing.T) {
 
 func TestFieldToleranceDiff_MixedFields(t *testing.T) {
 	// WindSpeed changes significantly, WindAngle within tolerance.
-	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: pgn.WindReferenceApparent}
-	w2 := &pgn.WindData{WindSpeed: ptr(10.0), WindAngle: ptr(1.0001), WindReference: pgn.WindReferenceApparent}
+	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: ptr(pgn.WindReferenceApparent)}
+	w2 := &pgn.WindData{WindSpeed: ptr(10.0), WindAngle: ptr(1.0001), WindReference: ptr(pgn.WindReferenceApparent)}
 
 	d := &FieldToleranceDiff{
 		PGN: 130306,
@@ -266,8 +266,8 @@ func TestFieldToleranceDiff_NoDecodeFunc(t *testing.T) {
 
 func TestFieldToleranceDiff_NonNumericFieldChange(t *testing.T) {
 	// WindReference is an enum. With tolerance=0, any change is significant.
-	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: pgn.WindReferenceApparent}
-	w2 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: pgn.WindReferenceTrueNorth}
+	w1 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: ptr(pgn.WindReferenceApparent)}
+	w2 := &pgn.WindData{WindSpeed: ptr(5.0), WindAngle: ptr(1.0), WindReference: ptr(pgn.WindReferenceTrueNorth)}
 
 	d := &FieldToleranceDiff{
 		PGN: 130306,

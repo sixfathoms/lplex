@@ -2,4 +2,4 @@
 {"data":"01201c409cffffff","decoded":{"sid":1,"water_temperature":72,"outside_temperature":400,"atmospheric_pressure":null},"dst":255,"pgn":130310,"prio":2,"src":1,"ts":"2025-06-15T12:00:00.1Z"}
 {"data":"00ae1ef6ff0a0001","decoded":{"sid":0,"heading":0.7854,"deviation":-0.001,"variation":0.001,"heading_reference":"magnetic"},"dst":255,"pgn":127250,"prio":2,"src":2,"ts":"2025-06-15T12:00:00.2Z"}
 {"data":"00fcff204e6400ff","decoded":{"sid":0,"cog_reference":"true","cog":0.8447,"sog":256.78000000000003},"dst":255,"pgn":129026,"prio":2,"src":1,"ts":"2025-06-15T12:00:00.3Z"}
-{"data":"00c800ffffffffff","decoded":{"sid":0,"speed_water":2,"speed_ground":null,"speed_type":15},"dst":255,"pgn":128259,"prio":2,"src":3,"ts":"2025-06-15T12:00:00.4Z"}
+{"data":"00c800ffffffffff","decoded":{"sid":0,"speed_water":2,"speed_ground":null,"speed_type":null},"dst":255,"pgn":128259,"prio":2,"src":3,"ts":"2025-06-15T12:00:00.4Z"}

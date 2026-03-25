@@ -61,6 +61,21 @@ var packetTests = []packetTest{
 		},
 	},
 
+	// ---- PGN 127245: Rudder ----
+	{
+		desc: "rudder instance 0, position -0.0193 rad (~-1.1°)",
+		pgn:  127245,
+		hex:  "00ffff7f3fffffff",
+		want: Rudder{
+			Instance:       0,
+			DirectionOrder: nil,
+			AngleOrder:     nil,
+			Position:       ptr(-0.0193),
+		},
+		epsilon:     1e-4,
+		noRoundTrip: true,
+	},
+
 	// ---- PGN 127250: Vessel Heading ----
 	{
 		desc: "vessel heading ~180° true",
@@ -72,7 +87,7 @@ var packetTests = []packetTest{
 			Heading:          ptr(3.1504),
 			Deviation:        ptr(0.0),
 			Variation:        ptr(0.0),
-			HeadingReference: HeadingReferenceTrue,
+			HeadingReference: ptr(HeadingReferenceTrue),
 		},
 	},
 	{
@@ -88,7 +103,7 @@ var packetTests = []packetTest{
 			Heading:          ptr(0.7854),
 			Deviation:        ptr(-0.001),
 			Variation:        ptr(0.001),
-			HeadingReference: HeadingReferenceMagnetic,
+			HeadingReference: ptr(HeadingReferenceMagnetic),
 		},
 		epsilon: 1e-4,
 	},
@@ -140,7 +155,7 @@ var packetTests = []packetTest{
 		// source = 1 (magnetic), days = 20000, variation = -100 -> -0.01 rad
 		want: MagneticVariation{
 			Sid:           0xff,
-			Source:        HeadingReferenceMagnetic,
+			Source:        ptr(HeadingReferenceMagnetic),
 			DaysSince1970: 20000,
 			Variation:     ptr(-0.01),
 		},
@@ -159,7 +174,7 @@ var packetTests = []packetTest{
 			Sid:         0,
 			SpeedWater:  ptr(3.5),
 			SpeedGround: ptr(4.0),
-			SpeedType:   SpeedTypePaddleWheel,
+			SpeedType:   ptr(SpeedTypePaddleWheel),
 		},
 	},
 
@@ -268,7 +283,7 @@ var packetTests = []packetTest{
 		// sog = 0x01f4 = 500 -> 5.00 m/s
 		want: COGSOGRapidUpdate{
 			Sid:          0xff,
-			CogReference: HeadingReferenceTrue,
+			CogReference: ptr(HeadingReferenceTrue),
 			Cog:          ptr(1.5708),
 			Sog:          ptr(5.0),
 		},
@@ -287,7 +302,7 @@ var packetTests = []packetTest{
 			Sid:           1,
 			WindSpeed:     ptr(5.50),
 			WindAngle:     ptr(1.2345),
-			WindReference: WindReferenceApparent,
+			WindReference: ptr(WindReferenceApparent),
 		},
 	},
 	{
@@ -301,7 +316,7 @@ var packetTests = []packetTest{
 			Sid:           0,
 			WindSpeed:     ptr(10.0),
 			WindAngle:     ptr(0.0),
-			WindReference: WindReferenceTrueNorth,
+			WindReference: ptr(WindReferenceTrueNorth),
 		},
 	},
 
@@ -327,9 +342,9 @@ var packetTests = []packetTest{
 			Draught:              ptr(1.40),
 			Destination:          "EVERETT",
 			AisVersionIndicator:  1,
-			GnssType:             PositionFixTypeUndefined,
+			GnssType:             ptr(PositionFixTypeUndefined),
 			Dte:                  0,
-			AisTransceiverInfo:   AISTransceiverChannelBVdl,
+			AisTransceiverInfo:   ptr(AISTransceiverChannelBVdl),
 		},
 		epsilon: 0.01,
 	},
@@ -345,7 +360,7 @@ var packetTests = []packetTest{
 		want: Temperature{
 			Sid:               0xff,
 			Instance:          0,
-			TemperatureSource: 2,
+			TemperatureSource: ptr(TemperatureSource(2)),
 			ActualTemperature: ptr(293.15),
 			SetTemperature:    ptr(0.0),
 		},
