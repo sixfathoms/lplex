@@ -69,7 +69,11 @@ func discoverAny(timeout time.Duration) (string, error) {
 	return lplexc.Discover(context.Background())
 }
 
-// loadBoatConfig loads config and resolves the boat if --boat is set.
+// loadBoatConfig loads config and resolves the boat.
+// When boatSet is true, it requires a matching boat (explicit --boat).
+// When boatSet is false, it checks LPLEX_BOAT env var, then default-boat config,
+// then auto-selects if only one boat is defined. Returns boat=nil if no boats
+// are configured and no default is set.
 // Returns the resolved boat config (or nil), the mdns timeout, and merged exclusion lists.
 func loadBoatConfig(boatName, configPath string, boatSet bool) (boat *BoatConfig, mdnsTimeout time.Duration, excludePGNs []uint32, excludeNames []string, err error) {
 	cfgPath := configPath
@@ -86,9 +90,14 @@ func loadBoatConfig(boatName, configPath string, boatSet bool) (boat *BoatConfig
 	excludePGNs = append(excludePGNs, dc.ExcludePGNs...)
 	excludeNames = append(excludeNames, dc.ExcludeNames...)
 
-	if boatSet {
-		bc, err := resolveBoat(boatName, dc.Boats)
+	if boatSet || len(dc.Boats) > 0 {
+		bc, err := resolveBoat(boatName, dc)
 		if err != nil {
+			// When not explicitly requested, a resolution failure just means
+			// no default boat — fall through to mDNS discovery.
+			if !boatSet {
+				return nil, mdnsTimeout, excludePGNs, excludeNames, nil
+			}
 			return nil, 0, nil, nil, err
 		}
 		boat = &bc

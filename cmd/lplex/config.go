@@ -24,6 +24,7 @@ type BoatConfig struct {
 // DumpConfig holds global settings from the config file.
 type DumpConfig struct {
 	Boats        map[string]BoatConfig
+	DefaultBoat  string        // auto-select this boat when --boat is not specified
 	MDNSTimeout  time.Duration // 0 means use default (3s)
 	ExcludePGNs  []uint32      // PGNs to exclude globally (all boats)
 	ExcludeNames []string      // CAN NAMEs to exclude globally (all boats)
@@ -79,6 +80,9 @@ func loadConfig(path string) (DumpConfig, error) {
 		}
 		dc.MDNSTimeout = d
 	}
+
+	// Parse default-boat.
+	dc.DefaultBoat = getString(cfg, "default-boat")
 
 	// Parse global exclude-pgn list.
 	ep, err := getUint32Array(cfg, "exclude-pgn")
@@ -189,28 +193,37 @@ func getUint32Array(cfg *hocon.Config, path string) ([]uint32, error) {
 
 // resolveBoat picks the right boat config. If name is empty and there's exactly
 // one boat defined, it auto-selects it.
-func resolveBoat(name string, boats map[string]BoatConfig) (BoatConfig, error) {
-	if len(boats) == 0 {
+func resolveBoat(name string, dc DumpConfig) (BoatConfig, error) {
+	if len(dc.Boats) == 0 {
 		return BoatConfig{}, fmt.Errorf("no boats configured in config file")
 	}
 
 	if name == "" {
-		if len(boats) == 1 {
-			for _, bc := range boats {
+		// Check LPLEX_BOAT env var, then default-boat config.
+		if env := os.Getenv("LPLEX_BOAT"); env != "" {
+			name = env
+		} else if dc.DefaultBoat != "" {
+			name = dc.DefaultBoat
+		}
+	}
+
+	if name == "" {
+		if len(dc.Boats) == 1 {
+			for _, bc := range dc.Boats {
 				return bc, nil
 			}
 		}
-		names := make([]string, 0, len(boats))
-		for n := range boats {
+		names := make([]string, 0, len(dc.Boats))
+		for n := range dc.Boats {
 			names = append(names, n)
 		}
-		return BoatConfig{}, fmt.Errorf("multiple boats configured, specify one with -boat: %v", names)
+		return BoatConfig{}, fmt.Errorf("multiple boats configured, specify one with --boat: %v", names)
 	}
 
-	bc, ok := boats[name]
+	bc, ok := dc.Boats[name]
 	if !ok {
-		names := make([]string, 0, len(boats))
-		for n := range boats {
+		names := make([]string, 0, len(dc.Boats))
+		for n := range dc.Boats {
 			names = append(names, n)
 		}
 		return BoatConfig{}, fmt.Errorf("boat %q not found in config, available: %v", name, names)

@@ -376,14 +376,9 @@ func runDashboard(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--boat and --server are mutually exclusive")
 	}
 
-	var boat *BoatConfig
-	var mdnsTimeout time.Duration
-	if boatSet || flagConfig != "" {
-		var err error
-		boat, mdnsTimeout, _, _, err = loadBoatConfig(flagBoat, flagConfig, boatSet)
-		if err != nil {
-			return err
-		}
+	boat, mdnsTimeout, _, _, err := loadBoatConfig(flagBoat, flagConfig, boatSet)
+	if err != nil {
+		return err
 	}
 
 	serverURL := resolveServerURL(flagServer, boat, mdnsTimeout)

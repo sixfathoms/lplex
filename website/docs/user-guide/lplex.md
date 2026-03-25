@@ -112,6 +112,11 @@ Create `~/.config/lplex/lplex.conf` (HOCON format):
 # How long to wait for mDNS discovery before giving up (default: 3s)
 mdns-timeout = 5s
 
+# Default boat to connect to when --boat is not specified.
+# With this set, running `lplex dump` connects to sv-dockwise automatically.
+# Override with LPLEX_BOAT env var or --boat flag.
+default-boat = "sv-dockwise"
+
 # PGNs to exclude globally (applies to all boats)
 exclude-pgn = [60928, 126996]
 
@@ -139,6 +144,7 @@ boats {
 
 | Setting | Default | Description |
 |---|---|---|
+| `default-boat` | | Boat to connect to when `--boat` is not specified. Overridden by `LPLEX_BOAT` env var. |
 | `mdns-timeout` | `3s` | How long to wait for mDNS discovery before falling back to cloud |
 | `exclude-pgn` | | PGNs to exclude globally, applies to all boats. Array or single value. |
 | `exclude-name` | | CAN NAMEs (hex) to exclude globally, applies to all boats. Array or single value. |
@@ -159,15 +165,32 @@ When you run `lplex dump --boat sv-dockwise`:
 
 On reconnect (with `--reconnect`, which is on by default), the mDNS-then-cloud resolution runs again. So if you sail into WiFi range, lplex automatically switches back to the local connection.
 
+### Default boat
+
+Set `default-boat` in the config to skip the `--boat` flag entirely:
+
+```hocon
+default-boat = "sv-dockwise"
+```
+
+Now `lplex dump` connects to `sv-dockwise` without any flags. Override with `LPLEX_BOAT` env var or `--boat` flag:
+
+```bash
+LPLEX_BOAT=test-bench lplex dump    # env var overrides config
+lplex dump --boat test-bench        # flag overrides both
+```
+
+Priority: `--boat` flag > `LPLEX_BOAT` env var > `default-boat` config > auto-select (single boat).
+
 ### Auto-select
 
-If only one boat is defined in the config, you can pass an empty name and it auto-selects:
+If only one boat is defined and no default is set, it auto-selects:
 
 ```bash
 lplex dump --boat ""
 ```
 
-With multiple boats, the name is required.
+With multiple boats and no `default-boat`, the name is required.
 
 :::note
 `--boat` is mutually exclusive with `--server` and `--file`. Either the `--boat` flag handles discovery or you specify a server directly.

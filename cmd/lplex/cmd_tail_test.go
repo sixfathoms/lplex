@@ -89,16 +89,23 @@ func TestTailEphemeralReceivesFrames(t *testing.T) {
 	defer func() { _ = sub.Close() }()
 
 	// Inject more frames while subscribed.
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		time.Sleep(100 * time.Millisecond)
 		for i := range 5 {
-			broker.RxFrames() <- lplex.RxFrame{
+			select {
+			case broker.RxFrames() <- lplex.RxFrame{
 				Timestamp: time.Now(),
 				Header:    lplex.CANHeader{Priority: 2, PGN: 129025, Source: 1, Destination: 0xFF},
 				Data:      []byte{byte(i + 100), 1, 2, 3, 4, 5, 6, 7},
+			}:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
+	defer func() { <-done }()
 
 	// Read at least one event.
 	ev, err := sub.Next()

@@ -131,10 +131,10 @@ func runDump(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--boat and --server are mutually exclusive")
 	}
 
-	// Load config if --boat is set or --config is specified.
+	// Load config and resolve boat.
 	var boat *BoatConfig
 	var mdnsTimeout time.Duration
-	if boatSet || flagConfig != "" {
+	{
 		var cfgExPGNs []uint32
 		var cfgExNames []string
 		var err error
