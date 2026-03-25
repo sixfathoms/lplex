@@ -194,7 +194,9 @@ func (vs *ValueStore) Snapshot(devices *DeviceRegistry, filter *EventFilter) []D
 				continue
 			}
 		}
-		entries = append(entries, entry{key: k, val: *v})
+		cp := *v
+		cp.Data = append([]byte(nil), v.Data...)
+		entries = append(entries, entry{key: k, val: cp})
 	}
 	vs.mu.RUnlock()
 
@@ -308,7 +310,9 @@ func (vs *ValueStore) DecodedSnapshot(devices *DeviceRegistry, filter *EventFilt
 				continue
 			}
 		}
-		entries = append(entries, entry{key: k, val: *v})
+		cp := *v
+		cp.Data = append([]byte(nil), v.Data...)
+		entries = append(entries, entry{key: k, val: cp})
 	}
 	vs.mu.RUnlock()
 
