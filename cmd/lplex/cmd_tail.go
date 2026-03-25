@@ -83,7 +83,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Load config if --boat is set.
+	// Load config and resolve boat.
 	boatSet := cmd.Flags().Changed("boat") || rootCmd.PersistentFlags().Changed("boat")
 	if boatSet && flagServer != "" {
 		return fmt.Errorf("--boat and --server are mutually exclusive")
@@ -91,7 +91,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 
 	var boat *BoatConfig
 	var mdnsTimeout time.Duration
-	if boatSet || flagConfig != "" {
+	{
 		var cfgExPGNs []uint32
 		var cfgExNames []string
 		var err error

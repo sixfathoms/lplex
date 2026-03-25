@@ -277,3 +277,106 @@ boats {
 		t.Errorf("test ExcludeNames = %v, want [00A1B2C3D4E5F600]", dc.Boats["test"].ExcludeNames)
 	}
 }
+
+func TestLoadConfig_DefaultBoat(t *testing.T) {
+	path := writeConfig(t, `
+default-boat = "sv-dockwise"
+
+boats {
+  sv-dockwise {
+    mdns = "inuc1"
+  }
+  test-bench {
+    mdns = "testpi"
+  }
+}
+`)
+	dc, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dc.DefaultBoat != "sv-dockwise" {
+		t.Errorf("DefaultBoat = %q, want %q", dc.DefaultBoat, "sv-dockwise")
+	}
+}
+
+func TestResolveBoat_DefaultBoatFromConfig(t *testing.T) {
+	dc := DumpConfig{
+		DefaultBoat: "sv-dockwise",
+		Boats: map[string]BoatConfig{
+			"sv-dockwise": {Name: "sv-dockwise", MDNS: "inuc1"},
+			"test-bench":  {Name: "test-bench", MDNS: "testpi"},
+		},
+	}
+	// Empty name should resolve to default-boat.
+	bc, err := resolveBoat("", dc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bc.Name != "sv-dockwise" {
+		t.Errorf("resolved boat = %q, want %q", bc.Name, "sv-dockwise")
+	}
+}
+
+func TestResolveBoat_EnvOverridesDefaultBoat(t *testing.T) {
+	dc := DumpConfig{
+		DefaultBoat: "sv-dockwise",
+		Boats: map[string]BoatConfig{
+			"sv-dockwise": {Name: "sv-dockwise", MDNS: "inuc1"},
+			"test-bench":  {Name: "test-bench", MDNS: "testpi"},
+		},
+	}
+	t.Setenv("LPLEX_BOAT", "test-bench")
+	bc, err := resolveBoat("", dc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bc.Name != "test-bench" {
+		t.Errorf("resolved boat = %q, want %q", bc.Name, "test-bench")
+	}
+}
+
+func TestResolveBoat_ExplicitOverridesAll(t *testing.T) {
+	dc := DumpConfig{
+		DefaultBoat: "sv-dockwise",
+		Boats: map[string]BoatConfig{
+			"sv-dockwise": {Name: "sv-dockwise", MDNS: "inuc1"},
+			"test-bench":  {Name: "test-bench", MDNS: "testpi"},
+		},
+	}
+	t.Setenv("LPLEX_BOAT", "sv-dockwise")
+	bc, err := resolveBoat("test-bench", dc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bc.Name != "test-bench" {
+		t.Errorf("resolved boat = %q, want %q", bc.Name, "test-bench")
+	}
+}
+
+func TestResolveBoat_InvalidDefaultBoat(t *testing.T) {
+	dc := DumpConfig{
+		DefaultBoat: "nonexistent",
+		Boats: map[string]BoatConfig{
+			"sv-dockwise": {Name: "sv-dockwise", MDNS: "inuc1"},
+		},
+	}
+	_, err := resolveBoat("", dc)
+	if err == nil {
+		t.Fatal("expected error for invalid default-boat")
+	}
+}
+
+func TestResolveBoat_InvalidEnvBoat(t *testing.T) {
+	dc := DumpConfig{
+		DefaultBoat: "sv-dockwise",
+		Boats: map[string]BoatConfig{
+			"sv-dockwise": {Name: "sv-dockwise", MDNS: "inuc1"},
+		},
+	}
+	t.Setenv("LPLEX_BOAT", "nonexistent")
+	_, err := resolveBoat("", dc)
+	if err == nil {
+		t.Fatal("expected error for invalid LPLEX_BOAT")
+	}
+}

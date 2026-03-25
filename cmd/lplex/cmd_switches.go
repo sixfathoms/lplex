@@ -118,14 +118,11 @@ func runSwitches(_ *cobra.Command, _ []string) error {
 	}
 	log.SetFlags(log.Ltime)
 
-	serverURL := resolveServerURL(flagServer, nil, 0)
-	if flagBoat != "" || flagConfig != "" {
-		boat, mdnsTimeout, _, _, err := loadBoatConfig(flagBoat, flagConfig, flagBoat != "")
-		if err != nil {
-			return err
-		}
-		serverURL = resolveServerURL(flagServer, boat, mdnsTimeout)
+	boat, mdnsTimeout, _, _, err := loadBoatConfig(flagBoat, flagConfig, flagBoat != "")
+	if err != nil {
+		return err
 	}
+	serverURL := resolveServerURL(flagServer, boat, mdnsTimeout)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -258,14 +255,11 @@ func runSwitchesSet(_ *cobra.Command, args []string) error {
 	}
 	log.SetFlags(log.Ltime)
 
-	serverURL := resolveServerURL(flagServer, nil, 0)
-	if flagBoat != "" || flagConfig != "" {
-		boat, mdnsTimeout, _, _, err := loadBoatConfig(flagBoat, flagConfig, flagBoat != "")
-		if err != nil {
-			return err
-		}
-		serverURL = resolveServerURL(flagServer, boat, mdnsTimeout)
+	boat, mdnsTimeout, _, _, err := loadBoatConfig(flagBoat, flagConfig, flagBoat != "")
+	if err != nil {
+		return err
 	}
+	serverURL := resolveServerURL(flagServer, boat, mdnsTimeout)
 
 	// Parse switch=state pairs from args.
 	type switchSet struct {
