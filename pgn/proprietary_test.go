@@ -19,8 +19,8 @@ func TestDecodeVictronSOC(t *testing.T) {
 	if m.ManufacturerCode != 358 {
 		t.Errorf("ManufacturerCode = %d, want 358", m.ManufacturerCode)
 	}
-	if m.IndustryCode != 4 {
-		t.Errorf("IndustryCode = %d, want 4", m.IndustryCode)
+	if m.IndustryCode == nil || *m.IndustryCode != 4 {
+		t.Errorf("IndustryCode = %v, want 4", m.IndustryCode)
 	}
 	if m.Register != 0x0FFF {
 		t.Errorf("Register = 0x%04X, want 0x0FFF", m.Register)
@@ -28,8 +28,8 @@ func TestDecodeVictronSOC(t *testing.T) {
 	if m.RegisterName() != "State of Charge" {
 		t.Errorf("RegisterName() = %q, want %q", m.RegisterName(), "State of Charge")
 	}
-	if m.Payload != 10000 {
-		t.Errorf("Payload = %d, want 10000", m.Payload)
+	if m.Payload == nil || *m.Payload != 10000 {
+		t.Errorf("Payload = %v, want 10000", m.Payload)
 	}
 }
 
@@ -50,8 +50,8 @@ func TestDecodeVictronCurrent(t *testing.T) {
 	if m.RegisterName() != "DC Channel 1 Current" {
 		t.Errorf("RegisterName() = %q, want %q", m.RegisterName(), "DC Channel 1 Current")
 	}
-	if m.Payload != 33 {
-		t.Errorf("Payload = %d, want 33", m.Payload)
+	if m.Payload == nil || *m.Payload != 33 {
+		t.Errorf("Payload = %v, want 33", m.Payload)
 	}
 }
 
@@ -72,8 +72,8 @@ func TestDecodeVictronDeviceMode(t *testing.T) {
 	if m.RegisterName() != "Device Mode" {
 		t.Errorf("RegisterName() = %q, want %q", m.RegisterName(), "Device Mode")
 	}
-	if m.Payload != 3 {
-		t.Errorf("Payload = %d, want 3", m.Payload)
+	if m.Payload == nil || *m.Payload != 3 {
+		t.Errorf("Payload = %v, want 3", m.Payload)
 	}
 }
 
@@ -140,9 +140,9 @@ func TestProprietaryRegistry(t *testing.T) {
 
 func TestVictronBatteryRegisterEncode(t *testing.T) {
 	m := VictronBatteryRegister{
-		IndustryCode: 4,
-		Register:   0x0FFF,
-		Payload:      10000,
+		IndustryCode: ptr[uint8](4),
+		Register:     0x0FFF,
+		Payload:      ptr[uint32](10000),
 	}
 	data := m.Encode()
 	// Decode it back via the dispatch function to verify round-trip.
@@ -161,8 +161,8 @@ func TestVictronBatteryRegisterEncode(t *testing.T) {
 	if got.Register != 0x0FFF {
 		t.Errorf("Register = 0x%04X, want 0x0FFF", got.Register)
 	}
-	if got.Payload != 10000 {
-		t.Errorf("Payload = %d, want 10000", got.Payload)
+	if got.Payload == nil || *got.Payload != 10000 {
+		t.Errorf("Payload = %v, want 10000", got.Payload)
 	}
 }
 
@@ -170,9 +170,9 @@ func TestVictronEncodeIgnoresManufacturerCodeField(t *testing.T) {
 	// Encode should hardcode manufacturer_code=358 regardless of the struct value.
 	m := VictronBatteryRegister{
 		ManufacturerCode: 999, // garbage, should be ignored
-		IndustryCode:     4,
-		Register:       0x0200,
-		Payload:          42,
+		IndustryCode:     ptr[uint8](4),
+		Register:         0x0200,
+		Payload:          ptr[uint32](42),
 	}
 	data := m.Encode()
 	got, err := DecodeVictronBatteryRegister(data)
@@ -182,8 +182,8 @@ func TestVictronEncodeIgnoresManufacturerCodeField(t *testing.T) {
 	if got.ManufacturerCode != 358 {
 		t.Errorf("ManufacturerCode = %d, want 358 (hardcoded)", got.ManufacturerCode)
 	}
-	if got.Payload != 42 {
-		t.Errorf("Payload = %d, want 42", got.Payload)
+	if got.Payload == nil || *got.Payload != 42 {
+		t.Errorf("Payload = %v, want 42", got.Payload)
 	}
 }
 
@@ -214,12 +214,12 @@ func TestVictronDecodeShortData(t *testing.T) {
 	if m.ManufacturerCode != 358 {
 		t.Errorf("ManufacturerCode = %d, want 358", m.ManufacturerCode)
 	}
-	// Padded with 0xFF: register_id = 0xFFFF, payload = 0xFFFFFFFF.
+	// Padded with 0xFF: register_id = 0xFFFF, payload = nil (0xFFFFFFFF sentinel).
 	if m.Register != 0xFFFF {
 		t.Errorf("Register = 0x%04X, want 0xFFFF (padded)", m.Register)
 	}
-	if m.Payload != 0xFFFFFFFF {
-		t.Errorf("Payload = 0x%08X, want 0xFFFFFFFF (padded)", m.Payload)
+	if m.Payload != nil {
+		t.Errorf("Payload = %v, want nil (0xFFFFFFFF = not available)", m.Payload)
 	}
 }
 
@@ -236,8 +236,8 @@ func TestVictronDecodeEmpty(t *testing.T) {
 	if m.Register != 0xFFFF {
 		t.Errorf("Register = 0x%04X, want 0xFFFF", m.Register)
 	}
-	if m.Payload != 0xFFFFFFFF {
-		t.Errorf("Payload = 0x%08X, want 0xFFFFFFFF", m.Payload)
+	if m.Payload != nil {
+		t.Errorf("Payload = %v, want nil (0xFFFFFFFF = not available)", m.Payload)
 	}
 }
 
@@ -263,8 +263,8 @@ func TestDecodeBEPProprietary(t *testing.T) {
 	if m.ManufacturerCode != 295 {
 		t.Errorf("ManufacturerCode = %d, want 295", m.ManufacturerCode)
 	}
-	if m.IndustryCode != 4 {
-		t.Errorf("IndustryCode = %d, want 4", m.IndustryCode)
+	if m.IndustryCode == nil || *m.IndustryCode != 4 {
+		t.Errorf("IndustryCode = %v, want 4", m.IndustryCode)
 	}
 }
 
@@ -315,8 +315,8 @@ func TestDecodeMastervoltProprietary(t *testing.T) {
 	if m.ManufacturerCode != 176 {
 		t.Errorf("ManufacturerCode = %d, want 176", m.ManufacturerCode)
 	}
-	if m.IndustryCode != 4 {
-		t.Errorf("IndustryCode = %d, want 4", m.IndustryCode)
+	if m.IndustryCode == nil || *m.IndustryCode != 4 {
+		t.Errorf("IndustryCode = %v, want 4", m.IndustryCode)
 	}
 }
 

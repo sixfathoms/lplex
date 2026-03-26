@@ -144,6 +144,7 @@ func GenerateGo(s *Schema, pkg string) string {
 	for i := range s.Structs {
 		sd := &s.Structs[i]
 		structMap[sd.Name] = sd
+		refs := referencedFields(sd.Fields)
 		goName := toPascal(sd.Name)
 		fmt.Fprintf(&b, "// %s is a sub-structure entry type.\n", goName)
 		fmt.Fprintf(&b, "type %s struct {\n", goName)
@@ -157,15 +158,26 @@ func GenerateGo(s *Schema, pkg string) string {
 				continue
 			}
 			goType := goFieldType(f)
-			if isNullable(f) {
+			nullable := isNullable(f, refs)
+			if nullable {
 				goType = "*" + goType
 			}
-			tag := fmt.Sprintf("`json:%q`", toSnake(f.Name))
-			comment := ""
-			if f.Unit != "" {
-				comment = " // " + f.Unit
+			jsonName := toSnake(f.Name)
+			if nullable {
+				tag := fmt.Sprintf("`json:\"%s,omitempty\"`", jsonName)
+				comment := ""
+				if f.Unit != "" {
+					comment = " // " + f.Unit
+				}
+				fmt.Fprintf(&b, "\t%s %s %s%s\n", toPascal(f.Name), goType, tag, comment)
+			} else {
+				tag := fmt.Sprintf("`json:%q`", jsonName)
+				comment := ""
+				if f.Unit != "" {
+					comment = " // " + f.Unit
+				}
+				fmt.Fprintf(&b, "\t%s %s %s%s\n", toPascal(f.Name), goType, tag, comment)
 			}
-			fmt.Fprintf(&b, "\t%s %s %s%s\n", toPascal(f.Name), goType, tag, comment)
 		}
 		b.WriteString("}\n\n")
 	}
@@ -470,6 +482,7 @@ func repeatJSONName(f FieldDef) string {
 func writeVariant(b *strings.Builder, p PGNDef) {
 	structName := toPascal(p.Description)
 	minBytes := minBufferBytes(p)
+	refs := referencedFields(p.Fields)
 
 	// Struct
 	fmt.Fprintf(b, "// %s represents PGN %d — %s.\n", structName, p.PGN, p.Description)
@@ -496,15 +509,26 @@ func writeVariant(b *strings.Builder, p PGNDef) {
 			continue
 		}
 		goType := goFieldType(f)
-		if isNullable(f) {
+		nullable := isNullable(f, refs)
+		if nullable {
 			goType = "*" + goType
 		}
-		tag := fmt.Sprintf("`json:%q`", toSnake(f.Name))
-		comment := ""
-		if f.Unit != "" {
-			comment = " // " + f.Unit
+		jsonName := toSnake(f.Name)
+		if nullable {
+			tag := fmt.Sprintf("`json:\"%s,omitempty\"`", jsonName)
+			comment := ""
+			if f.Unit != "" {
+				comment = " // " + f.Unit
+			}
+			fmt.Fprintf(b, "\t%s %s %s%s\n", toPascal(f.Name), goType, tag, comment)
+		} else {
+			tag := fmt.Sprintf("`json:%q`", jsonName)
+			comment := ""
+			if f.Unit != "" {
+				comment = " // " + f.Unit
+			}
+			fmt.Fprintf(b, "\t%s %s %s%s\n", toPascal(f.Name), goType, tag, comment)
 		}
-		fmt.Fprintf(b, "\t%s %s %s%s\n", toPascal(f.Name), goType, tag, comment)
 	}
 	b.WriteString("}\n\n")
 
@@ -530,7 +554,7 @@ func writeVariant(b *strings.Builder, p PGNDef) {
 			continue
 		}
 		goField := toPascal(f.Name)
-		writeDecodeField(b, f, goField)
+		writeDecodeField(b, f, goField, refs)
 	}
 	b.WriteString("\treturn m, nil\n")
 	b.WriteString("}\n\n")
@@ -552,7 +576,7 @@ func writeVariant(b *strings.Builder, p PGNDef) {
 			writeEncodeConstrained(b, f, *f.MatchValue)
 		} else {
 			goField := toPascal(f.Name)
-			writeEncodeField(b, f, goField)
+			writeEncodeField(b, f, goField, refs)
 		}
 	}
 	b.WriteString("\treturn data\n")
@@ -564,6 +588,7 @@ func writeVariant(b *strings.Builder, p PGNDef) {
 // only known at runtime. Uses cursor-based decoding instead of static offsets.
 func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[string]*StructDef) {
 	structName := toPascal(p.Description)
+	refs := referencedFields(p.Fields)
 
 	// Split fields into static prefix (before first variable-width field) and the rest.
 	splitIdx := 0
@@ -613,15 +638,26 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 			}
 		default:
 			goType := goFieldType(f)
-			if isNullable(f) {
+			nullable := isNullable(f, refs)
+			if nullable {
 				goType = "*" + goType
 			}
-			tag := fmt.Sprintf("`json:%q`", toSnake(f.Name))
-			comment := ""
-			if f.Unit != "" {
-				comment = " // " + f.Unit
+			jsonName := toSnake(f.Name)
+			if nullable {
+				tag := fmt.Sprintf("`json:\"%s,omitempty\"`", jsonName)
+				comment := ""
+				if f.Unit != "" {
+					comment = " // " + f.Unit
+				}
+				fmt.Fprintf(b, "\t%s %s %s%s\n", toPascal(f.Name), goType, tag, comment)
+			} else {
+				tag := fmt.Sprintf("`json:%q`", jsonName)
+				comment := ""
+				if f.Unit != "" {
+					comment = " // " + f.Unit
+				}
+				fmt.Fprintf(b, "\t%s %s %s%s\n", toPascal(f.Name), goType, tag, comment)
 			}
-			fmt.Fprintf(b, "\t%s %s %s%s\n", toPascal(f.Name), goType, tag, comment)
 		}
 	}
 	b.WriteString("}\n\n")
@@ -643,7 +679,7 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 		if f.IsSkipped() {
 			continue
 		}
-		writeDecodeField(b, f, toPascal(f.Name))
+		writeDecodeField(b, f, toPascal(f.Name), refs)
 	}
 
 	// Cursor init for dynamic tail.
@@ -683,7 +719,7 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 				fmt.Fprintf(b, "\t\tm.%s = make([]%s, count)\n", fieldName, goStructType)
 				fmt.Fprintf(b, "\t\tfor i := range count {\n")
 				fmt.Fprintf(b, "\t\t\te := &m.%s[i]\n", fieldName)
-				writeStructFieldDecodes(b, sd, "off", "e", "\t\t\t")
+				writeStructFieldDecodes(b, sd, "off", "e", "\t\t\t", refs)
 				fmt.Fprintf(b, "\t\t\toff += %d\n", entrySize)
 				fmt.Fprintf(b, "\t\t}\n")
 				fmt.Fprintf(b, "\t}\n")
@@ -696,7 +732,7 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 				fmt.Fprintf(b, "\t\tfor range count {\n")
 				fmt.Fprintf(b, "\t\t\tif off+%d > len(data) { break }\n", minFixed)
 				fmt.Fprintf(b, "\t\t\tvar e %s\n", goStructType)
-				writeVarStructFieldDecodes(b, sd, "off", "e", "\t\t\t")
+				writeVarStructFieldDecodes(b, sd, "off", "e", "\t\t\t", refs)
 				fmt.Fprintf(b, "\t\t\tm.%s = append(m.%s, e)\n", fieldName, fieldName)
 				fmt.Fprintf(b, "\t\t}\n")
 				fmt.Fprintf(b, "\t}\n")
@@ -720,7 +756,7 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 			// Regular field in the dynamic tail (shouldn't happen per validation,
 			// but handle gracefully anyway).
 			goField := toPascal(f.Name)
-			writeDecodeField(b, f, goField)
+			writeDecodeField(b, f, goField, refs)
 		}
 	}
 
@@ -732,7 +768,7 @@ func writeVariableWidthVariant(b *strings.Builder, p PGNDef, structMap map[strin
 
 // writeStructFieldDecodes emits decode statements for all fields of a fixed-width struct.
 // Uses compile-time offsets relative to a runtime base variable.
-func writeStructFieldDecodes(b *strings.Builder, sd *StructDef, baseVar, entryVar, indent string) {
+func writeStructFieldDecodes(b *strings.Builder, sd *StructDef, baseVar, entryVar, indent string, refs map[string]bool) {
 	for _, f := range sd.Fields {
 		if f.IsSkipped() {
 			continue
@@ -741,7 +777,7 @@ func writeStructFieldDecodes(b *strings.Builder, sd *StructDef, baseVar, entryVa
 		byteOff := f.BitStart / 8
 		bitInByte := f.BitStart % 8
 		expr := readBitsExprCursor(baseVar, byteOff, bitInByte, f.Bits, f.Signed)
-		if isNullable(f) {
+		if isNullable(f, refs) {
 			unsignedExpr := readBitsExprCursor(baseVar, byteOff, bitInByte, f.Bits, false)
 			sentinel := sentinelHex(f.Bits, f.Signed)
 			if f.Signed {
@@ -753,7 +789,7 @@ func writeStructFieldDecodes(b *strings.Builder, sd *StructDef, baseVar, entryVa
 			if f.Type == TypeEnum {
 				fmt.Fprintf(b, "%s\te := %s(v)\n", indent, f.EnumRef)
 				fmt.Fprintf(b, "%s\t%s.%s = &e\n", indent, entryVar, goField)
-			} else {
+			} else if f.HasScaling() {
 				if f.Signed {
 					fmt.Fprintf(b, "%s\tf := float64(%s(v))", indent, intGoType(f.Bits))
 				} else {
@@ -767,6 +803,14 @@ func writeStructFieldDecodes(b *strings.Builder, sd *StructDef, baseVar, entryVa
 				}
 				b.WriteString("\n")
 				fmt.Fprintf(b, "%s\t%s.%s = &f\n", indent, entryVar, goField)
+			} else {
+				goType := goFieldType(f)
+				if f.Signed {
+					fmt.Fprintf(b, "%s\tn := %s(%s(v))\n", indent, goType, intGoType(f.Bits))
+				} else {
+					fmt.Fprintf(b, "%s\tn := %s(v)\n", indent, goType)
+				}
+				fmt.Fprintf(b, "%s\t%s.%s = &n\n", indent, entryVar, goField)
 			}
 			fmt.Fprintf(b, "%s}\n", indent)
 		} else if f.HasScaling() {
@@ -792,7 +836,7 @@ func writeStructFieldDecodes(b *strings.Builder, sd *StructDef, baseVar, entryVa
 }
 
 // writeVarStructFieldDecodes emits cursor-based decode for a variable-width struct.
-func writeVarStructFieldDecodes(b *strings.Builder, sd *StructDef, offVar, entryVar, indent string) {
+func writeVarStructFieldDecodes(b *strings.Builder, sd *StructDef, offVar, entryVar, indent string, refs map[string]bool) {
 	for _, f := range sd.Fields {
 		if f.Type == TypeStringLAU {
 			goField := toPascal(f.Name)
@@ -820,7 +864,7 @@ func writeVarStructFieldDecodes(b *strings.Builder, sd *StructDef, offVar, entry
 		}
 		bitInByte := f.BitStart % 8 // always 0 for cursor-based (byte aligned within entry)
 		expr := readBitsExprCursor(offVar, 0, bitInByte, f.Bits, f.Signed)
-		if isNullable(f) {
+		if isNullable(f, refs) {
 			unsignedExpr := readBitsExprCursor(offVar, 0, bitInByte, f.Bits, false)
 			sentinel := sentinelHex(f.Bits, f.Signed)
 			if f.Signed {
@@ -832,7 +876,7 @@ func writeVarStructFieldDecodes(b *strings.Builder, sd *StructDef, offVar, entry
 			if f.Type == TypeEnum {
 				fmt.Fprintf(b, "%s\te := %s(v)\n", indent, f.EnumRef)
 				fmt.Fprintf(b, "%s\t%s.%s = &e\n", indent, entryVar, goField)
-			} else {
+			} else if f.HasScaling() {
 				if f.Signed {
 					fmt.Fprintf(b, "%s\tf := float64(%s(v))", indent, intGoType(f.Bits))
 				} else {
@@ -846,6 +890,14 @@ func writeVarStructFieldDecodes(b *strings.Builder, sd *StructDef, offVar, entry
 				}
 				b.WriteString("\n")
 				fmt.Fprintf(b, "%s\t%s.%s = &f\n", indent, entryVar, goField)
+			} else {
+				goType := goFieldType(f)
+				if f.Signed {
+					fmt.Fprintf(b, "%s\tn := %s(%s(v))\n", indent, goType, intGoType(f.Bits))
+				} else {
+					fmt.Fprintf(b, "%s\tn := %s(v)\n", indent, goType)
+				}
+				fmt.Fprintf(b, "%s\t%s.%s = &n\n", indent, entryVar, goField)
 			}
 			fmt.Fprintf(b, "%s}\n", indent)
 		} else if f.HasScaling() {
@@ -1195,7 +1247,7 @@ func encodeRawExpr(f FieldDef, valueExpr string) string {
 }
 
 // writeDecodeField emits Go code to decode one field from data into m.<goField>.
-func writeDecodeField(b *strings.Builder, f FieldDef, goField string) {
+func writeDecodeField(b *strings.Builder, f FieldDef, goField string, refs map[string]bool) {
 	byteOff := f.BitStart / 8
 	bitInByte := f.BitStart % 8
 
@@ -1225,7 +1277,7 @@ func writeDecodeField(b *strings.Builder, f FieldDef, goField string) {
 	// Integer and enum types
 	rawExpr := readBitsExpr(byteOff, bitInByte, f.Bits, f.Signed)
 
-	if isNullable(f) {
+	if isNullable(f, refs) {
 		// Nullable field: read unsigned raw value, check sentinel, assign via pointer.
 		rawUnsigned := readBitsExpr(byteOff, bitInByte, f.Bits, false)
 		sentinel := sentinelHex(f.Bits, f.Signed)
@@ -1240,7 +1292,7 @@ func writeDecodeField(b *strings.Builder, f FieldDef, goField string) {
 		if f.Type == TypeEnum {
 			fmt.Fprintf(b, "\t\te := %s(v)\n", f.EnumRef)
 			fmt.Fprintf(b, "\t\tm.%s = &e\n", goField)
-		} else {
+		} else if f.HasScaling() {
 			if f.Signed {
 				fmt.Fprintf(b, "\t\tf := float64(%s(v))", intGoType(f.Bits))
 			} else {
@@ -1254,6 +1306,15 @@ func writeDecodeField(b *strings.Builder, f FieldDef, goField string) {
 			}
 			b.WriteString("\n")
 			fmt.Fprintf(b, "\t\tm.%s = &f\n", goField)
+		} else {
+			// Plain integer, nullable but no scaling.
+			goType := goFieldType(f)
+			if f.Signed {
+				fmt.Fprintf(b, "\t\tn := %s(%s(v))\n", goType, intGoType(f.Bits))
+			} else {
+				fmt.Fprintf(b, "\t\tn := %s(v)\n", goType)
+			}
+			fmt.Fprintf(b, "\t\tm.%s = &n\n", goField)
 		}
 		b.WriteString("\t}\n")
 	} else if f.HasScaling() {
@@ -1279,7 +1340,7 @@ func writeDecodeField(b *strings.Builder, f FieldDef, goField string) {
 }
 
 // writeEncodeField emits Go code to encode m.<goField> into data.
-func writeEncodeField(b *strings.Builder, f FieldDef, goField string) {
+func writeEncodeField(b *strings.Builder, f FieldDef, goField string, refs map[string]bool) {
 	byteOff := f.BitStart / 8
 	bitInByte := f.BitStart % 8
 
@@ -1303,12 +1364,12 @@ func writeEncodeField(b *strings.Builder, f FieldDef, goField string) {
 
 	// Build the raw integer value from the Go field.
 	// Nullable fields are pointers; skip encode if nil (data is pre-filled 0xFF).
-	if isNullable(f) {
+	if isNullable(f, refs) {
 		fmt.Fprintf(b, "\tif m.%s != nil {\n", goField)
 		var rawExpr string
 		if f.Type == TypeEnum {
 			rawExpr = fmt.Sprintf("uint64(*m.%s)", goField)
-		} else {
+		} else if f.HasScaling() {
 			scale := f.Scale
 			if scale == 0 {
 				scale = 1
@@ -1326,6 +1387,9 @@ func writeEncodeField(b *strings.Builder, f FieldDef, goField string) {
 					rawExpr = fmt.Sprintf("uint64(math.Round(*m.%s / %s))", goField, formatFloat(scale))
 				}
 			}
+		} else {
+			// Plain integer, no scaling.
+			rawExpr = fmt.Sprintf("uint64(*m.%s)", goField)
 		}
 		b.WriteString("\t")
 		writeBitsStmt(b, byteOff, bitInByte, f.Bits, rawExpr)
@@ -1485,15 +1549,51 @@ func writeBitsStmt(b *strings.Builder, byteOff, bitInByte, bits int, rawExpr str
 	fmt.Fprintf(b, "\t\tbinary.LittleEndian.PutUint64(data[%d:%d], v)\n\t}\n", byteOff, byteOff+8)
 }
 
+// referencedFields returns the set of field names that are referenced by other
+// fields (e.g. as repeat counts, PGN refs, or count refs). These fields cannot
+// be nullable because they are used directly in generated code (loop bounds, map keys, etc.).
+func referencedFields(fields []FieldDef) map[string]bool {
+	refs := make(map[string]bool)
+	for _, f := range fields {
+		if f.RepeatRef != "" {
+			refs[f.RepeatRef] = true
+		}
+		if f.PGNRef != "" {
+			refs[f.PGNRef] = true
+		}
+		if f.CountRef != "" {
+			refs[f.CountRef] = true
+		}
+	}
+	return refs
+}
+
 // isNullable returns true if a field should use a pointer type to represent
-// NMEA 2000 "data not available" sentinels as nil/null. Applies to scaled
-// fields (where the sentinel produces garbage numbers) and enum fields
-// (where all-bits-set means "not available" per the NMEA 2000 spec).
-func isNullable(f FieldDef) bool {
+// NMEA 2000 "data not available" sentinels as nil/null. In NMEA 2000,
+// all-bits-set means "data not available" for any field type: unsigned
+// integers, signed integers, scaled fields, and enums. Fields that are
+// referenced by other fields (repeat counts, PGN refs) cannot be nullable.
+func isNullable(f FieldDef, refs map[string]bool) bool {
 	if f.IsRepeated() || f.MatchValue != nil {
 		return false
 	}
-	return f.HasScaling() || f.Type == TypeEnum
+	if refs[f.Name] {
+		return false
+	}
+	if f.LookupRef != "" {
+		return false
+	}
+	// 1-bit fields cannot be nullable: the sentinel (all-bits-set = 1)
+	// overlaps with the only non-zero valid value.
+	if f.Bits == 1 {
+		return false
+	}
+	switch f.Type {
+	case TypeUint, TypeInt, TypeEnum:
+		return true
+	default:
+		return f.HasScaling()
+	}
 }
 
 // sentinelHex returns the hex literal for the NMEA 2000 "not available" sentinel.

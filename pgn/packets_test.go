@@ -45,7 +45,7 @@ var packetTests = []packetTest{
 		desc: "ISO Request for Address Claim (PGN 60928)",
 		pgn:  59904,
 		hex:  "00ee00",
-		want: ISORequest{RequestedPgn: 60928},
+		want: ISORequest{RequestedPgn: ptr[uint32](60928)},
 	},
 
 	// ---- PGN 126992: System Time ----
@@ -54,9 +54,9 @@ var packetTests = []packetTest{
 		pgn:  126992,
 		hex:  "ff00204e00000000",
 		want: SystemTime{
-			Sid:           0xff,
-			TimeSource:    0,
-			DaysSince1970: 20000,
+			Sid:           nil, // 0xFF = not available
+			TimeSource:    ptr[uint8](0),
+			DaysSince1970: ptr[uint16](20000),
 			SecondsToday:  ptr(0.0),
 		},
 	},
@@ -67,7 +67,7 @@ var packetTests = []packetTest{
 		pgn:  127245,
 		hex:  "00ffff7f3fffffff",
 		want: Rudder{
-			Instance:       0,
+			Instance:       ptr[uint8](0),
 			DirectionOrder: nil,
 			AngleOrder:     nil,
 			Position:       ptr(-0.0193),
@@ -83,7 +83,7 @@ var packetTests = []packetTest{
 		hex:  "ff107b0000000000",
 		// heading = 0x7B10 = 31504 * 0.0001 = 3.1504 rad
 		want: VesselHeading{
-			Sid:              0xff,
+			Sid:              nil, // 0xFF = not available
 			Heading:          ptr(3.1504),
 			Deviation:        ptr(0.0),
 			Variation:        ptr(0.0),
@@ -99,7 +99,7 @@ var packetTests = []packetTest{
 		// variation = 0x000a = 10 -> 0.001 rad
 		// heading_reference = 1 (magnetic)
 		want: VesselHeading{
-			Sid:              0,
+			Sid:              ptr[uint8](0),
 			Heading:          ptr(0.7854),
 			Deviation:        ptr(-0.001),
 			Variation:        ptr(0.001),
@@ -114,7 +114,7 @@ var packetTests = []packetTest{
 		pgn:  127251,
 		hex:  "ff00000000ffffff",
 		want: RateOfTurn{
-			Sid:  0xff,
+			Sid:  nil, // 0xFF = not available
 			Rate: ptr(0.0),
 		},
 	},
@@ -125,7 +125,7 @@ var packetTests = []packetTest{
 		pgn:  127257,
 		hex:  "0000000000000000",
 		want: Attitude{
-			Sid:   0,
+			Sid:   ptr[uint8](0),
 			Yaw:   ptr(0.0),
 			Pitch: ptr(0.0),
 			Roll:  ptr(0.0),
@@ -139,7 +139,7 @@ var packetTests = []packetTest{
 		// pitch = 0x03e8 = 1000 -> 0.1 rad
 		// roll = 0x000a = 10 -> 0.001 rad
 		want: Attitude{
-			Sid:   0xff,
+			Sid:   nil, // 0xFF = not available
 			Yaw:   ptr(0.0),
 			Pitch: ptr(0.1),
 			Roll:  ptr(0.001),
@@ -154,9 +154,9 @@ var packetTests = []packetTest{
 		hex:  "fff1204e9cffffff",
 		// source = 1 (magnetic), days = 20000, variation = -100 -> -0.01 rad
 		want: MagneticVariation{
-			Sid:           0xff,
+			Sid:           nil, // 0xFF = not available
 			Source:        ptr(HeadingReferenceMagnetic),
-			DaysSince1970: 20000,
+			DaysSince1970: ptr[uint16](20000),
 			Variation:     ptr(-0.01),
 		},
 		epsilon: 1e-4,
@@ -171,7 +171,7 @@ var packetTests = []packetTest{
 		// speed_ground = 0x0190 = 400 -> 4.00 m/s
 		// speed_type = 0 (paddle_wheel)
 		want: SpeedWaterReferenced{
-			Sid:         0,
+			Sid:         ptr[uint8](0),
 			SpeedWater:  ptr(3.5),
 			SpeedGround: ptr(4.0),
 			SpeedType:   ptr(SpeedTypePaddleWheel),
@@ -184,7 +184,7 @@ var packetTests = []packetTest{
 		pgn:  128267,
 		hex:  "ff3d020000a5fa0e",
 		want: WaterDepth{
-			Sid:    0xff,
+			Sid:    nil, // 0xFF = not available
 			Depth:  ptr(5.73),
 			Offset: ptr(-1.371),
 			Range:  ptr(140.0),
@@ -196,7 +196,7 @@ var packetTests = []packetTest{
 		hex:  "00960000000000ff",
 		// depth = 150 -> 1.50 m, offset = 0, range = 0xff = not available
 		want: WaterDepth{
-			Sid:    0,
+			Sid:    ptr[uint8](0),
 			Depth:  ptr(1.50),
 			Offset: ptr(0.0),
 			Range:  nil,
@@ -212,8 +212,8 @@ var packetTests = []packetTest{
 		// level = 18750 * 0.004 = 75.0%
 		// capacity = 2000 * 0.1 = 200.0 L
 		want: FluidLevel{
-			Instance:  5,
-			FluidType: 0,
+			Instance:  ptr[uint8](5),
+			FluidType: ptr[uint8](0),
 			Level:     ptr(75.0),
 			Capacity:  ptr(200.0),
 		},
@@ -229,11 +229,11 @@ var packetTests = []packetTest{
 		// current = 0xfe38 = -456 as int16 * 0.1 = -45.6A
 		// temperature = 0x05fa = 1530 * 0.01 = 15.30K
 		want: BatteryStatus{
-			Instance:    0,
+			Instance:    ptr[uint8](0),
 			Voltage:     ptr(202.12),
 			Current:     ptr(-45.6),
 			Temperature: ptr(15.30),
-			Sid:         0,
+			Sid:         ptr[uint8](0),
 		},
 		epsilon: 0.1,
 	},
@@ -282,7 +282,7 @@ var packetTests = []packetTest{
 		// cog = 0x3d5c = 15708 -> 1.5708 rad ≈ 90°
 		// sog = 0x01f4 = 500 -> 5.00 m/s
 		want: COGSOGRapidUpdate{
-			Sid:          0xff,
+			Sid:          nil, // 0xFF = not available
 			CogReference: ptr(HeadingReferenceTrue),
 			Cog:          ptr(1.5708),
 			Sog:          ptr(5.0),
@@ -299,7 +299,7 @@ var packetTests = []packetTest{
 		// angle = 0x3039 = 12345 -> 1.2345 rad
 		// wind_reference = 2 (apparent)
 		want: WindData{
-			Sid:           1,
+			Sid:           ptr[uint8](1),
 			WindSpeed:     ptr(5.50),
 			WindAngle:     ptr(1.2345),
 			WindReference: ptr(WindReferenceApparent),
@@ -313,7 +313,7 @@ var packetTests = []packetTest{
 		// angle = 0 -> 0 rad
 		// reference = 0 (true_north)
 		want: WindData{
-			Sid:           0,
+			Sid:           ptr[uint8](0),
 			WindSpeed:     ptr(10.0),
 			WindAngle:     ptr(0.0),
 			WindReference: ptr(WindReferenceTrueNorth),
@@ -326,22 +326,22 @@ var packetTests = []packetTest{
 		pgn:  129794,
 		hex:  "05823df315ffffffff57444e32343738434f4e54494e55554d202020202020202020202025c800320014007800ffffffffffff8c00455645524554542020202020202020202020202001e1",
 		want: AISClassAStaticAndVoyageRelatedData{
-			MessageId:            5,
-			RepeatIndicator:      0,
-			UserId:               368262530,
-			ImoNumber:            0xFFFFFFFF,
+			MessageId:            ptr[uint8](5),
+			RepeatIndicator:      ptr[uint8](0),
+			UserId:               ptr[uint32](368262530),
+			ImoNumber:            nil, // 0xFFFFFFFF = not available
 			Callsign:             "WDN2478",
 			Name:                 "CONTINUUM",
-			ShipType:             37,
+			ShipType:             ptr[uint8](37),
 			ShipLength:           ptr(20.0),
 			ShipBeam:             ptr(5.0),
 			PositionRefStarboard: ptr(2.0),
 			PositionRefBow:       ptr(12.0),
-			EtaDate:              0xFFFF,
+			EtaDate:              nil, // 0xFFFF = not available
 			EtaTime:              nil, // 0xFFFFFFFF = not available
 			Draught:              ptr(1.40),
 			Destination:          "EVERETT",
-			AisVersionIndicator:  1,
+			AisVersionIndicator:  ptr[uint8](1),
 			GnssType:             ptr(PositionFixTypeUndefined),
 			Dte:                  0,
 			AisTransceiverInfo:   ptr(AISTransceiverChannelBVdl),
@@ -358,8 +358,8 @@ var packetTests = []packetTest{
 		// actual = 0x7283 = 29315 * 0.01 = 293.15K
 		// set = 0
 		want: Temperature{
-			Sid:               0xff,
-			Instance:          0,
+			Sid:               nil, // 0xFF = not available
+			Instance:          ptr[uint8](0),
 			TemperatureSource: ptr(TemperatureSource(2)),
 			ActualTemperature: ptr(293.15),
 			SetTemperature:    ptr(0.0),
@@ -373,14 +373,14 @@ var packetTests = []packetTest{
 		pgn:  127500,
 		hex:  "ff00000000640000",
 		want: LoadControllerConnectionStateControl{
-			Sid:                      0xff,
-			ConnectionId:             0,
-			State:                    0,
-			Status:                   0,
-			OperationalStatusControl: 0,
-			PwmDutyCycle:             100,
-			TimeOn:                   0,
-			TimeOff:                  0,
+			Sid:                      nil, // 0xFF = not available
+			ConnectionId:             ptr[uint8](0),
+			State:                    ptr[uint8](0),
+			Status:                   ptr[uint8](0),
+			OperationalStatusControl: ptr[uint8](0),
+			PwmDutyCycle:             ptr[uint8](100),
+			TimeOn:                   ptr[uint8](0),
+			TimeOff:                  ptr[uint8](0),
 		},
 	},
 	{
@@ -388,8 +388,8 @@ var packetTests = []packetTest{
 		pgn:  127500,
 		hex:  "ff05000000000000",
 		want: LoadControllerConnectionStateControl{
-			Sid:          0xff,
-			ConnectionId: 5,
+			Sid:          nil, // 0xFF = not available
+			ConnectionId: ptr[uint8](5),
 		},
 	},
 
@@ -399,8 +399,8 @@ var packetTests = []packetTest{
 		pgn:  127751,
 		hex:  "ff000000000000ff",
 		want: DCVoltageCurrent{
-			Sid:              0xff,
-			ConnectionNumber: 0,
+			Sid:              nil, // 0xFF = not available
+			ConnectionNumber: ptr[uint8](0),
 			DcVoltage:        ptr(0.0),
 			DcCurrent:        ptr(0.0),
 		},
@@ -415,7 +415,7 @@ var packetTests = []packetTest{
 		want: NMEAGroupFunctionCommand{
 			FunctionCode:    1,
 			CommandedPgn:    127501,
-			PrioritySetting: 8, // 0x8 = don't change priority
+			PrioritySetting: ptr[uint8](8), // 0x8 = don't change priority
 			NumberOfPairs:   2,
 			Params: []ParamPair{
 				{Field: 1, Name: "instance", Value: 32},
@@ -430,10 +430,10 @@ var packetTests = []packetTest{
 		noRoundTrip: true,
 		want: NMEAGroupFunctionAcknowledge{
 			FunctionCode:     2,
-			AcknowledgedPgn:  127501,
-			PgnErrorCode:     4,
-			ControlErrorCode: 4,
-			NumberOfPairs:    0xFF,
+			AcknowledgedPgn:  ptr[uint32](127501),
+			PgnErrorCode:     ptr[uint8](4),
+			ControlErrorCode: ptr[uint8](4),
+			NumberOfPairs:    nil, // 0xFF = not available
 		},
 	},
 	{
@@ -443,10 +443,10 @@ var packetTests = []packetTest{
 		noRoundTrip: true,
 		want: NMEAGroupFunctionAcknowledge{
 			FunctionCode:     2,
-			AcknowledgedPgn:  127501,
-			PgnErrorCode:     0,
-			ControlErrorCode: 0,
-			NumberOfPairs:    2,
+			AcknowledgedPgn:  ptr[uint32](127501),
+			PgnErrorCode:     ptr[uint8](0),
+			ControlErrorCode: ptr[uint8](0),
+			NumberOfPairs:    ptr[uint8](2),
 			Params:           HexBytes{0x00},
 		},
 	},
