@@ -12,8 +12,8 @@ func TestDecodeISORequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if m.RequestedPgn != 60928 {
-		t.Errorf("RequestedPgn = %d, want 60928", m.RequestedPgn)
+	if m.RequestedPgn == nil || *m.RequestedPgn != 60928 {
+		t.Errorf("RequestedPgn = %v, want 60928", m.RequestedPgn)
 	}
 }
 
@@ -24,20 +24,20 @@ func TestDecodeISORequestShortPads(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := uint32(0x00FFFF00)
-	if m.RequestedPgn != want {
-		t.Errorf("RequestedPgn = %d, want %d", m.RequestedPgn, want)
+	if m.RequestedPgn == nil || *m.RequestedPgn != want {
+		t.Errorf("RequestedPgn = %v, want %d", m.RequestedPgn, want)
 	}
 }
 
 func TestDecodeISORequestEncode(t *testing.T) {
-	m := ISORequest{RequestedPgn: 60928}
+	m := ISORequest{RequestedPgn: ptr[uint32](60928)}
 	data := m.Encode()
 	m2, err := DecodeISORequest(data)
 	if err != nil {
 		t.Fatalf("decode roundtrip: %v", err)
 	}
-	if m2.RequestedPgn != 60928 {
-		t.Errorf("roundtrip: got %d, want 60928", m2.RequestedPgn)
+	if m2.RequestedPgn == nil || *m2.RequestedPgn != 60928 {
+		t.Errorf("roundtrip: got %v, want 60928", m2.RequestedPgn)
 	}
 }
 

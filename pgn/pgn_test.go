@@ -51,7 +51,7 @@ func TestPositionRapidUpdateDecodeKnown(t *testing.T) {
 
 func TestWindDataRoundTrip(t *testing.T) {
 	orig := WindData{
-		Sid:           1,
+		Sid:           ptr[uint8](1),
 		WindSpeed:     ptr(5.5),
 		WindAngle:     ptr(1.2345),
 		WindReference: ptr(WindReferenceApparent),
@@ -62,8 +62,8 @@ func TestWindDataRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if decoded.Sid != 1 {
-		t.Errorf("sid = %d, want 1", decoded.Sid)
+	if decoded.Sid == nil || *decoded.Sid != 1 {
+		t.Errorf("sid = %v, want 1", decoded.Sid)
 	}
 	if decoded.WindSpeed == nil || math.Abs(*decoded.WindSpeed-5.5) > 0.01 {
 		t.Errorf("wind_speed = %v, want ~5.5", decoded.WindSpeed)
@@ -78,11 +78,11 @@ func TestWindDataRoundTrip(t *testing.T) {
 
 func TestBatteryStatusRoundTrip(t *testing.T) {
 	orig := BatteryStatus{
-		Instance:    0,
+		Instance:    ptr[uint8](0),
 		Voltage:     ptr(12.85),
 		Current:     ptr(-5.3),
 		Temperature: ptr(293.15),
-		Sid:         42,
+		Sid:         ptr[uint8](42),
 	}
 	data := orig.Encode()
 	decoded, err := DecodeBatteryStatus(data)
@@ -90,8 +90,8 @@ func TestBatteryStatusRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if decoded.Instance != 0 {
-		t.Errorf("instance = %d, want 0", decoded.Instance)
+	if decoded.Instance == nil || *decoded.Instance != 0 {
+		t.Errorf("instance = %v, want 0", decoded.Instance)
 	}
 	if decoded.Voltage == nil || math.Abs(*decoded.Voltage-12.85) > 0.01 {
 		t.Errorf("voltage = %v, want ~12.85", decoded.Voltage)
@@ -102,14 +102,14 @@ func TestBatteryStatusRoundTrip(t *testing.T) {
 	if decoded.Temperature == nil || math.Abs(*decoded.Temperature-293.15) > 0.01 {
 		t.Errorf("temperature = %v, want ~293.15", decoded.Temperature)
 	}
-	if decoded.Sid != 42 {
-		t.Errorf("sid = %d, want 42", decoded.Sid)
+	if decoded.Sid == nil || *decoded.Sid != 42 {
+		t.Errorf("sid = %v, want 42", decoded.Sid)
 	}
 }
 
 func TestVesselHeadingRoundTrip(t *testing.T) {
 	orig := VesselHeading{
-		Sid:               0,
+		Sid:               ptr[uint8](0),
 		Heading:           ptr(3.14),
 		Deviation:         ptr(-0.05),
 		Variation:         ptr(0.1),
@@ -133,7 +133,7 @@ func TestVesselHeadingRoundTrip(t *testing.T) {
 
 func TestWaterDepthRoundTrip(t *testing.T) {
 	orig := WaterDepth{
-		Sid:    0,
+		Sid:    ptr[uint8](0),
 		Depth:  ptr(15.25),
 		Offset: ptr(-0.5),
 		Range:  ptr(100.0),
@@ -164,9 +164,9 @@ func TestWaterDepthDecodeAirmarFrame(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// sid = 0xff
-	if decoded.Sid != 0xff {
-		t.Errorf("sid = %d, want 255", decoded.Sid)
+	// sid = 0xff = not available
+	if decoded.Sid != nil {
+		t.Errorf("sid = %v, want nil (not available)", decoded.Sid)
 	}
 	// depth = 0x0000023d = 573 -> 573 * 0.01 = 5.73m
 	if decoded.Depth == nil || math.Abs(*decoded.Depth-5.73) > 0.01 {
@@ -184,22 +184,22 @@ func TestWaterDepthDecodeAirmarFrame(t *testing.T) {
 
 func TestProductInformationRoundTrip(t *testing.T) {
 	orig := ProductInformation{
-		NmeaVersion:     2100,
-		ProductCode:     1234,
+		NmeaVersion:     ptr[uint16](2100),
+		ProductCode:     ptr[uint16](1234),
 		ModelId:         "GPS 200",
 		SoftwareVersion: "v3.1.0",
 		ModelVersion:    "Rev B",
 		ModelSerial:     "ABC12345",
-		CertLevel:       1,
-		LoadEquiv:       2,
+		CertLevel:       ptr[uint8](1),
+		LoadEquiv:       ptr[uint8](2),
 	}
 	data := orig.Encode()
 	decoded, err := DecodeProductInformation(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.ProductCode != 1234 {
-		t.Errorf("product_code = %d, want 1234", decoded.ProductCode)
+	if decoded.ProductCode == nil || *decoded.ProductCode != 1234 {
+		t.Errorf("product_code = %v, want 1234", decoded.ProductCode)
 	}
 	if decoded.ModelId != "GPS 200" {
 		t.Errorf("model_id = %q, want GPS 200", decoded.ModelId)
@@ -276,8 +276,8 @@ func TestPGNMethod(t *testing.T) {
 func TestFluidLevelBitFields(t *testing.T) {
 	// Fluid Level has 4-bit instance and 4-bit fluid_type in the first byte
 	orig := FluidLevel{
-		Instance:  3,
-		FluidType: 5,
+		Instance:  ptr[uint8](3),
+		FluidType: ptr[uint8](5),
 		Level:     ptr(75.0),
 		Capacity:  ptr(200.0),
 	}
@@ -286,11 +286,11 @@ func TestFluidLevelBitFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Instance != 3 {
-		t.Errorf("instance = %d, want 3", decoded.Instance)
+	if decoded.Instance == nil || *decoded.Instance != 3 {
+		t.Errorf("instance = %v, want 3", decoded.Instance)
 	}
-	if decoded.FluidType != 5 {
-		t.Errorf("fluid_type = %d, want 5", decoded.FluidType)
+	if decoded.FluidType == nil || *decoded.FluidType != 5 {
+		t.Errorf("fluid_type = %v, want 5", decoded.FluidType)
 	}
 	if decoded.Level == nil || math.Abs(*decoded.Level-75.0) > 0.01 {
 		t.Errorf("level = %v, want ~75.0", decoded.Level)

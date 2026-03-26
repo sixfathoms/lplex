@@ -1209,10 +1209,10 @@ pgn 127493 "Test PGN" {
 	code := GenerateGo(s, "pgn")
 
 	// Struct should have engine_instance and known_field but not the unknown.
-	if !strings.Contains(code, "EngineInstance uint8") {
+	if !strings.Contains(code, "EngineInstance *uint8") {
 		t.Error("missing EngineInstance field")
 	}
-	if !strings.Contains(code, "KnownField uint16") {
+	if !strings.Contains(code, "KnownField *uint16") {
 		t.Error("missing KnownField field")
 	}
 	// The unknown field should be skipped from the struct entirely.
@@ -1349,7 +1349,7 @@ pgn 129540 "GNSS Sats in View" fast_packet {
 	if !strings.Contains(code, "type SatelliteInView struct") {
 		t.Error("missing SatelliteInView struct")
 	}
-	if !strings.Contains(code, `Prn uint8 `+"`"+`json:"prn"`+"`") {
+	if !strings.Contains(code, `Prn *uint8 `+"`"+`json:"prn,omitempty"`+"`") {
 		t.Error("missing Prn field in SatelliteInView")
 	}
 	if !strings.Contains(code, "Elevation *float64") {
@@ -1444,7 +1444,8 @@ pgn 129285 "Navigation Route WP Information" fast_packet {
 	}
 
 	// Should have static prefix decode using fixed offsets.
-	if !strings.Contains(code, "m.StartRps = binary.LittleEndian.Uint16(data[0:2])") {
+	// Items is non-nullable (referenced by repeat=items), so it uses direct assignment.
+	if !strings.Contains(code, "m.Items = binary.LittleEndian.Uint16(data[2:4])") {
 		t.Error("static prefix should use fixed offset reads")
 	}
 

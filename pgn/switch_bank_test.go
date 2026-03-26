@@ -7,7 +7,7 @@ import (
 
 func TestBinarySwitchBankRoundTrip(t *testing.T) {
 	orig := BinarySwitchBankStatus{
-		Instance: 1,
+		Instance: ptr[uint8](1),
 		Indicators: []uint8{
 			1, 2, 3, 0, // indicators 1-4 (packed into byte 1)
 			1, 1, 2, 2, // indicators 5-8 (packed into byte 2)
@@ -27,8 +27,8 @@ func TestBinarySwitchBankRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Instance != 1 {
-		t.Errorf("instance = %d, want 1", decoded.Instance)
+	if decoded.Instance == nil || *decoded.Instance != 1 {
+		t.Errorf("instance = %v, want 1", decoded.Instance)
 	}
 	if len(decoded.Indicators) != 28 {
 		t.Fatalf("len(indicators) = %d, want 28", len(decoded.Indicators))
@@ -55,8 +55,8 @@ func TestBinarySwitchBankDecodeKnownBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Instance != 0 {
-		t.Errorf("instance = %d, want 0", decoded.Instance)
+	if decoded.Instance == nil || *decoded.Instance != 0 {
+		t.Errorf("instance = %v, want 0", decoded.Instance)
 	}
 
 	// First 4 indicators from byte 1 = 0x39
@@ -77,7 +77,7 @@ func TestBinarySwitchBankDecodeKnownBytes(t *testing.T) {
 func TestBinarySwitchBankPartialEncode(t *testing.T) {
 	// Encode with fewer than 28 indicators. Unset indicators should stay 0xFF (3).
 	orig := BinarySwitchBankStatus{
-		Instance:   5,
+		Instance:   ptr[uint8](5),
 		Indicators: []uint8{1, 0}, // only first two
 	}
 	data := orig.Encode()
@@ -86,8 +86,8 @@ func TestBinarySwitchBankPartialEncode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Instance != 5 {
-		t.Errorf("instance = %d, want 5", decoded.Instance)
+	if decoded.Instance == nil || *decoded.Instance != 5 {
+		t.Errorf("instance = %v, want 5", decoded.Instance)
 	}
 	if decoded.Indicators[0] != 1 {
 		t.Errorf("indicator[0] = %d, want 1", decoded.Indicators[0])
@@ -109,8 +109,8 @@ func TestBinarySwitchBankShortData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Instance != 2 {
-		t.Errorf("instance = %d, want 2", decoded.Instance)
+	if decoded.Instance == nil || *decoded.Instance != 2 {
+		t.Errorf("instance = %v, want 2", decoded.Instance)
 	}
 	// All indicators from padded 0xFF bytes should be 3.
 	for i := 0; i < 28; i++ {
@@ -139,8 +139,8 @@ func TestBinarySwitchBankRegistry(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected BinarySwitchBankStatus, got %T", v)
 	}
-	if sw.Instance != 3 {
-		t.Errorf("instance = %d, want 3", sw.Instance)
+	if sw.Instance == nil || *sw.Instance != 3 {
+		t.Errorf("instance = %v, want 3", sw.Instance)
 	}
 	if sw.Indicators[0] != 1 {
 		t.Errorf("indicator[0] = %d, want 1", sw.Indicators[0])
@@ -157,7 +157,7 @@ func TestBinarySwitchBankPGN(t *testing.T) {
 func TestBinarySwitchBankControlRoundTrip(t *testing.T) {
 	// Build a control frame: turn switch 1 ON, switch 3 OFF, rest no-change.
 	ctrl := BinarySwitchBankControl{
-		Instance: 0,
+		Instance: ptr[uint8](0),
 	}
 	ctrl.Indicators = make(Uint8s, 28)
 	for i := range ctrl.Indicators {
@@ -194,8 +194,8 @@ func TestBinarySwitchBankControlRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Instance != 0 {
-		t.Errorf("instance = %d, want 0", decoded.Instance)
+	if decoded.Instance == nil || *decoded.Instance != 0 {
+		t.Errorf("instance = %v, want 0", decoded.Instance)
 	}
 	if decoded.Indicators[0] != 1 {
 		t.Errorf("indicator[0] = %d, want 1 (ON)", decoded.Indicators[0])
@@ -220,7 +220,7 @@ func TestBinarySwitchBankControlRegistry(t *testing.T) {
 
 func TestBinarySwitchBankJSON(t *testing.T) {
 	sw := BinarySwitchBankStatus{
-		Instance:   1,
+		Instance:   ptr[uint8](1),
 		Indicators: Uint8s{1, 2, 3, 0},
 	}
 	data, err := json.Marshal(sw)

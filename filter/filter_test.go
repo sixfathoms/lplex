@@ -173,7 +173,7 @@ func TestNeedsDecode(t *testing.T) {
 
 func TestDecodedFieldsEnvironmentalParams(t *testing.T) {
 	decoded := pgn.EnvironmentalParametersOutside{
-		Sid:                 1,
+		Sid:                 ptr[uint8](1),
 		WaterTemperature:    ptr(280.15), // ~7C
 		OutsideTemperature:  ptr(293.15), // ~20C
 		AtmosphericPressure: ptr(101300.0),
@@ -226,9 +226,9 @@ func TestLookupFields(t *testing.T) {
 	// VictronBatteryRegister with register=0xFFF -> "State of Charge"
 	decoded := pgn.VictronBatteryRegister{
 		ManufacturerCode: 358,
-		IndustryCode:     4,
+		IndustryCode:     ptr[uint8](4),
 		Register:         0xFFF,
-		Payload:          500,
+		Payload:          ptr[uint32](500),
 	}
 
 	tests := []struct {
@@ -460,7 +460,7 @@ func TestNegativeNumber(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded := pgn.EnvironmentalParametersOutside{Sid: 0}
+	decoded := pgn.EnvironmentalParametersOutside{Sid: ptr[uint8](0)}
 	ctx := &EvalContext{PGN: 130310, Decoded: decoded}
 	if !f.Match(ctx) {
 		t.Error("expected match: 0 > -1")
