@@ -29,6 +29,7 @@ lplex dump --server http://inuc1.local:8089 --decode
 |---|---|---|
 | `--server` | (mDNS) | Server URL |
 | `--boat` | (empty) | Connect to a named boat (mDNS first, cloud fallback) |
+| `--cloud` | `false` | Force connection to the boat's cloud endpoint (skip mDNS) |
 | `--config` | `~/.config/lplex/lplex.conf` | Path to config file |
 | `--client-id` | hostname | Session ID for buffered mode |
 | `--buffer-timeout` | (empty) | Enable buffered mode with this timeout (ISO 8601) |
@@ -164,6 +165,14 @@ When you run `lplex dump --boat sv-dockwise`:
 3. If mDNS fails, fall back to the configured cloud URL
 
 On reconnect (with `--reconnect`, which is on by default), the mDNS-then-cloud resolution runs again. So if you sail into WiFi range, lplex automatically switches back to the local connection.
+
+To skip the local mDNS lookup and go straight to the cloud endpoint, pass `--cloud`:
+
+```bash
+lplex dump --boat sv-dockwise --cloud
+```
+
+This errors out if the boat has no `cloud` URL configured. `--server` still wins over `--cloud` if both are set.
 
 ### Default boat
 

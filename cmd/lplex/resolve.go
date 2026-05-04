@@ -21,6 +21,11 @@ func resolveServerURL(serverFlag string, boat *BoatConfig, mdnsTimeout time.Dura
 		return resolveBoatServer(boat, mdnsTimeout)
 	}
 
+	if flagCloud {
+		fmt.Fprintf(os.Stderr, "--cloud requires a boat with a configured cloud URL (use --boat or define one in the config file)\n")
+		os.Exit(1)
+	}
+
 	// No boat config, try generic mDNS discovery.
 	discovered, err := discoverAny(mdnsTimeout)
 	if err != nil {
@@ -34,6 +39,14 @@ func resolveServerURL(serverFlag string, boat *BoatConfig, mdnsTimeout time.Dura
 
 // resolveBoatServer resolves a server URL for a specific boat config.
 func resolveBoatServer(boat *BoatConfig, mdnsTimeout time.Duration) string {
+	if flagCloud {
+		if boat.Cloud == "" {
+			fmt.Fprintf(os.Stderr, "boat %s: --cloud requested but no cloud URL configured\n", boat.Name)
+			os.Exit(1)
+		}
+		log.Printf("using cloud endpoint for %s: %s", boat.Name, boat.Cloud)
+		return boat.Cloud
+	}
 	if boat.MDNS != "" {
 		url, err := discoverNamed(boat.MDNS, mdnsTimeout)
 		if err == nil {
