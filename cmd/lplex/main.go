@@ -22,6 +22,7 @@ var (
 	flagConfig string
 	flagQuiet  bool
 	flagJSON   bool
+	flagCloud  bool
 )
 
 // stringSlice implements pflag.Value for repeatable string flags.
@@ -89,6 +90,7 @@ func init() {
 	pf.StringVar(&flagConfig, "config", "", "config file path (default: ~/.config/lplex/lplex.conf)")
 	pf.BoolVar(&flagQuiet, "quiet", false, "suppress stderr status messages")
 	pf.BoolVar(&flagJSON, "json", false, "force JSON output")
+	pf.BoolVar(&flagCloud, "cloud", false, "force connection to the boat's cloud endpoint (skip mDNS)")
 
 	rootCmd.AddCommand(dumpCmd)
 	rootCmd.AddCommand(inspectCmd)
