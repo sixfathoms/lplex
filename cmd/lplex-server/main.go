@@ -84,6 +84,7 @@ func main() {
 	readOnly := flag.Bool("read-only", false, "Disable /send and /query entirely (defense in depth)")
 	sendRateLimit := flag.Float64("send-rate-limit", 0, "Max requests/sec for /send and /query (0 = unlimited)")
 	sendRateBurst := flag.Int("send-rate-burst", 10, "Max burst size for /send rate limiter")
+	mdnsEnabled := flag.Bool("mdns", true, "Advertise _lplex._tcp via the built-in mDNS responder. Set false on hosts that already run avahi-daemon (or another mDNS responder) to avoid hostname conflicts on UDP/5353.")
 	flag.Parse()
 
 	if *showVersion {
@@ -599,13 +600,17 @@ func main() {
 		}
 	}()
 
-	hostname, _ := os.Hostname()
-	mdns, err := zeroconf.Register(hostname, "_lplex._tcp", "local.", *port, nil, nil)
-	if err != nil {
-		logger.Error("mDNS registration failed", "error", err)
+	if *mdnsEnabled {
+		hostname, _ := os.Hostname()
+		mdns, err := zeroconf.Register(hostname, "_lplex._tcp", "local.", *port, nil, nil)
+		if err != nil {
+			logger.Error("mDNS registration failed", "error", err)
+		} else {
+			defer mdns.Shutdown()
+			logger.Info("mDNS registered", "service", "_lplex._tcp", "port", *port)
+		}
 	} else {
-		defer mdns.Shutdown()
-		logger.Info("mDNS registered", "service", "_lplex._tcp", "port", *port)
+		logger.Info("mDNS responder disabled by --mdns=false")
 	}
 
 	// Notify systemd that the service is ready.
