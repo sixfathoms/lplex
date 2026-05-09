@@ -25,10 +25,12 @@ import (
 )
 
 var dumpCmd = &cobra.Command{
-	Use:   "dump",
+	Use:   "dump [file...]",
 	Short: "Stream or replay NMEA 2000 frames",
-	Long:  "Stream live frames from an lplex server or replay from journal files.",
-	RunE:  runDump,
+	Long: "Stream live frames from an lplex server, or replay from one or more .lpj journal files.\n\n" +
+		"Files passed as positional arguments are replayed sequentially.",
+	Args: cobra.ArbitraryArgs,
+	RunE: runDump,
 }
 
 // Dump-specific flags.
@@ -67,7 +69,7 @@ func init() {
 	// Journal flags.
 	f.StringVar(&dumpFile, "file", "", "replay from .lpj journal file (mutually exclusive with --server)")
 	f.BoolVar(&dumpInspect, "inspect", false, "inspect journal file structure (use with --file)")
-	f.Float64Var(&dumpSpeed, "speed", 1.0, "playback speed multiplier (0 = as fast as possible, 1.0 = real-time)")
+	f.Float64Var(&dumpSpeed, "speed", 0, "playback speed multiplier (0 = as fast as possible, 1.0 = real-time)")
 	f.StringVar(&dumpStartTime, "start", "", "seek to RFC3339 timestamp before replaying")
 
 	// Filter flags.
@@ -80,7 +82,7 @@ func init() {
 	f.StringVar(&dumpWhere, "where", "", `display filter expression (e.g. "water_temperature < 280")`)
 }
 
-func runDump(cmd *cobra.Command, _ []string) error {
+func runDump(cmd *cobra.Command, args []string) error {
 	jsonMode := flagJSON || !isTerminal(os.Stdout)
 
 	if flagQuiet {
@@ -111,18 +113,33 @@ func runDump(cmd *cobra.Command, _ []string) error {
 		return runInspectFile(dumpFile)
 	}
 
-	// Journal replay mode.
+	// Journal replay mode: positional args and/or --file.
+	files := append([]string(nil), args...)
 	if dumpFile != "" {
+		if len(files) > 0 {
+			return fmt.Errorf("--file cannot be combined with positional file arguments")
+		}
+		files = []string{dumpFile}
+	}
+	if len(files) > 0 {
 		if flagServer != "" || dumpBufferTimeout != "" {
-			return fmt.Errorf("--file cannot be used with --server or --buffer-timeout")
+			return fmt.Errorf("journal files cannot be used with --server or --buffer-timeout")
 		}
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer cancel()
 
 		devices := newDeviceMap()
-		return runReplay(ctx, dumpFile, dumpSpeed, dumpStartTime, jsonMode, dumpDecode, dumpChanges,
-			dumpFilterPGNs, dumpExcludePGNs, dumpManufacturers, dumpInstances, dumpFilterNames, dumpExcludeNames,
-			displayFilter, devices)
+		for _, path := range files {
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := runReplay(ctx, path, dumpSpeed, dumpStartTime, jsonMode, dumpDecode, dumpChanges,
+				dumpFilterPGNs, dumpExcludePGNs, dumpManufacturers, dumpInstances, dumpFilterNames, dumpExcludeNames,
+				displayFilter, devices); err != nil {
+				return fmt.Errorf("%s: %w", path, err)
+			}
+		}
+		return nil
 	}
 
 	// Validate mutually exclusive flags.
@@ -325,10 +342,18 @@ func runReplay(ctx context.Context, path string, speed float64, startTimeStr str
 		if speed > 0 && !prevTs.IsZero() {
 			delta := entry.Timestamp.Sub(prevTs)
 			if delta > 0 {
-				time.Sleep(time.Duration(float64(delta) / speed))
+				timer := time.NewTimer(time.Duration(float64(delta) / speed))
+				select {
+				case <-timer.C:
+				case <-ctx.Done():
+					timer.Stop()
+				}
 			}
 		}
 		prevTs = entry.Timestamp
+		if ctx.Err() != nil {
+			break
+		}
 
 		seq := frameSeq
 		if seq == 0 {

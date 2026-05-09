@@ -154,7 +154,7 @@ curl -s http://localhost:8089/devices | jq .
 ### Recover partial data from corrupt files
 ```bash
 # lplex dump will read frames up to the corrupt block
-lplex dump --file /var/log/lplex/corrupt/nmea2k-CORRUPT.lpj --json > recovered.jsonl
+lplex dump /var/log/lplex/corrupt/nmea2k-CORRUPT.lpj --json > recovered.jsonl
 ```
 
 ---

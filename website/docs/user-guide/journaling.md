@@ -91,23 +91,26 @@ Set a value to `0` to disable that trigger. At least one should be non-zero.
 
 ## Replaying journals
 
-Use `lplex` to replay journal files:
+Pass one or more journal files as positional args. They are replayed sequentially with a shared device table:
 
 ```bash
-# Normal speed
-lplex dump --file recording.lpj
+# As fast as possible (the default)
+lplex dump recording.lpj
+
+# Multiple files in order — use a glob to grab all rotated journals
+lplex dump /var/lib/lplex/journal/*.lpj
+
+# Real-time speed
+lplex dump recording.lpj --speed 1.0
 
 # 10x speed
-lplex dump --file recording.lpj --speed 10
-
-# As fast as possible
-lplex dump --file recording.lpj --speed 0
+lplex dump recording.lpj --speed 10
 
 # With decoding
-lplex dump --file recording.lpj --decode
+lplex dump recording.lpj --decode
 
-# Seek to a time
-lplex dump --file recording.lpj --start 2026-03-06T10:30:00Z
+# Seek to a time before replaying
+lplex dump recording.lpj --start 2026-03-06T10:30:00Z
 ```
 
 ## Inspecting journals

@@ -41,8 +41,8 @@ lplex dump --server http://inuc1.local:8089 --decode
 | `--decode` | `false` | Decode known PGNs into field values |
 | `--where` | (empty) | Display filter expression on decoded fields (auto-enables `--decode`) |
 | `--changes` | `false` | Only show frames with changed data (suppress duplicates within tolerance) |
-| `--file` | (empty) | Replay a `.lpj` journal file instead of connecting |
-| `--speed` | `1.0` | Playback speed for journal replay (0 = max speed) |
+| `--file` | (empty) | Replay a `.lpj` journal file (deprecated; pass files as positional args) |
+| `--speed` | `0` | Playback speed for journal replay (0 = max speed, 1.0 = real-time) |
 | `--start` | (empty) | Seek to this time (RFC 3339) before playing |
 | `--pgn` | (all) | Filter by PGN number (repeatable) |
 | `--exclude-pgn` | (none) | Exclude specific PGN from output (repeatable) |
@@ -250,23 +250,29 @@ lplex dash --refresh 2s
 
 ## Journal replay
 
-Replay a recorded journal file instead of connecting to a live server:
+Pass one or more `.lpj` journal files as positional arguments to replay them sequentially. The shell glob expands naturally:
 
 ```bash
-# Normal speed playback
-lplex dump --file recording.lpj
+# Replay a single file (dumps as fast as possible by default)
+lplex dump recording.lpj
 
-# Fast-forward at 10x
-lplex dump --file recording.lpj --speed 10
+# Replay multiple files in order — device table carries across files
+lplex dump capture-001.lpj capture-002.lpj capture-003.lpj
 
-# As fast as possible (0 is a special value; default is 1.0 = real-time)
-lplex dump --file recording.lpj --speed 0
+# Glob a directory of rotated journals
+lplex dump /var/lib/lplex/journal/*.lpj
 
-# Seek to a specific time
-lplex dump --file recording.lpj --start 2026-03-06T10:00:00Z
+# Real-time playback (1.0 = wall-clock speed)
+lplex dump recording.lpj --speed 1.0
+
+# Fast-forward at 10x real time
+lplex dump recording.lpj --speed 10
+
+# Seek to a specific time before replaying
+lplex dump recording.lpj --start 2026-03-06T10:00:00Z
 
 # Decode during replay
-lplex dump --file recording.lpj --decode
+lplex dump recording.lpj --decode
 
 # Inspect journal structure (block layout, device table, compression)
 lplex inspect recording.lpj
@@ -279,12 +285,16 @@ lplex verify /var/lib/lplex/journal/
 ```
 
 :::note
-`--file`, `--server`, and `--boat` are mutually exclusive. Journal replay does not require a running lplex-server instance.
+Positional file arguments are mutually exclusive with `--server` and `--boat`. Journal replay does not require a running lplex-server instance. The legacy `--file` flag still works for a single file but cannot be combined with positional args.
+:::
+
+:::tip
+`--speed` defaults to `0` (dump as fast as possible) for `lplex dump`. If you want timed playback that other clients can subscribe to, use [`lplex simulate`](#simulation) — it replays through a full HTTP server at real-time speed by default.
 :::
 
 ## Simulation
 
-`lplex simulate` replays journal files through a full HTTP server, simulating a live boat for development and testing. Unlike `lplex dump --file` which outputs frames to stdout, `simulate` starts a real lplex HTTP server that clients can connect to.
+`lplex simulate` replays journal files through a full HTTP server, simulating a live boat for development and testing. Unlike `lplex dump <file>` which outputs frames to stdout, `simulate` starts a real lplex HTTP server that clients can connect to.
 
 ```bash
 # Real-time replay of a single file
@@ -365,7 +375,7 @@ lplex dump --where 'dst.manufacturer == "Garmin"'
 lplex dump --where 'src.model_id == "GPS 19x NMEA 2000"'
 
 # Combine with journal replay
-lplex dump --file recording.lpj --where "pgn == 130306 && wind_speed > 15"
+lplex dump recording.lpj --where "pgn == 130306 && wind_speed > 15"
 ```
 
 ### Expression syntax
@@ -397,7 +407,7 @@ Use `--changes` to suppress duplicate frames and only show meaningful state chan
 lplex dump --server http://inuc1.local:8089 --changes --decode
 
 # Journal replay with change tracking
-lplex dump --file recording.lpj --changes --decode
+lplex dump recording.lpj --changes --decode
 
 # JSON output includes "change" field
 lplex dump --changes --decode --json

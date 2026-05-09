@@ -7,7 +7,7 @@ title: Simulation & Testing
 
 `lplex simulate` replays recorded journal files through a full HTTP server, simulating a live boat without a CAN bus. This is invaluable for development, integration testing, and demos.
 
-Unlike `lplex dump --file` (which outputs frames to stdout), `simulate` starts a real lplex HTTP server that clients can connect to exactly as they would a live boat.
+Unlike `lplex dump <file>` (which outputs frames to stdout), `simulate` starts a real lplex HTTP server that clients can connect to exactly as they would a live boat.
 
 ## Basic usage
 
