@@ -392,7 +392,7 @@ func runReplay(ctx context.Context, path string, speed float64, startTimeStr str
 		}
 
 		if jsonMode {
-			writeJSONFrame(out, &fr, decode, rawDecoded, ct, diffBytes, fullBytes)
+			writeJSONFrame(out, &fr, devices, decode, rawDecoded, ct, diffBytes, fullBytes)
 		} else {
 			formatFrame(out, &fr, devices, decode, rawDecoded, ct, diffBytes, fullBytes)
 		}
@@ -731,7 +731,7 @@ func streamEvents(sub *lplexc.Subscription, jsonMode, decode, changes bool, f *l
 			}
 
 			if jsonMode {
-				writeJSONFrame(out, ev.Frame, decode, rawDecoded, ct, diffBytes, fullBytes)
+				writeJSONFrame(out, ev.Frame, devices, decode, rawDecoded, ct, diffBytes, fullBytes)
 			} else {
 				formatFrame(out, ev.Frame, devices, decode, rawDecoded, ct, diffBytes, fullBytes)
 			}

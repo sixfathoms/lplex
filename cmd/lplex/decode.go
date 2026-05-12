@@ -206,12 +206,7 @@ func (a *annotatedDecoded) MarshalJSON() ([]byte, error) {
 }
 
 // writeJSONFrame writes a frame as a JSON line, optionally with decoded fields.
-func writeJSONFrame(w *bufio.Writer, f *lplexc.Frame, decode bool, preDecoded any, ct changetracker.ChangeEventType, diffBytes, fullBytes int) {
-	if !decode && ct == 0 {
-		fmt.Fprintf(w, "{\"seq\":%d,\"ts\":\"%s\",\"prio\":%d,\"pgn\":%d,\"src\":%d,\"dst\":%d,\"data\":\"%s\"}\n",
-			f.Seq, f.Ts, f.Prio, f.PGN, f.Src, f.Dst, f.Data)
-		return
-	}
+func writeJSONFrame(w *bufio.Writer, f *lplexc.Frame, dm *deviceMap, decode bool, preDecoded any, ct changetracker.ChangeEventType, diffBytes, fullBytes int) {
 	type jsonFrame struct {
 		Change      string `json:"change,omitempty"`
 		DiffBytes   int    `json:"diff_bytes,omitempty"`
@@ -222,6 +217,7 @@ func writeJSONFrame(w *bufio.Writer, f *lplexc.Frame, decode bool, preDecoded an
 		PGN         uint32 `json:"pgn"`
 		Src         uint8  `json:"src"`
 		Dst         uint8  `json:"dst"`
+		Name        string `json:"name,omitempty"`
 		Data        string `json:"data"`
 		Decoded     any    `json:"decoded,omitempty"`
 		DecodeError string `json:"decode_error,omitempty"`
@@ -229,6 +225,11 @@ func writeJSONFrame(w *bufio.Writer, f *lplexc.Frame, decode bool, preDecoded an
 	jf := jsonFrame{
 		Seq: f.Seq, Ts: f.Ts, Prio: f.Prio,
 		PGN: f.PGN, Src: f.Src, Dst: f.Dst, Data: f.Data,
+	}
+	if dm != nil {
+		if d, ok := dm.get(f.Src); ok {
+			jf.Name = d.Name
+		}
 	}
 	if ct != 0 {
 		jf.Change = ct.String()
