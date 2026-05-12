@@ -545,8 +545,8 @@ lplex dump --decode
 # JSON output: adds a "decoded" object to each frame
 lplex dump --decode --json
 
-# Journal replay with decoding
-lplex dump --file recording.lpj --decode
+# Journal replay with decoding (pass one or more files as positional args)
+lplex dump recording.lpj --decode
 ```
 
 The registry contains ~120 PGNs, of which ~30 have full decoders (position, heading, wind, depth, engine, battery, environment, etc.). The remaining PGNs are name-only: they carry descriptions and metadata (fast-packet, interval) but no field layout. Unknown PGNs pass through with raw hex data as usual.

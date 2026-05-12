@@ -143,6 +143,6 @@
  ls -la /datalog/lplex/journal/
 
  # replay compressed file
- lplex dump --file /datalog/lplex/journal/<new-file>.lpj
+ lplex dump /datalog/lplex/journal/<new-file>.lpj
 
  Verify: device table populates, frames decode correctly, seeking works.
