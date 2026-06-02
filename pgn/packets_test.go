@@ -451,6 +451,129 @@ var packetTests = []packetTest{
 		},
 	},
 
+	// ---- PGN 61444: Engine Controller 1 (J1939 EEC1) ----
+	// Captured from a Wakespeed WS500. Only engine speed is populated;
+	// torque fields are J1939 not-available (0xFF).
+	{
+		desc: "WS500 J1939 EEC1: 1290 rpm, torque fields N/A",
+		pgn:  61444,
+		hex:  "ffffff5028ffffff",
+		want: EngineController1J1939EEC1{
+			EngineSpeed: ptr(1290.0),
+		},
+	},
+
+	// ---- PGN 127510: Charger Configuration Status ----
+	// Captured from a WS500. Reserved bits in the source are not all-ones,
+	// so encode does not reproduce the exact bytes (noRoundTrip).
+	{
+		desc:        "WS500 charger config: instance 160, CV/CC",
+		pgn:         127510,
+		hex:         "a00831000145210f",
+		noRoundTrip: true,
+		want: ChargerConfigurationStatus{
+			Instance:             ptr[uint8](160),
+			BatteryInstance:      ptr[uint8](8),
+			ChargerEnable:        ptr(ChargerEnableOn),
+			ChargeCurrentLimit:   ptr[uint8](0),
+			ChargingAlgorithm:    ptr(ChargingAlgorithmConstantVoltageCurrent),
+			ChargerMode:          ptr(ChargerModeStandalone),
+			EstimatedTemperature: ptr(DeviceTempState(5)),
+			EqualizeOneTime:      ptr(ChargerEnableOff),
+			OverChargeEnable:     ptr(ChargerEnableOn),
+			EqualizeTime:         ptr(232380.0),
+		},
+	},
+
+	// ---- PGN 131015: RV-C Charger Status ----
+	{
+		desc: "WS500 RV-C charger status: alternator, 14.2V, 200A, CV/CC",
+		pgn:  131015,
+		hex:  "311c01a08c000701",
+		want: RVCChargerStatus{
+			Instance:              ptr[uint8](1),
+			ChargerType:           ptr(RVCChargerTypeAlternator),
+			ChargeVoltage:         ptr(14.2),
+			ChargeCurrent:         ptr(200.0),
+			ChargeCurrentPercent:  ptr[uint8](0),
+			OperatingState:        ptr(RVCChargeModeConstantVoltageCurrent),
+			DefaultStateOnPowerUp: ptr(RVCOffOnOn),
+			AutoRechargeEnable:    ptr(RVCOffOnOff),
+			ForceCharge:           ptr(RVCForceChargeNotForced),
+		},
+	},
+
+	// ---- PGN 130723: RV-C Charger Status 2 ----
+	// Voltage/current/temperature validated against the same device's PGN 127508.
+	{
+		desc: "WS500 RV-C charger status 2: alternator, 13.55V, 139A, 56C",
+		pgn:  130723,
+		hex:  "3101460f01dc8760",
+		want: RVCChargerStatus2{
+			ChargerInstance: ptr[uint8](1),
+			ChargerType:     ptr(RVCChargerTypeAlternator),
+			DcInstance:      ptr[uint8](1),
+			DevicePriority:  ptr[uint8](70),
+			Voltage:         ptr(13.55),
+			Current:         ptr(139.0),
+			Temperature:     ptr(329.15),
+		},
+	},
+
+	// ---- PGN 130969: RV-C Charger Equalization Status ----
+	{
+		desc: "WS500 RV-C equalization: idle (time N/A, pre-charge off)",
+		pgn:  130969,
+		hex:  "31fffffcffffffff",
+		want: RVCChargerEqualizationStatus{
+			Instance:    ptr[uint8](1),
+			ChargerType: ptr(RVCChargerTypeAlternator),
+			PreCharging: ptr(RVCOffOnOff),
+		},
+	},
+
+	// ---- PGN 130762: RV-C ISO Diagnostics (DM_RV) ----
+	// No active fault: FMI/SPN/occurrence-count decode to null.
+	{
+		desc: "WS500 RV-C diagnostics: operating+active, no fault",
+		pgn:  130762,
+		hex:  "054cffffffff00ff",
+		want: RVCISODiagnostics{
+			OperatingStatus: ptr(RVCLampStatusOn),
+			ActiveStatus:    ptr(RVCLampStatusOn),
+			YellowLamp:      ptr(RVCLampStatusOff),
+			RedLamp:         ptr(RVCLampStatusOff),
+			Dsa:             ptr[uint8](76),
+			DsaExtension:    ptr[uint8](0),
+		},
+	},
+
+	// ---- PGN 65237: Wakespeed Alternator Information (J1939) ----
+	// Reverse-engineered layout; trailing bytes are unknown (noRoundTrip).
+	{
+		desc:        "WS500 alternator info: 3071 rpm (2.38x), field drive 100%",
+		pgn:         65237,
+		hex:         "fe17fd6431ffffff",
+		noRoundTrip: true,
+		want: WakespeedAlternatorInformation{
+			AlternatorSpeed: ptr(3071.0),
+			Status1:         ptr[uint8](253),
+			FieldDrive:      ptr[uint8](100),
+			Status3:         ptr[uint8](49),
+		},
+	},
+
+	// ---- PGN 64520: Wakespeed Proprietary FC08 ----
+	// Undocumented; only the single varying octet is surfaced (noRoundTrip).
+	{
+		desc:        "WS500 proprietary FC08: field_0 = 15",
+		pgn:         64520,
+		hex:         "0f017fff7fffffff",
+		noRoundTrip: true,
+		want: WakespeedProprietaryFC08{
+			Field0: ptr[uint8](15),
+		},
+	},
 }
 
 func TestBytesParamPairJSON(t *testing.T) {

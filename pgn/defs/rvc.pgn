@@ -1,0 +1,154 @@
+# RV-C and J1939 PGNs emitted by Wakespeed/Balmar WS500 alternator regulators
+#
+# The WS500 is a J1939-rooted advanced alternator regulator that also speaks
+# RV-C (the RVIA CAN dictionary) and a handful of vendor-proprietary J1939
+# messages alongside true NMEA 2000. All three protocols share the same 29-bit
+# extended CAN framing, so lplex captures the frames fine — but the PGN numbers
+# below mean something *different* in RV-C/J1939 than in NMEA 2000, which is why
+# they never decoded before.
+#
+# Layouts and scales are taken from the WS500 firmware author's own RV-C library
+# (github.com/thomasonw/RV-C — Al Thomason wrote the WS500 firmware) and the
+# Wakespeed Communications and Configuration Guide v2.6.1 (matching the observed
+# AREG2.6.1-PRO firmware). Every field below was validated against real frames
+# captured from a WS500 on SV Eelyos: the RV-C charger voltage/current/temp
+# (130723) match the same device's NMEA 2000 PGN 127508 to the digit
+# (13.55 V / 139 A / 329.15 K).
+#
+# RV-C scale conventions (validated):
+#   DC voltage (2-byte): 0.05 V/bit
+#   DC current (2-byte): 0.05 A/bit, -1600 A offset
+#   temperature (1-byte): 1 degC/bit, -40 degC offset  ->  K = raw + 233.15
+#
+# RV-C charger DGNs pack byte 0 as (instance & 0x0F) | (charger_type << 4).
+
+# tRVCChrgType — charger/DC-source classification (RV-C proposed extension).
+enum RVCChargerType {
+  0  = "ac_or_default"
+  1  = "solar"
+  2  = "wind"
+  3  = "alternator"
+  4  = "fuel_cell"
+  5  = "water"
+  6  = "generator"
+  13 = "vendor_defined_1"
+  14 = "vendor_defined_2"
+}
+
+# tRVCBatChrgMode — charge stage / operating state.
+enum RVCChargeMode {
+  0 = "undefined"
+  1 = "do_not_charge"
+  2 = "bulk"
+  3 = "absorption"
+  4 = "overcharge"
+  5 = "equalize"
+  6 = "float"
+  7 = "constant_voltage_current"
+}
+
+# tRVCChrgForceChrg — forced-charge request echoed in status.
+enum RVCForceCharge {
+  0 = "not_forced"
+  1 = "force_to_bulk"
+  2 = "force_to_float"
+}
+
+# RV-C on/off two-bit field (3 = no action / not available -> null).
+enum RVCOffOn {
+  0 = "off"
+  1 = "on"
+}
+
+# PGN 131015 (0x1FFC7) — RV-C CHARGER_STATUS
+# The primary per-cycle charger report: target voltage/current and stage.
+pgn 131015 "RV-C Charger Status" interval=5000ms {
+  instance                   uint8           :4
+  charger_type               RVCChargerType  :4
+  charge_voltage             uint16          :16  scale=0.05  unit="V"
+  charge_current             uint16          :16  scale=0.05  offset=-1600  unit="A"
+  charge_current_percent     uint8           :8   unit="%"
+  operating_state            RVCChargeMode   :8
+  default_state_on_power_up  RVCOffOn        :2
+  auto_recharge_enable       RVCOffOn        :2
+  force_charge               RVCForceCharge  :4
+}
+
+# PGN 130723 (0x1FEA3) — RV-C CHARGER_STATUS2
+# Measured DC-side voltage/current/temperature, with DC-source instance and
+# device priority. Values validated against the same device's PGN 127508.
+pgn 130723 "RV-C Charger Status 2" interval=500ms {
+  charger_instance  uint8           :4
+  charger_type      RVCChargerType  :4
+  dc_instance       uint8           :8
+  device_priority   uint8           :8
+  voltage           uint16          :16  scale=0.05  unit="V"
+  current           uint16          :16  scale=0.05  offset=-1600  unit="A"
+  temperature       uint8           :8   offset=233.15  unit="K"
+}
+
+# PGN 130969 (0x1FF99) — RV-C CHARGER_EQUALIZATION_STATUS
+# Equalization countdown and pre-charge state (idle on the WS500 unless a
+# manual equalization cycle is running).
+pgn 130969 "RV-C Charger Equalization Status" interval=5000ms {
+  instance        uint8           :4
+  charger_type    RVCChargerType  :4
+  time_remaining  uint16          :16  unit="min"
+  pre_charging    RVCOffOn        :2
+  _                               :6
+  _                               :32
+}
+
+# PGN 130762 (0x1FECA) — RV-C ISO/DM_RV Diagnostics Message
+# J1939-style diagnostic: lamp/operating flags plus a 19-bit SPN fault code,
+# FMI, and occurrence count. The 19-bit SPN is split big-endian across bytes
+# 2-4, so the raw octets are exposed individually (spn_msb << 11 | spn_isb << 3
+# | spn_lsb gives the combined value). With no active fault the WS500 sends
+# FMI=31 and SPN=all-ones, which decode to null.
+enum RVCLampStatus {
+  0 = "off"
+  1 = "on"
+}
+pgn 130762 "RV-C ISO Diagnostics" interval=5000ms {
+  operating_status  RVCLampStatus  :2
+  active_status     RVCLampStatus  :2
+  yellow_lamp       RVCLampStatus  :2
+  red_lamp          RVCLampStatus  :2
+  dsa               uint8          :8   desc="default source address"
+  spn_msb           uint8          :8
+  spn_isb           uint8          :8
+  fmi               uint8          :5   desc="failure mode identifier"
+  spn_lsb           uint8          :3
+  occurrence_count  uint8          :7
+  _                                :1
+  dsa_extension     uint8          :8
+  bank_select       uint8          :4
+  _                                :4
+}
+
+# PGN 65237 (0xFED5) — Wakespeed J1939 "Alternator Information"
+# Vendor-proprietary J1939 broadcast. The guide documents the fields but not
+# the wire layout; offsets below are reverse-engineered from live frames.
+# field_drive (raw field-drive %, the regulator's headline output) tracks
+# 95-100% while charging hard. alternator_speed scale = 0.5 rpm/bit, validated
+# against a known 2.38:1 alternator drive ratio at two operating points
+# (raw 6142 @ 1290 engine rpm and raw 6594 @ 1385 engine rpm both yield 2.38x).
+# status_1/status_3 are undocumented status bytes, left raw.
+pgn 65237 "Wakespeed Alternator Information" interval=1000ms {
+  alternator_speed  uint16  :16  scale=0.5  unit="rpm"
+  status_1          uint8   :8
+  field_drive       uint8   :8   unit="%"
+  status_3          uint8   :8
+  ?                         :24
+}
+
+# PGN 64520 (0xFC08) — Wakespeed proprietary, undocumented
+# Observed broadcasting ~2 Hz with only byte 0 carrying a small varying value
+# (11-17) and byte 1 constant 0x01; the remaining bytes are J1939
+# not-available markers (0x7FFF / 0xFFFF). No field semantics are documented,
+# so only the single varying octet is surfaced for future reverse-engineering.
+pgn 64520 "Wakespeed Proprietary FC08" draft {
+  field_0  uint8  :8
+  _               :8
+  ?               :48
+}
