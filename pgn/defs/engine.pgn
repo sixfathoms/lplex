@@ -3,7 +3,6 @@
 pgn 127493 "Transmission Parameters Dynamic"
 pgn 127497 "Trip Parameters Engine"
 pgn 127498 "Engine Parameters Static"
-pgn 127510 "AC Output Status"
 
 # PGN 127488 — Engine Parameters, Rapid Update
 pgn 127488 "Engine Parameters Rapid Update" interval=100ms {
@@ -123,4 +122,60 @@ pgn 127507 "Charger Status" interval=1500ms {
   equalization_pending uint8   :2
   _                             :4
   equalization_time    uint16  :16  scale=60 unit="s"
+}
+
+# PGN 127510 — Charger Configuration Status
+# Field layout from canboat. Note: canboat marks this fast-packet, but the
+# WS500 (and other chargers seen here) transmit it as a single 8-byte frame,
+# so it is decoded as single-frame to keep fast-packet reassembly correct.
+enum ChargingAlgorithm {
+  0 = "trickle"
+  1 = "constant_voltage_current"
+  2 = "two_stage"
+  3 = "three_stage"
+}
+enum ChargerMode {
+  0 = "standalone"
+  1 = "primary"
+  2 = "secondary"
+  3 = "echo"
+}
+enum ChargerEnable {
+  0 = "off"
+  1 = "on"
+}
+enum DeviceTempState {
+  0 = "cold"
+  1 = "warm"
+  2 = "hot"
+}
+pgn 127510 "Charger Configuration Status" interval=1500ms {
+  instance                uint8              :8
+  battery_instance        uint8              :8
+  charger_enable          ChargerEnable      :2
+  _                                          :6
+  charge_current_limit    uint8              :8   unit="%"
+  charging_algorithm      ChargingAlgorithm  :4
+  charger_mode            ChargerMode        :4
+  estimated_temperature   DeviceTempState    :4
+  equalize_one_time       ChargerEnable      :2
+  over_charge_enable      ChargerEnable      :2
+  equalize_time           uint16             :16  scale=60  unit="s"
+}
+
+# PGN 61444 — J1939 Electronic Engine Controller 1 (EEC1)
+# Standard J1939, not NMEA 2000. The WS500 broadcasts this carrying engine
+# speed (validated: matches NMEA 2000 PGN 127488 RPM from the same regulator).
+# Torque fields use the J1939 -125% offset and are typically not-available
+# from an alternator regulator.
+pgn 61444 "Engine Controller 1 (J1939 EEC1)" interval=100ms {
+  torque_mode            uint8   :4
+  _                              :4
+  drivers_demand_torque  uint8   :8   offset=-125  unit="%"
+  actual_engine_torque   uint8   :8   offset=-125  unit="%"
+  engine_speed           uint16  :16  scale=0.125  unit="rpm"
+  source_address         uint8   :8
+  starter_mode           uint8   :4
+  _                              :4
+  engine_demand_torque   uint8   :8   offset=-125  unit="%"
 }
