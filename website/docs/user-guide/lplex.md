@@ -343,6 +343,35 @@ lplex doctor --server http://inuc1.local:8089 --journal-dir /var/log/lplex
 
 Output uses status indicators for each check: `[OK]` passed, `[WARN]` non-fatal issue, `[FAIL]` problem detected, `[SKIP]` check not applicable (e.g., CAN modules on macOS).
 
+## Alarms
+
+`lplex alarms` scans one or more journal files for active alarms and groups them into **episodes** — a contiguous run of the same alarm collapsed into a single row with a start/end time and a count, so a warning that flaps on and off doesn't produce thousands of lines.
+
+```bash
+# Show alarms in the given journals
+lplex alarms /var/lib/lplex/journal/*.lpj
+
+# Machine-readable output
+lplex alarms recording.lpj --json
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--gap` | `2m` | Merge same-alarm events into one episode if they are within this gap |
+| `--json` | `false` | Output episodes as JSON |
+
+**Alarm sources.** Most marine devices do **not** emit the standard NMEA 2000 Alert PGNs (126983–126988). `lplex alarms` therefore decodes the diagnostic mechanisms that devices actually use:
+
+- **PGN 130762** — RV-C / J1939 ISO Diagnostics (DM1), e.g. from a Wakespeed WS500 alternator regulator. Reported with severity (`red`/`yellow`), the J1939 Failure Mode Identifier (FMI) and its text, and the combined SPN (in JSON).
+- **PGN 61184** — the Victron proprietary "Charger Error Code" register (e.g. error 67 = "BMS connection lost").
+
+```
+SEVERITY DEVICE               CODE    COUNT  START    END      DUR     DETAIL
+error    Victron charger s36  err 67      1  19:25:48 19:25:48 -       BMS connection lost
+red      WS500 DM1 s128       FMI 2     159  23:00:05 23:02:17 2m12s   data erratic or incorrect
+yellow   WS500 DM1 s128       FMI 14    211  22:14:06 22:17:03 2m57s   special instruction
+```
+
 ## Filtering
 
 Filters can be combined. Multiple values for the same filter type are OR'd together. Different filter types are AND'd.

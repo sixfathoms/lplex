@@ -106,6 +106,7 @@ func init() {
 	rootCmd.AddCommand(dashboardCmd)
 	rootCmd.AddCommand(completionCmd)
 	rootCmd.AddCommand(loadtestCmd)
+	rootCmd.AddCommand(alarmsCmd)
 }
 
 func main() {
