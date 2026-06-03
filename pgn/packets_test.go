@@ -290,6 +290,100 @@ var packetTests = []packetTest{
 		epsilon: 0.001,
 	},
 
+	// ---- PGN 129283: Cross Track Error ----
+	// Real frame from a Garmin chartplotter (src 6) navigating to a destination.
+	{
+		desc: "cross track error 0.11 m, XTE mode 1",
+		pgn:  129283,
+		hex:  "fff10b000000ffff",
+		// sid      = 0xFF -> n/a
+		// byte 1   = 0xf1 -> xte_mode = 0b0001 = 1, reserved 0b00, nav_term = 0b11 -> n/a
+		// xte      = 0x0000000b = 11 -> 0.11 m
+		want: CrossTrackError{
+			Sid:     nil,
+			XteMode: ptr[uint8](1),
+			NavTerm: nil, // 0b11 = not available
+			Xte:     ptr(0.11),
+		},
+		epsilon: 1e-4,
+	},
+
+	// ---- PGN 129284: Navigation Data ----
+	// Real frame from a Garmin chartplotter (src 6) actively navigating to a
+	// waypoint in the Strait of Georgia, BC. Carries the destination position,
+	// ETA, and bearing/distance to the active waypoint — the core of the
+	// "where am I going and when will I get there" data set.
+	{
+		desc: "navigation data: 774.5 m to dest 49.5231°N 124.6329°W, ETA 03:03:30",
+		pgn:  129284,
+		hex:  "ff8a2e01000020fe8f067e5065df6fdfffffffffffffffff51a1841d8188b6b5bb00",
+		// sid                      = 0xFF -> n/a
+		// distance_to_wp           = 0x00012e8a = 77450 -> 774.50 m
+		// flags byte 0x00          = bearing_reference 0 (true), perp/arrival/calc = 0
+		// eta_time                 = 0x068ffe20 = 110100000 -> 11010 s (03:03:30 UTC)
+		// eta_date                 = 0x507e = 20606 days since 1970 (2026-06-02)
+		// bearing_origin_to_dest   = 0xdf65 = 57189 -> 5.7189 rad (~327.7°)
+		// bearing_position_to_dest = 0xdf6f = 57199 -> 5.7199 rad
+		// origin_wp_number         = 0xFFFFFFFF -> n/a
+		// dest_wp_number           = 0xFFFFFFFF -> n/a
+		// dest_latitude            = 0x1d84a151 = 495231313 -> 49.5231313°
+		// dest_longitude           = 0xb5b68881 = -1246328703 -> -124.6328703°
+		// wp_closing_velocity      = 0x00bb = 187 -> 1.87 m/s
+		want: NavigationData{
+			Sid:                   nil,
+			DistanceToWp:          ptr(774.5),
+			BearingReference:      ptr(DirectionReferenceTrue),
+			PerpCrossed:           ptr[uint8](0),
+			ArrivalCircleEntered:  ptr[uint8](0),
+			CalcType:              ptr[uint8](0),
+			EtaTime:               ptr(11010.0),
+			EtaDate:               ptr[uint16](20606),
+			BearingOriginToDest:   ptr(5.7189),
+			BearingPositionToDest: ptr(5.7199),
+			OriginWpNumber:        nil,
+			DestWpNumber:          nil,
+			DestLatitude:          ptr(49.5231313),
+			DestLongitude:         ptr(-124.6328703),
+			WpClosingVelocity:     ptr(1.87),
+		},
+		epsilon: 1e-6,
+	},
+
+	// ---- PGN 129285: Navigation Route WP Information ----
+	// Real frame from the same Garmin: a 2-waypoint active route. Waypoint 0 is
+	// the (unset) origin, waypoint 1 is the destination matching PGN 129284's
+	// dest_latitude/dest_longitude. Variable-length string_lau names are empty.
+	{
+		desc: "route info: 2 waypoints, dest 49.5231°N 124.6329°W",
+		pgn:  129285,
+		hex:  "ffff0200ffffffffe00200ffffff0201ffffff7fffffff7f0000020151a1841d8188b6b5",
+		// start_rps    = 0xFFFF -> n/a
+		// items        = 2
+		// database_id  = 0xFFFF -> n/a
+		// route_id     = 0xFFFF -> n/a
+		// flags 0xe0   = navigation_direction 0, supplementary_data 0
+		// route_name   = empty (string_lau len 2)
+		// wp[0]        = origin: id n/a, name empty, lat/lon n/a (0x7FFFFFFF)
+		// wp[1]        = dest:   id 0, name empty, lat 49.5231313°, lon -124.6328703°
+		want: NavigationRouteWPInformation{
+			StartRps:            nil,
+			Items:               2,
+			DatabaseId:          nil,
+			RouteId:             nil,
+			NavigationDirection: ptr[uint8](0),
+			SupplementaryData:   ptr[uint8](0),
+			RouteName:           "",
+			Waypoints: []RouteWaypoint{
+				{Id: nil, Name: "", Latitude: nil, Longitude: nil},
+				// Waypoints are compared as exact JSON (not epsilon), so express
+				// lat/lon the same way the decoder does: float64(raw) * 1e-07.
+				{Id: ptr[uint16](0), Name: "", Latitude: ptr(float64(495231313) * 1e-07), Longitude: ptr(float64(-1246328703) * 1e-07)},
+			},
+		},
+		epsilon:     1e-6,
+		noRoundTrip: true, // string_lau control bytes + n/a waypoint fields are lossy to re-encode
+	},
+
 	// ---- PGN 130306: Wind Data ----
 	{
 		desc: "apparent wind 5.5 m/s at 1.2345 rad",
@@ -547,7 +641,6 @@ var packetTests = []packetTest{
 			DsaExtension:    ptr[uint8](0),
 		},
 	},
-
 	// ---- PGN 65237: Wakespeed Alternator Information (J1939) ----
 	// Reverse-engineered layout; trailing bytes are unknown (noRoundTrip).
 	{
