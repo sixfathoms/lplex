@@ -1,0 +1,17 @@
+# pnpm configuration for the lplex docs site.
+#
+# minimumReleaseAge: supply-chain hardening. pnpm refuses to install any
+# package version published less than this many minutes ago, so a freshly
+# published (and potentially compromised) release can't be pulled in before
+# the ecosystem has had time to flag it.
+#   4320 minutes = 72 hours
+minimumReleaseAge: 4320
+
+# Packages exempted from the cooldown can be listed here if a urgent fix is
+# ever needed, e.g.:
+# minimumReleaseAgeExclude:
+#   - "@docusaurus/*"
+
+# Dependency version overrides (migrated from npm's package.json "overrides").
+overrides:
+  serialize-javascript: "^7.0.3"
