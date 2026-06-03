@@ -12,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/sixfathoms/lplex/requestrules"
 )
 
 // RxFrame is a reassembled CAN frame ready for the broker.
@@ -268,6 +270,10 @@ type Broker struct {
 	// journal channel (nil = journaling disabled)
 	journal chan<- RxFrame
 
+	// request rules engine (nil = disabled): declarative on-demand polling.
+	requests    *requestrules.Engine
+	requestPGNs atomic.Pointer[map[uint32]struct{}] // PGNs the engine reacts to; lock-free hot-path guard
+
 	journalDir        string
 	replicaMode       bool          // when true, honor frame.Seq instead of auto-incrementing
 	deviceIdleTimeout time.Duration // 0 = disabled
@@ -325,6 +331,16 @@ type BrokerConfig struct {
 	// ProductInfoHeartbeat is how often virtual devices re-broadcast product
 	// info (PGN 126996). Zero uses DefaultProductInfoHeartbeat (5m).
 	ProductInfoHeartbeat time.Duration
+
+	// RequestRules configures declarative on-demand polling: send a request
+	// when a matching device comes online (or at startup), keep the data
+	// fresh, and re-request when a trigger PGN is seen. Disabled in replica
+	// mode (no CAN bus). See the requestrules package.
+	RequestRules []requestrules.Rule
+
+	// RequestGlobalMinInterval optionally caps the rate across ALL request
+	// rules so a burst of devices coming online can't flood the bus. 0 = no cap.
+	RequestGlobalMinInterval time.Duration
 }
 
 // NewBroker creates a new broker with the given config.
@@ -385,6 +401,17 @@ func NewBroker(cfg BrokerConfig) *Broker {
 		}
 	}
 
+	// Request rules engine (skip in replica mode: no CAN bus to transmit on).
+	if len(cfg.RequestRules) > 0 && !cfg.ReplicaMode {
+		b.requests = requestrules.New(requestrules.Config{GlobalMinInterval: cfg.RequestGlobalMinInterval})
+		for _, r := range cfg.RequestRules {
+			if err := b.requests.AddRule(r); err != nil {
+				b.logger.Warn("skipping invalid request rule", "rule", r.Name, "error", err)
+			}
+		}
+		b.refreshRequestPGNs()
+	}
+
 	return b
 }
 
@@ -420,6 +447,7 @@ func (b *Broker) Run(ctx context.Context) {
 		case <-ticker.C:
 			b.expireSessions()
 			b.expireDevices()
+			b.requestTick()
 			if !b.replicaMode {
 				b.retryProductInfo()
 			}
@@ -502,6 +530,74 @@ func (b *Broker) SendISORequest(bus string, dst uint8, pgn uint32) error {
 	return nil
 }
 
+// AddRequestRule registers a request rule at runtime. Safe to call before or
+// after Run. Returns an error if the rule is invalid or the broker is a replica.
+func (b *Broker) AddRequestRule(r requestrules.Rule) error {
+	if b.replicaMode {
+		return fmt.Errorf("request rules are disabled in replica mode")
+	}
+	if b.requests == nil {
+		b.requests = requestrules.New(requestrules.Config{})
+	}
+	if err := b.requests.AddRule(r); err != nil {
+		return err
+	}
+	b.refreshRequestPGNs()
+	return nil
+}
+
+// refreshRequestPGNs recomputes the lock-free hot-path guard set.
+func (b *Broker) refreshRequestPGNs() {
+	set := b.requests.InterestingPGNs()
+	b.requestPGNs.Store(&set)
+}
+
+// deviceViewFrom builds the engine's minimal device view from a registry device.
+func deviceViewFrom(d *Device) requestrules.DeviceView {
+	return requestrules.DeviceView{
+		Bus: d.Bus, Source: d.Source, NAMEHex: d.NAMEHex,
+		Manufacturer: d.Manufacturer, ManufacturerCode: d.ManufacturerCode,
+		DeviceClass: d.DeviceClass, DeviceFunction: d.DeviceFunction,
+		DeviceInstance: d.DeviceInstance, ModelID: d.ModelID, ProductCode: d.ProductCode,
+	}
+}
+
+// dispatchRequests transmits the requests produced by the engine.
+func (b *Broker) dispatchRequests(reqs []requestrules.Request) {
+	for _, r := range reqs {
+		switch r.Via {
+		case requestrules.ViaISORequest:
+			b.sendISORequest(r.Bus, r.Dst, r.PGN)
+		case requestrules.ViaFrame:
+			prio := r.Priority
+			if prio == 0 {
+				prio = 6
+			}
+			b.queueTx(TxRequest{
+				Header: CANHeader{Priority: prio, PGN: r.PGN, Source: b.isoRequestSource(), Destination: r.Dst},
+				Data:   r.Data,
+				Bus:    r.Bus,
+			})
+		}
+	}
+}
+
+// requestDeviceOnline notifies the engine a device is present/updated.
+func (b *Broker) requestDeviceOnline(d *Device) {
+	if b.requests == nil {
+		return
+	}
+	b.dispatchRequests(b.requests.OnDeviceOnline(deviceViewFrom(d)))
+}
+
+// requestTick drives MaxAge-based refresh; called from the broker ticker.
+func (b *Broker) requestTick() {
+	if b.requests == nil {
+		return
+	}
+	b.dispatchRequests(b.requests.Tick())
+}
+
 func (b *Broker) handleFrame(frame RxFrame) {
 	src := frame.Header.Source
 	bus := frame.Bus
@@ -538,8 +634,12 @@ func (b *Broker) handleFrame(frame RxFrame) {
 					"bus", bus, "old_src", evictedSrc, "new_src", src)
 				b.state.values.RemoveSource(bus, evictedSrc)
 				b.fanOutDeviceRemoved(bus, evictedSrc)
+				if b.requests != nil {
+					b.requests.OnDeviceOffline(bus, evictedSrc)
+				}
 			}
 			b.fanOutDevice(dev)
+			b.requestDeviceOnline(dev)
 			if isOurClaim {
 				// Seed product info so our virtual device shows up
 				// complete in /devices without waiting for an ISO
@@ -567,10 +667,21 @@ func (b *Broker) handleFrame(frame RxFrame) {
 				"sw", dev.SoftwareVersion,
 			)
 			b.fanOutDevice(dev)
+			// Product info populates ModelID, so re-evaluate model-matched rules.
+			b.requestDeviceOnline(dev)
 		}
 	default:
 		if newSource && !b.replicaMode {
 			b.sendISORequest(bus, src, 60928)
+		}
+	}
+
+	// Request rules: react to wanted responses (mark fresh) and invalidation
+	// triggers. Guarded by a lock-free set so the vast majority of frames cost
+	// only one map lookup.
+	if set := b.requestPGNs.Load(); set != nil {
+		if _, ok := (*set)[frame.Header.PGN]; ok {
+			b.dispatchRequests(b.requests.OnFrame(bus, src, frame.Header.PGN, frame.Data))
 		}
 	}
 
@@ -847,6 +958,9 @@ func (b *Broker) expireDevices() {
 		}
 		b.state.values.RemoveSource(key.Bus, key.Source)
 		b.fanOutDeviceRemoved(key.Bus, key.Source)
+		if b.requests != nil {
+			b.requests.OnDeviceOffline(key.Bus, key.Source)
+		}
 	}
 }
 

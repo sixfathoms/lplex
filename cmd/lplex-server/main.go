@@ -18,6 +18,7 @@ import (
 	"github.com/grandcat/zeroconf"
 	"github.com/gurkankaymak/hocon"
 	"github.com/sixfathoms/lplex"
+	"github.com/sixfathoms/lplex/requestrules"
 	"github.com/sixfathoms/lplex/journal"
 	"github.com/sixfathoms/lplex/keeper"
 	"github.com/sixfathoms/lplex/sendpolicy"
@@ -198,15 +199,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	var requestRules []requestrules.Rule
+	var requestGlobalMin time.Duration
+	if cfgResult != nil {
+		requestRules = cfgResult.RequestRules
+		requestGlobalMin = cfgResult.RequestGlobalMinInterval
+	}
+
 	broker := lplex.NewBroker(lplex.BrokerConfig{
-		RingSize:             *ringSize,
-		MaxBufferDuration:    bufDuration,
-		JournalDir:           *journalDir,
-		Logger:               logger,
-		DeviceIdleTimeout:    devIdleTimeout,
-		VirtualDevices:       virtualDevices,
-		ClaimHeartbeat:       claimHeartbeat,
-		ProductInfoHeartbeat: productInfoHeartbeat,
+		RingSize:                 *ringSize,
+		MaxBufferDuration:        bufDuration,
+		JournalDir:               *journalDir,
+		Logger:                   logger,
+		DeviceIdleTimeout:        devIdleTimeout,
+		VirtualDevices:           virtualDevices,
+		ClaimHeartbeat:           claimHeartbeat,
+		ProductInfoHeartbeat:     productInfoHeartbeat,
+		RequestRules:             requestRules,
+		RequestGlobalMinInterval: requestGlobalMin,
 	})
 
 	sendPolicy, err := parseSendPolicy(*sendEnabled, *sendRulesStr)

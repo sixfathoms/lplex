@@ -240,6 +240,74 @@ replication {
 | `-send-rate-burst` | `send.rate-burst` | `10` | Max burst size for /send rate limiter |
 | `-api-key` | `api-key` | (empty) | API key for HTTP authentication (empty = no auth) |
 
+## Request rules (on-demand polling)
+
+Some NMEA 2000 data isn't broadcast — a device only sends it when asked (product
+info, the Route &amp; Waypoint service, Victron on-demand registers, anything
+marked on-demand). Rather than write bespoke request code per device, configure
+declarative **request rules**: send a request when a matching device comes
+online (or at startup), keep the value fresh, and re-request when a trigger PGN
+appears. The data then flows into the value store like any other frame.
+
+Rules are **level-triggered** — a datum is requested only while it's missing or
+stale — and every rule has a required `min-interval` floor, so however many
+triggers fire, the same datum is never re-requested faster than that. An
+optional `requests-global-min-interval` caps the rate across all rules. Request
+rules are disabled in replica mode (no CAN bus) and, like the broker's built-in
+device discovery, bypass the `/send` policy (they're internal).
+
+```hocon
+# Optional: cap the request rate across ALL rules.
+requests-global-min-interval = "1s"
+
+requests = [
+  # Pull the chartplotter's active route when it appears; refresh every 30 s,
+  # and re-pull whenever navigation data changes.
+  {
+    name = "gpsmap-route"
+    match { model-id = "GPSMAP*" }   # match any of the fields below
+    via = "iso"                       # ISO Request (PGN 59904) for each `want`
+    want = [130065, 130067]           # route list + route waypoints
+    to-device = true                  # send to the device (vs broadcast)
+    on-online = true                  # request on appearance / at startup
+    max-age = "30s"                   # refresh when older than this
+    min-interval = "5s"               # REQUIRED: floor between requests
+    invalidate-on = [129284]          # re-request when this PGN is seen
+  }
+
+  # Parameterized (sub-keyed) frame request: read specific Victron registers.
+  {
+    name = "victron-registers"
+    match { manufacturer-code = 358 }
+    via = "frame"
+    frame-pgn = 61184
+    frame-template = "6699000000000000"  # hex; the subkey is written in per request
+    subkey-write-offset = 2              # where the register id goes (little-endian)
+    subkey-write-len = 2
+    subkey-read-offset = 2               # where to read it back from responses
+    subkey-read-len = 2
+    want = [798, 796]                    # register ids: 0x031E alarm, 0x031C warning
+    to-device = true
+    max-age = "1m"
+    min-interval = "30s"
+  }
+]
+```
+
+**Match fields** (all set fields must match; omit for wildcard): `manufacturer`,
+`manufacturer-code`, `model-id` (supports a trailing `*` glob), `device-class`,
+`device-function`, `name` (CAN NAME hex), `source`, `bus`.
+
+**Rule fields:** `via` (`"iso"` default, or `"frame"`), `want` (PGNs for ISO;
+register/sub-key values for frame), `to-device`, `dst`, `on-online`, `max-age`,
+`min-interval` (required), `invalidate-on`. For `via = "frame"`: `frame-pgn`,
+`frame-template` (hex), `frame-priority`, and `subkey-write-offset` /
+`subkey-write-len` / `subkey-read-offset` / `subkey-read-len`.
+
+Embedding lplex as a Go library? Use `BrokerConfig.RequestRules` or
+`Broker.AddRequestRule(requestrules.Rule{...})` directly — the config above is
+just a thin parser over the same types.
+
 ## lplex-cloud
 
 ### Full annotated config

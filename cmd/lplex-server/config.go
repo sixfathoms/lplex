@@ -1,15 +1,18 @@
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gurkankaymak/hocon"
 	"github.com/sixfathoms/lplex"
+	"github.com/sixfathoms/lplex/requestrules"
 )
 
 // configToFlag maps HOCON config paths to CLI flag names.
@@ -93,7 +96,9 @@ func findConfigFile(configFlag string) (string, error) {
 // configResult holds values parsed from HOCON that can't be represented as
 // simple flag strings (arrays of structured objects, etc.).
 type configResult struct {
-	Slots []lplex.ClientSlot
+	Slots                    []lplex.ClientSlot
+	RequestRules             []requestrules.Rule
+	RequestGlobalMinInterval time.Duration
 }
 
 // applyConfig parses a HOCON config file and sets any flag values that
@@ -165,7 +170,213 @@ func applyConfig(path string) (*configResult, error) {
 		}
 	}
 
+	// Parse request rules (declarative on-demand polling).
+	if s := cfg.GetString("requests-global-min-interval"); s != "" {
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			return nil, fmt.Errorf("config key requests-global-min-interval: %w", err)
+		}
+		result.RequestGlobalMinInterval = d
+	}
+	if arr := cfg.GetArray("requests"); len(arr) > 0 {
+		for i, elem := range arr {
+			if elem.Type() != hocon.ObjectType {
+				return nil, fmt.Errorf("config key requests[%d]: expected object, got %v", i, elem.Type())
+			}
+			rule, err := parseRequestRule(elem.(hocon.Object), i)
+			if err != nil {
+				return nil, err
+			}
+			result.RequestRules = append(result.RequestRules, rule)
+		}
+	}
+
 	return result, nil
+}
+
+// parseRequestRule converts a HOCON object into a requestrules.Rule.
+func parseRequestRule(obj hocon.Object, index int) (requestrules.Rule, error) {
+	prefix := fmt.Sprintf("requests[%d]", index)
+	var r requestrules.Rule
+
+	name, ok := hoconStr(obj, "name")
+	if !ok {
+		return r, fmt.Errorf("%s: name is required", prefix)
+	}
+	r.Name = name
+
+	// match { ... }
+	if mv, ok := obj["match"]; ok {
+		if mv.Type() != hocon.ObjectType {
+			return r, fmt.Errorf("%s.match: expected object", prefix)
+		}
+		m := mv.(hocon.Object)
+		if s, ok := hoconStr(m, "manufacturer"); ok {
+			r.Match.Manufacturer = s
+		}
+		if n, ok, err := hoconU32(m, "manufacturer-code", prefix+".match.manufacturer-code"); err != nil {
+			return r, err
+		} else if ok {
+			r.Match.ManufacturerCode = uint16(n)
+		}
+		if s, ok := hoconStr(m, "model-id"); ok {
+			r.Match.ModelID = s
+		}
+		if n, ok, err := hoconU32(m, "device-class", prefix+".match.device-class"); err != nil {
+			return r, err
+		} else if ok {
+			v := uint8(n)
+			r.Match.DeviceClass = &v
+		}
+		if n, ok, err := hoconU32(m, "device-function", prefix+".match.device-function"); err != nil {
+			return r, err
+		} else if ok {
+			v := uint8(n)
+			r.Match.DeviceFunction = &v
+		}
+		if s, ok := hoconStr(m, "name"); ok {
+			r.Match.Name = s
+		}
+		if n, ok, err := hoconU32(m, "source", prefix+".match.source"); err != nil {
+			return r, err
+		} else if ok {
+			v := uint8(n)
+			r.Match.Source = &v
+		}
+		if s, ok := hoconStr(m, "bus"); ok {
+			r.Match.Bus = s
+		}
+	}
+
+	// via
+	via := "iso"
+	if s, ok := hoconStr(obj, "via"); ok {
+		via = strings.ToLower(s)
+	}
+
+	// timing + flags
+	if b, ok := hoconBool(obj, "on-online"); ok {
+		r.OnOnline = b
+	}
+	if b, ok := hoconBool(obj, "to-device"); ok {
+		r.ToDevice = b
+	}
+	if n, ok, err := hoconU32(obj, "dst", prefix+".dst"); err != nil {
+		return r, err
+	} else if ok {
+		r.Dst = uint8(n)
+	}
+	mi, ok := hoconStr(obj, "min-interval")
+	if !ok {
+		return r, fmt.Errorf("%s: min-interval is required", prefix)
+	}
+	d, err := time.ParseDuration(mi)
+	if err != nil {
+		return r, fmt.Errorf("%s.min-interval: %w", prefix, err)
+	}
+	r.MinInterval = d
+	if ma, ok := hoconStr(obj, "max-age"); ok {
+		d, err := time.ParseDuration(ma)
+		if err != nil {
+			return r, fmt.Errorf("%s.max-age: %w", prefix, err)
+		}
+		r.MaxAge = d
+	}
+	if v, ok := obj["invalidate-on"]; ok {
+		pgns, err := hoconUint32Array(v, prefix+".invalidate-on")
+		if err != nil {
+			return r, err
+		}
+		r.InvalidateOn = pgns
+	}
+
+	// want + via-specific fields
+	wantVals, err := hoconUint32Array(mustVal(obj, "want"), prefix+".want")
+	if !hasKey(obj, "want") {
+		return r, fmt.Errorf("%s: want is required", prefix)
+	}
+	if err != nil {
+		return r, err
+	}
+	switch via {
+	case "iso":
+		r.Via = requestrules.ViaISORequest
+		for _, p := range wantVals {
+			r.Wants = append(r.Wants, requestrules.Want{PGN: p})
+		}
+	case "frame":
+		r.Via = requestrules.ViaFrame
+		fp, ok, err := hoconU32(obj, "frame-pgn", prefix+".frame-pgn")
+		if err != nil {
+			return r, err
+		}
+		if !ok {
+			return r, fmt.Errorf("%s: frame-pgn is required for via=frame", prefix)
+		}
+		r.FramePGN = fp
+		if s, ok := hoconStr(obj, "frame-template"); ok {
+			tmpl, err := hex.DecodeString(s)
+			if err != nil {
+				return r, fmt.Errorf("%s.frame-template: %w", prefix, err)
+			}
+			r.FrameTemplate = tmpl
+		}
+		r.SubKeyWriteOff = intOr(obj, "subkey-write-offset", 0)
+		r.SubKeyWriteLen = intOr(obj, "subkey-write-len", 0)
+		r.SubKeyReadOff = intOr(obj, "subkey-read-offset", 0)
+		r.SubKeyReadLen = intOr(obj, "subkey-read-len", 0)
+		for _, sk := range wantVals {
+			r.Wants = append(r.Wants, requestrules.Want{PGN: fp, SubKey: sk, HasSubKey: true})
+		}
+	default:
+		return r, fmt.Errorf("%s.via: must be \"iso\" or \"frame\", got %q", prefix, via)
+	}
+	return r, nil
+}
+
+// HOCON scalar helpers.
+func hoconStr(obj hocon.Object, key string) (string, bool) {
+	if v, ok := obj[key]; ok && v.Type() == hocon.StringType {
+		return string(v.(hocon.String)), true
+	}
+	return "", false
+}
+
+func hoconBool(obj hocon.Object, key string) (bool, bool) {
+	if v, ok := obj[key]; ok {
+		return v.String() == "true", true
+	}
+	return false, false
+}
+
+func hoconU32(obj hocon.Object, key, path string) (uint32, bool, error) {
+	v, ok := obj[key]
+	if !ok {
+		return 0, false, nil
+	}
+	n, err := strconv.ParseUint(v.String(), 0, 32)
+	if err != nil {
+		return 0, false, fmt.Errorf("%s: %w", path, err)
+	}
+	return uint32(n), true, nil
+}
+
+func intOr(obj hocon.Object, key string, def int) int {
+	if v, ok := obj[key]; ok {
+		if n, err := strconv.Atoi(v.String()); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func hasKey(obj hocon.Object, key string) bool { _, ok := obj[key]; return ok }
+
+func mustVal(obj hocon.Object, key string) hocon.Value {
+	if v, ok := obj[key]; ok {
+		return v
+	}
+	return hocon.Array{}
 }
 
 // parseHOCNSlot converts a HOCON object into a ClientSlot.

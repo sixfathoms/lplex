@@ -426,6 +426,10 @@ Both `/send` and `/query` are disabled by default. Enable with `-send-enabled` o
 
 `POST /query` with `{"pgn": 129025, "dst": 255}` sends an ISO Request (PGN 59904) and waits for the response. Returns the first matching frame as JSON. Optional `"timeout": "PT5S"` (default 2s). Returns `504 Gateway Timeout` if no response arrives.
 
+### Request rules (on-demand polling)
+
+For data that's only sent when asked (product info, the Route &amp; Waypoint service, Victron on-demand registers), configure declarative **request rules** in HOCON `requests`: send a request when a matching device (by manufacturer/model/class/NAME/etc.) comes online or at startup, keep it fresh (`max-age`), and re-request on a trigger PGN (`invalidate-on`). Rules are level-triggered with a required `min-interval` floor (and optional `requests-global-min-interval`) so the bus is never flooded; supports plain ISO requests (`via = "iso"`) and parameterized sub-keyed frames (`via = "frame"`). Embedders use `BrokerConfig.RequestRules` / `Broker.AddRequestRule`. See [configuration › request rules](https://sixfathoms.github.io/lplex/getting-started/configuration#request-rules-on-demand-polling).
+
 ### Devices
 
 `GET /devices` returns JSON array of all discovered NMEA 2000 devices.
