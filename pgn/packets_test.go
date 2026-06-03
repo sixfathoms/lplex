@@ -641,6 +641,26 @@ var packetTests = []packetTest{
 			DsaExtension:    ptr[uint8](0),
 		},
 	},
+	// Active RED fault captured live from the WS500: red+yellow lamps lit,
+	// FMI 2 (data erratic). occurrence_count/bank_select are n/a (all-ones).
+	{
+		desc: "WS500 RV-C diagnostics: RED fault, FMI 2 (data erratic)",
+		pgn:  130762,
+		hex:  "504cfe0542ff08ff",
+		want: RVCISODiagnostics{
+			OperatingStatus: ptr(RVCLampStatusOff),
+			ActiveStatus:    ptr(RVCLampStatusOff),
+			YellowLamp:      ptr(RVCLampStatusOn),
+			RedLamp:         ptr(RVCLampStatusOn),
+			Dsa:             ptr[uint8](76),
+			SpnMsb:          ptr[uint8](254),
+			SpnIsb:          ptr[uint8](5),
+			Fmi:             ptr[uint8](2),
+			SpnLsb:          ptr[uint8](2),
+			DsaExtension:    ptr[uint8](8),
+		},
+	},
+
 	// ---- PGN 65237: Wakespeed Alternator Information (J1939) ----
 	// Reverse-engineered layout; trailing bytes are unknown (noRoundTrip).
 	{
