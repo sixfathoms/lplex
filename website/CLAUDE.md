@@ -4,12 +4,20 @@ Docusaurus 4 site for lplex documentation. Deployed to GitHub Pages via `.github
 
 ## Build
 
+Uses **pnpm** (not npm). Run `corepack enable` once so the pinned pnpm version
+(`packageManager` in `package.json`) is used automatically.
+
 ```bash
 cd website
-npm ci
-npm run build     # production build into website/build/
-npm start         # local dev server with hot reload
+pnpm install --frozen-lockfile   # install from pnpm-lock.yaml
+pnpm run build                   # production build into website/build/
+pnpm start                       # local dev server with hot reload
 ```
+
+**Supply-chain cooldown**: `pnpm-workspace.yaml` sets `minimumReleaseAge: 4320`
+(72 hours), so pnpm refuses to install any package version published less than
+72 hours ago. If a genuinely urgent fix is blocked by this, add the package to
+`minimumReleaseAgeExclude` in that file rather than lowering the global value.
 
 ## Doc Structure
 

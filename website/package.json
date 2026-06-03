@@ -2,6 +2,7 @@
   "name": "lplex-web",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
@@ -44,8 +45,5 @@
   },
   "engines": {
     "node": ">=20.0"
-  },
-  "overrides": {
-    "serialize-javascript": "^7.0.3"
   }
 }
