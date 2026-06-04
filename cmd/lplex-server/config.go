@@ -214,34 +214,31 @@ func parseRequestRule(obj hocon.Object, index int) (requestrules.Rule, error) {
 		if s, ok := hoconStr(m, "manufacturer"); ok {
 			r.Match.Manufacturer = s
 		}
-		if n, ok, err := hoconU32(m, "manufacturer-code", prefix+".match.manufacturer-code"); err != nil {
+		if n, ok, err := hoconU16(m, "manufacturer-code", prefix+".match.manufacturer-code"); err != nil {
 			return r, err
 		} else if ok {
-			r.Match.ManufacturerCode = uint16(n)
+			r.Match.ManufacturerCode = n
 		}
 		if s, ok := hoconStr(m, "model-id"); ok {
 			r.Match.ModelID = s
 		}
-		if n, ok, err := hoconU32(m, "device-class", prefix+".match.device-class"); err != nil {
+		if n, ok, err := hoconU8(m, "device-class", prefix+".match.device-class"); err != nil {
 			return r, err
 		} else if ok {
-			v := uint8(n)
-			r.Match.DeviceClass = &v
+			r.Match.DeviceClass = &n
 		}
-		if n, ok, err := hoconU32(m, "device-function", prefix+".match.device-function"); err != nil {
+		if n, ok, err := hoconU8(m, "device-function", prefix+".match.device-function"); err != nil {
 			return r, err
 		} else if ok {
-			v := uint8(n)
-			r.Match.DeviceFunction = &v
+			r.Match.DeviceFunction = &n
 		}
 		if s, ok := hoconStr(m, "name"); ok {
 			r.Match.Name = s
 		}
-		if n, ok, err := hoconU32(m, "source", prefix+".match.source"); err != nil {
+		if n, ok, err := hoconU8(m, "source", prefix+".match.source"); err != nil {
 			return r, err
 		} else if ok {
-			v := uint8(n)
-			r.Match.Source = &v
+			r.Match.Source = &n
 		}
 		if s, ok := hoconStr(m, "bus"); ok {
 			r.Match.Bus = s
@@ -261,10 +258,10 @@ func parseRequestRule(obj hocon.Object, index int) (requestrules.Rule, error) {
 	if b, ok := hoconBool(obj, "to-device"); ok {
 		r.ToDevice = b
 	}
-	if n, ok, err := hoconU32(obj, "dst", prefix+".dst"); err != nil {
+	if n, ok, err := hoconU8(obj, "dst", prefix+".dst"); err != nil {
 		return r, err
 	} else if ok {
-		r.Dst = uint8(n)
+		r.Dst = n
 	}
 	mi, ok := hoconStr(obj, "min-interval")
 	if !ok {
@@ -359,6 +356,33 @@ func hoconU32(obj hocon.Object, key, path string) (uint32, bool, error) {
 		return 0, false, fmt.Errorf("%s: %w", path, err)
 	}
 	return uint32(n), true, nil
+}
+
+// hoconU16 parses a uint16 config value, erroring if it exceeds the 16-bit range
+// (parsing at the target bit size avoids silent truncation on conversion).
+func hoconU16(obj hocon.Object, key, path string) (uint16, bool, error) {
+	v, ok := obj[key]
+	if !ok {
+		return 0, false, nil
+	}
+	n, err := strconv.ParseUint(v.String(), 0, 16)
+	if err != nil {
+		return 0, false, fmt.Errorf("%s: %w", path, err)
+	}
+	return uint16(n), true, nil
+}
+
+// hoconU8 parses a uint8 config value, erroring if it exceeds the 8-bit range.
+func hoconU8(obj hocon.Object, key, path string) (uint8, bool, error) {
+	v, ok := obj[key]
+	if !ok {
+		return 0, false, nil
+	}
+	n, err := strconv.ParseUint(v.String(), 0, 8)
+	if err != nil {
+		return 0, false, fmt.Errorf("%s: %w", path, err)
+	}
+	return uint8(n), true, nil
 }
 
 func intOr(obj hocon.Object, key string, def int) int {

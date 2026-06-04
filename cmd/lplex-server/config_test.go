@@ -341,3 +341,17 @@ requests = [ { name = "x", via = "iso", want = [1] } ]
 		t.Fatal("expected error for missing min-interval")
 	}
 }
+
+func TestApplyConfigRequestRuleOutOfRange(t *testing.T) {
+	// manufacturer-code beyond uint16 must error, not silently truncate.
+	path := filepath.Join(t.TempDir(), "lplex.conf")
+	content := `
+requests = [ { name = "x", match { manufacturer-code = 99999 }, via = "iso", want = [1], min-interval = "1s" } ]
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyConfig(path); err == nil {
+		t.Fatal("expected error for out-of-range manufacturer-code")
+	}
+}
