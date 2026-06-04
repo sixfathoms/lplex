@@ -545,6 +545,43 @@ var packetTests = []packetTest{
 		},
 	},
 
+	// ---- PGN 126720: Garmin proprietary (route navigation) ----
+	// Real frames from a GPSMAP 1042xsv (manufacturer 229) actively navigating.
+	// Decode-only (no Encode); fields validated against the boat's GPS track.
+	{
+		desc:        "Garmin active waypoint nav: 2851.98 m to wp 49.5114°N 124.5692°W",
+		pgn:         126720,
+		hex:         "e598610602020e5a040000000000d0c393057e50fbb0edb000006ad8821dab3fc0b51000000002003201",
+		noRoundTrip: true,
+		// [6:10] dist = 285198 -> 2851.98 m; [14:18] eta -> 9357 s (02:35:57)
+		// [18:20] date = 0x507e = 20606; [26:30]/[30:34] = wp lat/lon
+		want: GarminActiveWaypoint{
+			DistanceToWaypoint: ptr(2851.98),
+			EtaTime:            ptr(9357.0),
+			EtaDate:            ptr[uint16](20606),
+			WaypointLatitude:   ptr(49.5114346),
+			WaypointLongitude:  ptr(-124.5691989),
+		},
+		epsilon: 1e-4,
+	},
+	{
+		desc:        "Garmin destination nav: 7145.10 m to dest 49.5173°N 124.6279°W",
+		pgn:         126720,
+		hex:         "e59812070202ff0ee70a0090ff69067e5004000000d0be831d254ab7b5",
+		noRoundTrip: true,
+		// [7:11] dist = 714510 -> 7145.10 m; [11:15] eta -> 10761 s (02:59:21)
+		// [17:21] id = 4; [21:25]/[25:29] = dest lat/lon
+		want: GarminDestinationNav{
+			DistanceToDestination: ptr(7145.10),
+			EtaTime:               ptr(10761.0),
+			EtaDate:               ptr[uint16](20606),
+			DestinationId:         ptr[uint32](4),
+			DestinationLatitude:   ptr(49.5173328),
+			DestinationLongitude:  ptr(-124.6279131),
+		},
+		epsilon: 1e-4,
+	},
+
 	// ---- PGN 61444: Engine Controller 1 (J1939 EEC1) ----
 	// Captured from a Wakespeed WS500. Only engine speed is populated;
 	// torque fields are J1939 not-available (0xFF).

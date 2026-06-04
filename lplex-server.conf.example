@@ -188,3 +188,42 @@ journal {
 #   # lag-check-interval = 1000          # check lag every N frames sent
 #   # min-lag-reconnect-interval = "30s" # throttle between lag-triggered reconnects
 # }
+
+# On-demand polling (request rules) -------------------------------------------
+# Send a request when a matching device comes online or at startup, keep the
+# data fresh, and re-request when a trigger PGN is seen. Level-triggered with a
+# per-rule min-interval floor, so the bus is never flooded. Disabled in replica
+# mode. See docs/getting-started/configuration.md.
+#
+# requests-global-min-interval = "1s"   # optional cap across ALL rules
+#
+# requests = [
+#   {
+#     name = "gpsmap-route"
+#     match { model-id = "GPSMAP*" }     # any of: manufacturer, manufacturer-code,
+#                                         #   model-id (trailing * glob), device-class,
+#                                         #   device-function, name, source, bus
+#     via = "iso"                         # "iso" (default) | "frame"
+#     want = [130065, 130067]             # PGNs to request (ISO) — route service
+#     to-device = true                    # send to the matched device (vs broadcast)
+#     on-online = true                    # request when it appears / at startup
+#     max-age = "30s"                     # refresh when older than this
+#     min-interval = "5s"                 # REQUIRED floor between requests
+#     invalidate-on = [129284]            # re-request when this PGN is seen
+#   }
+#   {
+#     name = "victron-registers"
+#     match { manufacturer-code = 358 }
+#     via = "frame"                       # parameterized (sub-keyed) frame request
+#     frame-pgn = 61184
+#     frame-template = "6699000000000000" # hex; subkey written in per request
+#     subkey-write-offset = 2             # where to write the want's subkey (LE)
+#     subkey-write-len = 2
+#     subkey-read-offset = 2              # where to read the subkey from responses
+#     subkey-read-len = 2
+#     want = [798, 796]                   # register ids (0x031E alarm, 0x031C warning)
+#     to-device = true
+#     max-age = "1m"
+#     min-interval = "30s"
+#   }
+# ]

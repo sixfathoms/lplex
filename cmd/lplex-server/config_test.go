@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/sixfathoms/lplex/requestrules"
 )
 
 func TestFindConfigFilePrefersLocal(t *testing.T) {
@@ -259,5 +262,96 @@ func TestApplyConfigSetsUnsetFlags(t *testing.T) {
 	}
 	if *iface != "can9" {
 		t.Fatalf("expected interface from config (can9), got %q", *iface)
+	}
+}
+
+func TestApplyConfigRequestRules(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lplex.conf")
+	content := `
+requests-global-min-interval = "1s"
+requests = [
+  {
+    name = "gpsmap-route"
+    match { model-id = "GPSMAP*" }
+    via = "iso"
+    want = [130065, 130067]
+    to-device = true
+    on-online = true
+    max-age = "30s"
+    min-interval = "5s"
+    invalidate-on = [129284]
+  }
+  {
+    name = "victron-alarms"
+    match { manufacturer-code = 358 }
+    via = "frame"
+    frame-pgn = 61184
+    frame-template = "6699000000000000"
+    subkey-write-offset = 2
+    subkey-write-len = 2
+    subkey-read-offset = 2
+    subkey-read-len = 2
+    want = [798, 796]
+    to-device = true
+    min-interval = "30s"
+  }
+]
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := applyConfig(path)
+	if err != nil {
+		t.Fatalf("applyConfig: %v", err)
+	}
+	if res.RequestGlobalMinInterval != time.Second {
+		t.Errorf("global min = %v, want 1s", res.RequestGlobalMinInterval)
+	}
+	if len(res.RequestRules) != 2 {
+		t.Fatalf("got %d rules, want 2", len(res.RequestRules))
+	}
+	r0 := res.RequestRules[0]
+	if r0.Name != "gpsmap-route" || r0.Match.ModelID != "GPSMAP*" || r0.Via != requestrules.ViaISORequest {
+		t.Errorf("rule0 unexpected: %+v", r0)
+	}
+	if len(r0.Wants) != 2 || r0.Wants[0].PGN != 130065 || !r0.ToDevice || r0.MaxAge != 30*time.Second || r0.MinInterval != 5*time.Second {
+		t.Errorf("rule0 fields unexpected: %+v", r0)
+	}
+	r1 := res.RequestRules[1]
+	if r1.Via != requestrules.ViaFrame || r1.FramePGN != 61184 || len(r1.FrameTemplate) != 8 {
+		t.Errorf("rule1 frame fields unexpected: %+v", r1)
+	}
+	if len(r1.Wants) != 2 || !r1.Wants[0].HasSubKey || r1.Wants[0].SubKey != 798 || r1.Wants[0].PGN != 61184 {
+		t.Errorf("rule1 wants unexpected: %+v", r1.Wants)
+	}
+	if r1.SubKeyWriteOff != 2 || r1.SubKeyReadLen != 2 {
+		t.Errorf("rule1 subkey offsets unexpected: %+v", r1)
+	}
+}
+
+func TestApplyConfigRequestRuleMissingMinInterval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lplex.conf")
+	content := `
+requests = [ { name = "x", via = "iso", want = [1] } ]
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyConfig(path); err == nil {
+		t.Fatal("expected error for missing min-interval")
+	}
+}
+
+func TestApplyConfigRequestRuleOutOfRange(t *testing.T) {
+	// manufacturer-code beyond uint16 must error, not silently truncate.
+	path := filepath.Join(t.TempDir(), "lplex.conf")
+	content := `
+requests = [ { name = "x", match { manufacturer-code = 99999 }, via = "iso", want = [1], min-interval = "1s" } ]
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyConfig(path); err == nil {
+		t.Fatal("expected error for out-of-range manufacturer-code")
 	}
 }
