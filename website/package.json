@@ -45,5 +45,13 @@
   },
   "engines": {
     "node": ">=20.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "lodash@<4.18.1": "4.18.1",
+      "picomatch@<2.3.2": "2.3.2",
+      "brace-expansion@<1.1.14": "1.1.14",
+      "follow-redirects@<1.16.0": "1.16.0"
+    }
   }
 }
