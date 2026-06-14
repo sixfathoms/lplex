@@ -477,6 +477,99 @@ func TestSSEReplay(t *testing.T) {
 	}
 }
 
+func TestSSEDecode(t *testing.T) {
+	srv, b := newTestServer()
+	defer close(b.rxFrames)
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Create session, then connect with ?decode=true (fresh session = live-only,
+	// so connect before injecting).
+	createReq := httptest.NewRequest("PUT", "/clients/decode-test", strings.NewReader(`{"buffer_timeout":"PT1M"}`))
+	srv.ServeHTTP(httptest.NewRecorder(), createReq)
+
+	resp, err := http.Get(ts.URL + "/clients/decode-test/events?decode=true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Inject a valid Position Rapid Update (PGN 129025) — same payload as
+	// TestDecodedValues, which decodes to latitude/longitude.
+	posData := make([]byte, 8)
+	latRaw, lonRaw := int32(476062000), int32(-1223321000)
+	binary.LittleEndian.PutUint32(posData[0:4], uint32(latRaw))
+	binary.LittleEndian.PutUint32(posData[4:8], uint32(lonRaw))
+	injectFrame(b, 129025, 1, posData)
+
+	scanner := bufio.NewScanner(resp.Body)
+	done := make(chan string, 1)
+	go func() {
+		for scanner.Scan() {
+			if line := scanner.Text(); strings.HasPrefix(line, "data: ") {
+				done <- line[6:]
+				return
+			}
+		}
+	}()
+
+	select {
+	case data := <-done:
+		if !strings.Contains(data, `"decoded"`) {
+			t.Errorf("buffered ?decode=true should add a decoded field, got: %s", data)
+		}
+		if !strings.Contains(data, "latitude") || !strings.Contains(data, "longitude") {
+			t.Errorf("decoded frame should contain latitude/longitude, got: %s", data)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for decoded buffered frame")
+	}
+}
+
+func TestSSENoDecodeByDefault(t *testing.T) {
+	srv, b := newTestServer()
+	defer close(b.rxFrames)
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	createReq := httptest.NewRequest("PUT", "/clients/raw-test", strings.NewReader(`{"buffer_timeout":"PT1M"}`))
+	srv.ServeHTTP(httptest.NewRecorder(), createReq)
+
+	resp, err := http.Get(ts.URL + "/clients/raw-test/events") // no ?decode
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	posData := make([]byte, 8)
+	latRaw, lonRaw := int32(476062000), int32(-1223321000)
+	binary.LittleEndian.PutUint32(posData[0:4], uint32(latRaw))
+	binary.LittleEndian.PutUint32(posData[4:8], uint32(lonRaw))
+	injectFrame(b, 129025, 1, posData)
+
+	scanner := bufio.NewScanner(resp.Body)
+	done := make(chan string, 1)
+	go func() {
+		for scanner.Scan() {
+			if line := scanner.Text(); strings.HasPrefix(line, "data: ") {
+				done <- line[6:]
+				return
+			}
+		}
+	}()
+
+	select {
+	case data := <-done:
+		if strings.Contains(data, `"decoded"`) {
+			t.Errorf("buffered stream without ?decode should stay raw, got: %s", data)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for raw buffered frame")
+	}
+}
+
 func TestCreateSessionWithFilter(t *testing.T) {
 	srv, b := newTestServer()
 	defer close(b.rxFrames)
