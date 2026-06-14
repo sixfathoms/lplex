@@ -224,6 +224,9 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /clients/{clientId}/events
+// Replays buffered frames from the session cursor, then streams live.
+// Pass ?decode=true to add a "decoded" field to each frame, matching the
+// ephemeral /events endpoint.
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	clientID := r.PathValue("clientId")
 
@@ -253,6 +256,8 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 
 	s.broker.TouchSession(clientID)
 
+	decode := r.URL.Query().Get("decode") == "true"
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -269,6 +274,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.logger.Error("failed to serialize frame", "error", err)
 			continue
+		}
+		if decode {
+			jsonBytes = injectDecoded(jsonBytes)
 		}
 		w.Write(sseDataPrefix) //nolint:errcheck
 		w.Write(jsonBytes)     //nolint:errcheck

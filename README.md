@@ -404,14 +404,14 @@ CANWriter goroutine            ReplicationClient (optional)
 
 ### Ephemeral streaming
 
-`GET /events` with optional query params: `pgn`, `exclude_pgn`, `manufacturer`, `instance`, `name` (hex).
+`GET /events` with optional query params: `pgn`, `exclude_pgn`, `manufacturer`, `instance`, `name` (hex). Add `decode=true` to attach a `decoded` object to each frame.
 
 No session, no replay, no ACK. Zero server-side state after disconnect.
 
 ### Buffered sessions
 
 1. `PUT /clients/{id}` with `{"buffer_timeout": "PT5M"}` to create/reconnect
-2. `GET /clients/{id}/events` for SSE (replays from cursor, then live)
+2. `GET /clients/{id}/events` for SSE (replays from cursor, then live); add `decode=true` for decoded frames, same as `/events`
 3. `PUT /clients/{id}/ack` with `{"seq": N}` to advance cursor
 
 Disconnected sessions keep their cursor for the buffer duration.
