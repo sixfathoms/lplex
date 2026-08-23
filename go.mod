@@ -8,7 +8,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/grandcat/zeroconf v1.0.0
-	github.com/gurkankaymak/hocon v1.3.0
+	github.com/gurkankaymak/hocon v1.3.1
 	github.com/klauspost/compress v1.19.2
 	github.com/spf13/cobra v1.10.2
 	go.einride.tech/can v0.17.0
@@ -20,7 +20,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.45.0
 	golang.org/x/crypto v0.55.0
 	golang.org/x/time v0.15.0
-	google.golang.org/grpc v1.83.0
+	google.golang.org/grpc v1.83.1
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.2
 	google.golang.org/protobuf v1.36.12
 )
