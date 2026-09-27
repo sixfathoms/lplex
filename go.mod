@@ -8,7 +8,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/grandcat/zeroconf v1.0.0
-	github.com/gurkankaymak/hocon v1.3.1
+	github.com/gurkankaymak/hocon v1.4.0
 	github.com/klauspost/compress v1.20.0
 	github.com/spf13/cobra v1.10.2
 	go.einride.tech/can v0.17.0

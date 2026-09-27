@@ -46,8 +46,8 @@ github.com/grandcat/zeroconf v1.0.0 h1:uHhahLBKqwWBV6WZUDAT71044vwOTL+McW0mBJvo6
 github.com/grandcat/zeroconf v1.0.0/go.mod h1:lTKmG1zh86XyCoUeIHSA4FJMBwCJiQmGfcP2PdzytEs=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 h1:/Tnpcb2E0Pz/tN9s3bfEY2Q8ePCEX9iuS+cneUwncnw=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0/go.mod h1:zOBXOsUaBSjKgmH4OGzV1esUpR3oUSCPYVd2cUBjKYY=
-github.com/gurkankaymak/hocon v1.3.1 h1:GOX73nm/QldK5yh+a5lZKgKT0/gwxZVdp9/2fN/xxx4=
-github.com/gurkankaymak/hocon v1.3.1/go.mod h1:CM7yeDDq8AUU7I+QiLA7aVSJVbP1BVgZqqCiuzgcNS0=
+github.com/gurkankaymak/hocon v1.4.0 h1:Sl3zcXIDTUfPggqMofKv2svJtGqe3nrKu7VL5RX027E=
+github.com/gurkankaymak/hocon v1.4.0/go.mod h1:CM7yeDDq8AUU7I+QiLA7aVSJVbP1BVgZqqCiuzgcNS0=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/klauspost/compress v1.20.0 h1:a3C1ke2ohxFymNlb2HWAHjDeKCI90scRskErZkR0ezA=
